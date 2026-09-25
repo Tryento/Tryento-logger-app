@@ -28,7 +28,7 @@
 import { ok, fail, CODES, num, str, deepCopy } from './envelope.js';
 import { openDb } from './idb/open.js';
 import { commitWrite, rowById, allRows, rowsByIndex } from './store.js';
-import { uuid, uuidFromString, deviceId, insectarioCodigo, bandejaLabel, cochadaCodigo, nextRecolectaOrdinal } from './ids.js';
+import { uuid, uuidFromString, deviceId, insectarioCodigo, bandejaLabel, loteCodigo, nextRecolectaOrdinal } from './ids.js';
 import { nowIso, utcIso, farmDay, addDays } from './time.js';
 import { currentUserId } from './session.js';
 import { metaGet, metaSet } from './idb/tx.js';
@@ -499,7 +499,7 @@ export async function logSeparacion(data) {
   return commitEvent(db, 'separacion', row, { blobId: data.blob_id });
 }
 
-/* ── cochada ────────────────────────────────────────────────────────────── */
+/* ── lote ────────────────────────────────────────────────────────────── */
 
 export async function createLote(data) {
   const sepIds = Array.isArray(data?.separacion_ids) ? data.separacion_ids.filter(Boolean) : [];
@@ -514,18 +514,18 @@ export async function createLote(data) {
   const unknown = sepIds.filter(id => !known.has(id));
   if (unknown.length) return fail(CODES.NOT_FOUND, `Separación no encontrada: ${unknown.join(', ')}`);
 
-  const links = await allRows(db, 'cochada_separacion');
+  const links = await allRows(db, 'lote_separacion');
   const pooled = new Set(links.map(l => l.separacion_id));
   const already = sepIds.filter(id => pooled.has(id));
-  if (already.length) return fail(CODES.CONFLICT, `Ya está en otra cochada: ${already.join(', ')}`);
+  if (already.length) return fail(CODES.CONFLICT, `Ya está en otro lote: ${already.join(', ')}`);
 
   const fecha = isoOrNow(data.fecha);
   const prov = await provenance(data.operator_name);
   const id = uuid();
 
-  const cochada = {
+  const lote = {
     id,
-    codigo: cochadaCodigo(fecha),
+    codigo: loteCodigo(fecha),
     fecha,
     peso_inicial_kg: num(data.peso_inicial_kg),
     tiempo_secado_horas: null,
@@ -546,7 +546,7 @@ export async function createLote(data) {
   };
 
   const linkRows = sepIds.map(separacion_id => ({
-    cochada_id: id, separacion_id,
+    lote_id: id, separacion_id,
     created_at: prov.created_at, updated_at: prov.updated_at
   }));
 
@@ -554,14 +554,14 @@ export async function createLote(data) {
 
   await commitWrite(db, {
     writes: [
-      { store: 'cochada', row: cochada },
-      ...linkRows.map(row => ({ store: 'cochada_separacion', row }))
+      { store: 'lote', row: lote },
+      ...linkRows.map(row => ({ store: 'lote_separacion', row }))
     ],
-    // One RPC, so a cochada and its links can never land apart. The old Lotes
+    // One RPC, so a lote and its links can never land apart. The old Lotes
     // table pointed at nothing precisely because those were separate writes.
     outbox: {
-      op: 'rpc', rpc: 'crear_cochada', rowId: id,
-      payload: { p_cochada: cochada, p_separacion_ids: sepIds },
+      op: 'rpc', rpc: 'crear_lote', rowId: id,
+      payload: { p_lote: lote, p_separacion_ids: sepIds },
       dependsOn: sepIds,
       createdBy: prov.created_by, dispositivoId: prov.dispositivo_id
     },
@@ -570,15 +570,15 @@ export async function createLote(data) {
 
   const { getLoteDetail } = await import('./read.js');
   const d = await getLoteDetail(id);
-  return d.ok ? ok(d.data.lote) : ok(cochada);
+  return d.ok ? ok(d.data.lote) : ok(lote);
 }
 
-async function patchCochada(id, patch, outbox) {
+async function patchLote(id, patch, outbox) {
   const db = await openDb();
-  const row = await rowById(db, 'cochada', id);
-  if (!row) return fail(CODES.NOT_FOUND, 'Cochada no encontrada.');
+  const row = await rowById(db, 'lote', id);
+  if (!row) return fail(CODES.NOT_FOUND, 'Lote no encontrado.');
   const next = { ...row, ...patch, updated_at: nowIso() };
-  await commitWrite(db, { writes: [{ store: 'cochada', row: next }], outbox });
+  await commitWrite(db, { writes: [{ store: 'lote', row: next }], outbox });
   const { getLoteDetail } = await import('./read.js');
   const d = await getLoteDetail(id);
   return d.ok ? ok(d.data.lote) : ok(next);
@@ -586,10 +586,10 @@ async function patchCochada(id, patch, outbox) {
 
 export async function updateLoteQC(id, data) {
   const db = await openDb();
-  const row = await rowById(db, 'cochada', id);
-  if (!row) return fail(CODES.NOT_FOUND, 'Cochada no encontrada.');
+  const row = await rowById(db, 'lote', id);
+  if (!row) return fail(CODES.NOT_FOUND, 'Lote no encontrado.');
   if (row.despachado_at || row.rechazado_at) {
-    return fail(CODES.CONFLICT, 'Esta cochada ya está cerrada.');
+    return fail(CODES.CONFLICT, 'Este lote ya está cerrada.');
   }
 
   const patch = {};
@@ -605,12 +605,12 @@ export async function updateLoteQC(id, data) {
   // differing field name is easy to lose in a rewrite.
   const blobIds = [];
   if (data.blob_id) {
-    patch.qc_foto_key = await attachPhoto(db, data.blob_id, 'cochada', id);
+    patch.qc_foto_key = await attachPhoto(db, data.blob_id, 'lote', id);
     blobIds.push(data.blob_id);
   }
 
-  return patchCochada(id, patch, {
-    op: 'cas', rpc: 'actualizar_qc_cochada', rowId: id,
+  return patchLote(id, patch, {
+    op: 'cas', rpc: 'actualizar_qc_lote', rowId: id,
     blobIds,
     payload: {
       p_id: id,
@@ -628,15 +628,15 @@ export async function updateLoteQC(id, data) {
 
 export async function marcarEmpacado(id, data) {
   const db = await openDb();
-  const row = await rowById(db, 'cochada', id);
-  if (!row) return fail(CODES.NOT_FOUND, 'Cochada no encontrada.');
+  const row = await rowById(db, 'lote', id);
+  if (!row) return fail(CODES.NOT_FOUND, 'Lote no encontrado.');
   if (row.qc_aprobado !== true) {
     return fail(CODES.VALIDATION, 'Primero aprueba el control de calidad.');
   }
   if (row.empacado_at) return ok(row);
 
   const porEmp = await getCurrentOperator();
-  return patchCochada(id, {
+  return patchLote(id, {
     empacado_at: nowIso(),
     empacado_por: porEmp,
     fecha_vencimiento: data?.fecha_vencimiento || addDays(farmDay(), 180)
@@ -649,35 +649,35 @@ export async function marcarEmpacado(id, data) {
 
 export async function marcarDespachado(id) {
   const db = await openDb();
-  const row = await rowById(db, 'cochada', id);
-  if (!row) return fail(CODES.NOT_FOUND, 'Cochada no encontrada.');
+  const row = await rowById(db, 'lote', id);
+  if (!row) return fail(CODES.NOT_FOUND, 'Lote no encontrado.');
   // The prototype could dispatch before packing (dataClient.js:359).
-  if (!row.empacado_at) return fail(CODES.VALIDATION, 'Primero marca la cochada como empacada.');
+  if (!row.empacado_at) return fail(CODES.VALIDATION, 'Primero marca el lote como empacada.');
   if (row.despachado_at) return ok(row);
 
   const porDesp = await getCurrentOperator();
-  return patchCochada(id, { despachado_at: nowIso(), despachado_por: porDesp }, {
+  return patchLote(id, { despachado_at: nowIso(), despachado_por: porDesp }, {
     op: 'cas', rpc: 'marcar_despachado', rowId: id, payload: { p_id: id, p_por: porDesp },
     createdBy: currentUserId(), dispositivoId: deviceId()
   });
 }
 
 /** QC failure — mold, over-toasting, a failed crunch test. Terminal. */
-export async function rechazarCochada(id, motivo) {
+export async function rechazarLote(id, motivo) {
   const reason = str(motivo);
   if (!reason) return fail(CODES.VALIDATION, 'Indica el motivo del rechazo.');
 
   const db = await openDb();
-  const row = await rowById(db, 'cochada', id);
-  if (!row) return fail(CODES.NOT_FOUND, 'Cochada no encontrada.');
-  if (row.despachado_at) return fail(CODES.CONFLICT, 'Esta cochada ya fue despachada.');
+  const row = await rowById(db, 'lote', id);
+  if (!row) return fail(CODES.NOT_FOUND, 'Lote no encontrado.');
+  if (row.despachado_at) return fail(CODES.CONFLICT, 'Este lote ya fue despachada.');
   if (row.rechazado_at) return ok(row);
 
   const porRech = await getCurrentOperator();
-  return patchCochada(id, {
+  return patchLote(id, {
     rechazado_at: nowIso(), rechazo_motivo: reason, rechazado_por: porRech, qc_aprobado: false
   }, {
-    op: 'cas', rpc: 'rechazar_cochada', rowId: id,
+    op: 'cas', rpc: 'rechazar_lote', rowId: id,
     payload: { p_id: id, p_motivo: reason, p_por: porRech },
     createdBy: currentUserId(), dispositivoId: deviceId()
   });

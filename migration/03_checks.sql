@@ -20,7 +20,7 @@ union all select 'revision',     (select count(*) from staging.revision),     (s
 union all select 'ayuno',        (select count(*) from staging.ayuno),        (select count(*) from app.ayuno)
 union all select 'ayuno_huerfano', null,                                      (select count(*) from app.ayuno_huerfano)
 union all select 'separacion',   (select count(*) from staging.separacion),   (select count(*) from app.separacion)
-union all select 'cochada',      (select count(*) from staging.lotes),        (select count(*) from app.cochada);
+union all select 'lote',      (select count(*) from staging.lotes),        (select count(*) from app.lote);
 
 
 -- ── 2. what did we deliberately drop? ──────────────────────────────────────

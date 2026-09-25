@@ -154,7 +154,7 @@ export const marcarDespachado = guard(writes.marcarDespachado, { isWrite: true }
  *  fast is two visits and the mock only ever recorded the first. */
 export const logAyunoFin = guard(writes.logAyunoFin, { isWrite: true });
 export const listAyunosAbiertos = guard(reads.listAyunosAbiertos);
-export const rechazarCochada = guard(writes.rechazarCochada, { isWrite: true });
+export const rechazarLote = guard(writes.rechazarLote, { isWrite: true });
 /** Remember a typed name so it comes back as a chip. Local convenience only. */
 export const rememberOperator = guard(writes.rememberOperator);
 
@@ -197,7 +197,7 @@ const api = {
   createInsectario, marcarAtractante, marcarCierre, createRecoleccion, createBandeja,
   logAlimentacion, logAlimentacionGrupal, logAyuno, logRevision, logSeparacion,
   createLote, updateLoteQC, marcarEmpacado, marcarDespachado,
-  logAyunoFin, listAyunosAbiertos, rechazarCochada, rememberOperator,
+  logAyunoFin, listAyunosAbiertos, rechazarLote, rememberOperator,
   getSyncStatus, onChange, statusLabel, sync,
   listConflicts, resolveConflict,
   capturePhoto, localPhotoUrl, attachPhotoToRow,

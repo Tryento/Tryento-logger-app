@@ -69,11 +69,11 @@ if (!DELETE) {
   process.exit(0);
 }
 
-// Separaciones may be pooled into a cochada; that link must go first.
+// Separaciones may be pooled into a lote; that link must go first.
 if (banIds.length) {
   const { data: seps } = await db.from('separacion').select('id').in('bandeja_id', banIds);
   const sepIds = (seps || []).map(r => r.id);
-  if (sepIds.length) await db.from('cochada_separacion').delete().in('separacion_id', sepIds);
+  if (sepIds.length) await db.from('lote_separacion').delete().in('separacion_id', sepIds);
   for (const t of EVENTS) await db.from(t).delete().in('bandeja_id', banIds);
   await db.from('bandeja').delete().in('id', banIds);
 }

@@ -16,7 +16,7 @@
 --  * `estado` as a real column, never inferred from a blank cell
 --  * computed values that are absent (NULL) rather than wrong when an input
 --    is missing — this is the fix for the -20,676-day values in the sheet
---  * a join table for cochada <-> separacion, so an oven run can never point
+--  * a join table for lote <-> separacion, so an oven run can never point
 --    at nothing
 --  * one atomic bulk-feed operation, so the partial-row bug cannot recur
 --
@@ -46,7 +46,7 @@ set search_path = app, public;
 
 create type app.insectario_estado as enum ('activo', 'cerrado');
 create type app.bandeja_estado    as enum ('en_crecimiento', 'en_ayuno', 'cosechada');
-create type app.cochada_estado    as enum ('secando', 'en_qc', 'empacado', 'despachado', 'rechazado');
+create type app.lote_estado    as enum ('secando', 'en_qc', 'empacado', 'despachado', 'rechazado');
 create type app.origen_alim       as enum ('individual', 'grupal');
 
 
@@ -312,9 +312,9 @@ create unique index ux_separacion_bandeja on app.separacion(bandeja_id)
 create index ix_sep_updated on app.separacion(updated_at);
 
 
--- ── cochada (one oven run; AppSheet called this "Lote") ────────────────────
+-- ── lote (one oven run; AppSheet called this "Lote") ────────────────────
 
-create table app.cochada (
+create table app.lote (
   id     uuid primary key,
   codigo text not null,
   fecha  timestamptz not null,
@@ -347,12 +347,12 @@ create table app.cochada (
 
   -- Same-row inputs => generated column, strictly better than a trigger.
   -- rechazado is terminal and outranks everything.
-  estado app.cochada_estado generated always as (
-    case when rechazado_at  is not null then 'rechazado'::app.cochada_estado
-         when despachado_at is not null then 'despachado'::app.cochada_estado
-         when empacado_at   is not null then 'empacado'::app.cochada_estado
-         when qc_aprobado   is not null then 'en_qc'::app.cochada_estado
-         else 'secando'::app.cochada_estado end) stored,
+  estado app.lote_estado generated always as (
+    case when rechazado_at  is not null then 'rechazado'::app.lote_estado
+         when despachado_at is not null then 'despachado'::app.lote_estado
+         when empacado_at   is not null then 'empacado'::app.lote_estado
+         when qc_aprobado   is not null then 'en_qc'::app.lote_estado
+         else 'secando'::app.lote_estado end) stored,
 
   registrado_por text,
   created_by     uuid,
@@ -371,22 +371,22 @@ create table app.cochada (
   check (despachado_at is null or empacado_at is not null),
   check (despachado_at is null or despachado_at >= empacado_at)
 );
-create unique index ux_cochada_codigo on app.cochada(codigo) where deleted_at is null;
-create index ix_cochada_updated on app.cochada(updated_at);
+create unique index ux_lote_codigo on app.lote(codigo) where deleted_at is null;
+create index ix_lote_updated on app.lote(updated_at);
 
-create table app.cochada_separacion (
-  cochada_id    uuid not null references app.cochada(id) on delete cascade,
+create table app.lote_separacion (
+  lote_id    uuid not null references app.lote(id) on delete cascade,
   separacion_id uuid not null references app.separacion(id),
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
   synced_at     timestamptz not null default now(),
-  primary key (cochada_id, separacion_id)
+  primary key (lote_id, separacion_id)
 );
--- "A separacion is pooled into at most one cochada." A cochada is a physical
+-- "A separacion is pooled into at most one lote." A lote is a physical
 -- oven run: if two operators pool the same harvest into two ovens, the database
 -- is right and reality is already wrong, so this must surface loudly.
-create unique index ux_sep_una_sola_cochada on app.cochada_separacion(separacion_id);
-create index ix_cochsep_updated on app.cochada_separacion(updated_at);
+create unique index ux_sep_una_sola_lote on app.lote_separacion(separacion_id);
+create index ix_cochsep_updated on app.lote_separacion(updated_at);
 
 
 -- ── bandeja estado: trigger + reconciliation ───────────────────────────────
@@ -480,7 +480,7 @@ declare t text;
 begin
   foreach t in array array[
     'catalogo','insectario','recoleccion','bandeja',
-    'alimentacion','ayuno','revision','separacion','cochada','cochada_separacion'
+    'alimentacion','ayuno','revision','separacion','lote','lote_separacion'
   ] loop
     execute format(
       'create trigger t_%1$s_touch before update on app.%1$I
@@ -529,14 +529,14 @@ begin
   return r;
 end $$;
 
-create or replace function app.actualizar_qc_cochada(
+create or replace function app.actualizar_qc_lote(
   p_id uuid, p_tiempo numeric, p_peso_final numeric,
   p_color text, p_prueba text, p_aprobado boolean, p_foto_key text)
-returns app.cochada language plpgsql set search_path = app, public as $$
-declare r app.cochada;
+returns app.lote language plpgsql set search_path = app, public as $$
+declare r app.lote;
 begin
   -- Per-field last-write-wins: only overwrite what this call actually carries.
-  update app.cochada set
+  update app.lote set
     tiempo_secado_horas = coalesce(p_tiempo,     tiempo_secado_horas),
     peso_final_kg       = coalesce(p_peso_final, peso_final_kg),
     qc_color_dorado     = coalesce(p_color,      qc_color_dorado),
@@ -545,47 +545,47 @@ begin
     qc_foto_key         = coalesce(p_foto_key,   qc_foto_key)
    where id = p_id and despachado_at is null and rechazado_at is null
   returning * into r;
-  if r.id is null then select * into r from app.cochada where id = p_id; end if;
+  if r.id is null then select * into r from app.lote where id = p_id; end if;
   return r;
 end $$;
 
 create or replace function app.marcar_empacado(p_id uuid, p_vencimiento date)
-returns app.cochada language plpgsql set search_path = app, public as $$
-declare r app.cochada;
+returns app.lote language plpgsql set search_path = app, public as $$
+declare r app.lote;
 begin
-  update app.cochada
+  update app.lote
      set empacado_at = now(),
          fecha_vencimiento = coalesce(
            p_vencimiento, ((now() at time zone 'America/Caracas')::date + 180))
    where id = p_id and empacado_at is null and qc_aprobado is true
   returning * into r;
-  if r.id is null then select * into r from app.cochada where id = p_id; end if;
+  if r.id is null then select * into r from app.lote where id = p_id; end if;
   return r;
 end $$;
 
 create or replace function app.marcar_despachado(p_id uuid)
-returns app.cochada language plpgsql set search_path = app, public as $$
-declare r app.cochada;
+returns app.lote language plpgsql set search_path = app, public as $$
+declare r app.lote;
 begin
   -- State guard the prototype lacked: it could dispatch before packing.
-  update app.cochada set despachado_at = now()
+  update app.lote set despachado_at = now()
    where id = p_id and despachado_at is null and empacado_at is not null
   returning * into r;
-  if r.id is null then select * into r from app.cochada where id = p_id; end if;
+  if r.id is null then select * into r from app.lote where id = p_id; end if;
   return r;
 end $$;
 
-create or replace function app.rechazar_cochada(p_id uuid, p_motivo text)
-returns app.cochada language plpgsql set search_path = app, public as $$
-declare r app.cochada;
+create or replace function app.rechazar_lote(p_id uuid, p_motivo text)
+returns app.lote language plpgsql set search_path = app, public as $$
+declare r app.lote;
 begin
   if coalesce(trim(p_motivo), '') = '' then
     raise exception 'motivo de rechazo requerido' using errcode = '22023';
   end if;
-  update app.cochada set rechazado_at = now(), rechazo_motivo = p_motivo, qc_aprobado = false
+  update app.lote set rechazado_at = now(), rechazo_motivo = p_motivo, qc_aprobado = false
    where id = p_id and rechazado_at is null and despachado_at is null
   returning * into r;
-  if r.id is null then select * into r from app.cochada where id = p_id; end if;
+  if r.id is null then select * into r from app.lote where id = p_id; end if;
   return r;
 end $$;
 
@@ -611,44 +611,44 @@ $$;
 -- pointing at nothing.
 --
 -- The two conflict behaviours are deliberately different:
---   PK (cochada_id, separacion_id) DO NOTHING -> retrying THIS cochada after a
+--   PK (lote_id, separacion_id) DO NOTHING -> retrying THIS lote after a
 --     lost acknowledgement is idempotent.
---   ux_sep_una_sola_cochada is NOT handled    -> a separacion already pooled
+--   ux_sep_una_sola_lote is NOT handled    -> a separacion already pooled
 --     elsewhere raises 23505, the whole function rolls back, and the client
 --     surfaces it in the conflict inbox.
-create or replace function app.crear_cochada(p_cochada jsonb, p_separacion_ids uuid[])
-returns app.cochada language plpgsql set search_path = app, public as $$
-declare r app.cochada;
+create or replace function app.crear_lote(p_lote jsonb, p_separacion_ids uuid[])
+returns app.lote language plpgsql set search_path = app, public as $$
+declare r app.lote;
 begin
   if p_separacion_ids is null or array_length(p_separacion_ids, 1) is null then
-    raise exception 'una cochada requiere al menos una separación' using errcode = '22023';
+    raise exception 'un lote requiere al menos una separación' using errcode = '22023';
   end if;
 
-  insert into app.cochada (
+  insert into app.lote (
     id, codigo, fecha, peso_inicial_kg, bandejas_metalicas_usadas, notas,
     registrado_por, dispositivo_id)
   values (
-    (p_cochada->>'id')::uuid,
-    p_cochada->>'codigo',
-    (p_cochada->>'fecha')::timestamptz,
-    nullif(p_cochada->>'peso_inicial_kg', '')::numeric,
-    nullif(p_cochada->>'bandejas_metalicas_usadas', '')::int,
-    coalesce(p_cochada->>'notas', ''),
-    nullif(p_cochada->>'registrado_por', ''),
-    nullif(p_cochada->>'dispositivo_id', '')::uuid)
+    (p_lote->>'id')::uuid,
+    p_lote->>'codigo',
+    (p_lote->>'fecha')::timestamptz,
+    nullif(p_lote->>'peso_inicial_kg', '')::numeric,
+    nullif(p_lote->>'bandejas_metalicas_usadas', '')::int,
+    coalesce(p_lote->>'notas', ''),
+    nullif(p_lote->>'registrado_por', ''),
+    nullif(p_lote->>'dispositivo_id', '')::uuid)
   on conflict (id) do nothing
   returning * into r;
 
   if r.id is null then
-    select * into r from app.cochada where id = (p_cochada->>'id')::uuid;
+    select * into r from app.lote where id = (p_lote->>'id')::uuid;
   end if;
   if r.id is null then
-    raise exception 'no se pudo crear la cochada' using errcode = '22023';
+    raise exception 'no se pudo crear el lote' using errcode = '22023';
   end if;
 
-  insert into app.cochada_separacion (cochada_id, separacion_id)
+  insert into app.lote_separacion (lote_id, separacion_id)
   select r.id, s from unnest(p_separacion_ids) s
-  on conflict (cochada_id, separacion_id) do nothing;
+  on conflict (lote_id, separacion_id) do nothing;
 
   return r;
 end $$;
@@ -711,7 +711,7 @@ declare t text;
 begin
   foreach t in array array[
     'catalogo','insectario','recoleccion','bandeja','alimentacion','ayuno',
-    'revision','separacion','cochada','cochada_separacion',
+    'revision','separacion','lote','lote_separacion',
     'ayuno_huerfano','migracion_log'
   ] loop
     execute format('alter table app.%I enable row level security', t);

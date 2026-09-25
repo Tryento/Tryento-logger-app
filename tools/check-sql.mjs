@@ -63,6 +63,8 @@ try {
 
   for (const f of files) {
     const body = await readFile(path.join(DIR, f), 'utf8');
+    // Repair scripts are deliberately left out of the fresh-install file.
+    if (/@setup-skip/.test(body.slice(0, 400))) continue;
     if (!combined.includes(body.trim())) {
       failed++;
       console.log(`  FAIL  SETUP_COMPLETO.sql está desactualizado: ${f} cambió`);

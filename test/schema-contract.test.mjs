@@ -124,7 +124,7 @@ const OP = 'Maria';
 test('the migration parses into tables with columns', () => {
   assert.ok(TABLES.size >= 10, `expected the main tables, found ${TABLES.size}`);
   for (const t of ['insectario', 'recoleccion', 'bandeja', 'alimentacion',
-                   'ayuno', 'revision', 'separacion', 'cochada', 'cochada_separacion']) {
+                   'ayuno', 'revision', 'separacion', 'lote', 'lote_separacion']) {
     assert.ok(TABLES.has(t), `missing table ${t}`);
     assert.ok(TABLES.get(t).columns.size > 3, `${t} parsed with too few columns`);
   }
@@ -133,7 +133,7 @@ test('the migration parses into tables with columns', () => {
   assert.ok(TABLES.get('insectario').generated.has('poblacion_estimada'));
   assert.ok(TABLES.get('insectario').generated.has('estado'));
   assert.ok(TABLES.get('ayuno').generated.has('merma_pct'));
-  assert.ok(TABLES.get('cochada').generated.has('rendimiento_pct'));
+  assert.ok(TABLES.get('lote').generated.has('rendimiento_pct'));
   assert.ok(!TABLES.get('bandeja').generated.has('estado'), 'bandeja.estado is trigger-owned, not generated');
 
   // Required-column parsing must actually be finding things, or the check below
@@ -213,14 +213,14 @@ test('exercise every write, then verify every queued payload', async () => {
     } else if (item.rpc === 'log_alimentacion_grupal') {
       rpcs++;
       for (const r of item.payload.p_rows) checkRow('alimentacion', r, 'rpc log_alimentacion_grupal');
-    } else if (item.rpc === 'crear_cochada') {
+    } else if (item.rpc === 'crear_lote') {
       rpcs++;
-      checkRow('cochada', item.payload.p_cochada, 'rpc crear_cochada');
+      checkRow('lote', item.payload.p_lote, 'rpc crear_lote');
     }
   }
 
   assert.ok(upserts >= 6, `expected several table upserts, got ${upserts}`);
-  assert.ok(rpcs >= 2, `expected the grupal and cochada RPCs, got ${rpcs}`);
+  assert.ok(rpcs >= 2, `expected the grupal and lote RPCs, got ${rpcs}`);
   assert.deepEqual(problems, [], '\n  ' + problems.join('\n  '));
 });
 
@@ -250,7 +250,7 @@ test('REGRESSION: every record carries who registered it', async () => {
   const queued = await listOpen(await openDb());
   const CARRIES_NAME = new Set(['insectario', 'recoleccion', 'bandeja',
                                 'alimentacion', 'ayuno', 'revision',
-                                'separacion', 'cochada']);
+                                'separacion', 'lote']);
   const anonymous = [];
 
   for (const item of queued) {
@@ -262,8 +262,8 @@ test('REGRESSION: every record carries who registered it', async () => {
         if (!r.registrado_por) anonymous.push('alimentacion (grupal)');
       }
     }
-    if (item.rpc === 'crear_cochada' && !item.payload.p_cochada?.registrado_por) {
-      anonymous.push('cochada (rpc)');
+    if (item.rpc === 'crear_lote' && !item.payload.p_lote?.registrado_por) {
+      anonymous.push('lote (rpc)');
     }
   }
 

@@ -227,8 +227,8 @@ where nullif(trim(s.id_interno), '') is not null
 on conflict (id) do nothing;
 
 
--- ── STEP 10: lotes / cochadas ──────────────────────────────────────────────
--- Also expected to be ZERO rows. app.cochada_separacion therefore starts empty
+-- ── STEP 10: lotes / lotes ──────────────────────────────────────────────
+-- Also expected to be ZERO rows. app.lote_separacion therefore starts empty
 -- and is populated going forward — there is nothing historical to link.
 
 

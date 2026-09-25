@@ -25,17 +25,17 @@ const LABELS = {
   ayuno: 'ayuno',
   revision: 'revisión',
   separacion: 'separación',
-  cochada: 'cochada',
-  cochada_separacion: 'cochada',
+  lote: 'lote',
+  lote_separacion: 'lote',
   log_alimentacion_grupal: 'alimentación grupal',
-  crear_cochada: 'cochada',
+  crear_lote: 'lote',
   cerrar_ayuno: 'cierre de ayuno',
   marcar_atractante: 'atractante',
   marcar_cierre: 'cierre de insectario',
   marcar_empacado: 'empacado',
   marcar_despachado: 'despacho',
-  rechazar_cochada: 'rechazo de cochada',
-  actualizar_qc_cochada: 'control de calidad'
+  rechazar_lote: 'rechazo de lote',
+  actualizar_qc_lote: 'control de calidad'
 };
 
 /** Plain-language explanation. The operator is standing in a shed, not reading
@@ -48,8 +48,8 @@ export function explain(item, err) {
     if (item.table === 'separacion') {
       return `Otra persona ya registró la separación de esta bandeja. Sólo puede haber una.`;
     }
-    if (item.rpc === 'crear_cochada' || item.table === 'cochada_separacion') {
-      return `Al menos una de esas separaciones ya fue usada en otra cochada. Revisa cuál corresponde.`;
+    if (item.rpc === 'crear_lote' || item.table === 'lote_separacion') {
+      return `Al menos una de esas separaciones ya fue usada en otro lote. Revisa cuál corresponde.`;
     }
     if (item.table === 'bandeja') {
       return `Ya existe una bandeja con ese número en la misma recolección.`;

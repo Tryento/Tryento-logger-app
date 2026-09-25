@@ -81,7 +81,7 @@ const { openDb, __closeDb } = await import('../src/data/idb/open.js');
 const { outboxStats, listStuck } = await import('../src/data/outbox.js');
 const { DB_NAME } = await import('../src/data/idb/schema.js');
 
-const ids = { insectario: [], recoleccion: [], bandeja: [], ayuno: [], separacion: [], cochada: [] };
+const ids = { insectario: [], recoleccion: [], bandeja: [], ayuno: [], separacion: [], lote: [] };
 const OP = 'Maria';
 
 try {
@@ -118,7 +118,7 @@ try {
   const sep = await api.logSeparacion({ bandeja_id: b1.data.id, larva_limpia_g: 410, operator_name: OP });
   ids.separacion.push(sep.data.id);
   const lote = await api.createLote({ separacion_ids: [sep.data.id], peso_inicial_kg: 0.41, operator_name: OP });
-  ids.cochada.push(lote.data.id);
+  ids.lote.push(lote.data.id);
   await api.updateLoteQC(lote.data.id, { peso_final_kg: 0.11, tiempo_secado_horas: 14, qc_aprobado: true });
   await api.marcarEmpacado(lote.data.id, {});
   await api.marcarAtractante(ins.data.id);
@@ -188,7 +188,7 @@ try {
         'Corre supabase/migrations/0004_atribucion_acciones.sql.');
   }
 
-  const rQc = await db.from('cochada')
+  const rQc = await db.from('lote')
     .select('qc_por, empacado_por').eq('id', lote.data.id).single();
   if (rQc.data && rQc.data.qc_por === OP && rQc.data.empacado_por === OP) {
     ok('QC y empacado atribuidos', OP);
@@ -210,16 +210,16 @@ try {
     bad('cierre de ayuno', 'merma_pct = ' + (r4.data && r4.data.merma_pct));
   }
 
-  const r5 = await db.from('cochada').select('estado, rendimiento_pct').eq('id', lote.data.id).single();
+  const r5 = await db.from('lote').select('estado, rendimiento_pct').eq('id', lote.data.id).single();
   if (r5.data && r5.data.estado === 'empacado') {
-    ok('ciclo de cochada', 'empacado, rendimiento ' + r5.data.rendimiento_pct + '%');
+    ok('ciclo de lote', 'empacado, rendimiento ' + r5.data.rendimiento_pct + '%');
   } else {
-    bad('ciclo de cochada', 'estado = ' + (r5.data && r5.data.estado));
+    bad('ciclo de lote', 'estado = ' + (r5.data && r5.data.estado));
   }
 
-  const r6 = await db.from('cochada_separacion').select('separacion_id').eq('cochada_id', lote.data.id);
-  if (r6.data && r6.data.length === 1) ok('cochada vinculada a su separacion', 'nunca apunta a nada');
-  else bad('cochada vinculada a su separacion', ((r6.data && r6.data.length) || 0) + ' vinculos');
+  const r6 = await db.from('lote_separacion').select('separacion_id').eq('lote_id', lote.data.id);
+  if (r6.data && r6.data.length === 1) ok('lote vinculada a su separacion', 'nunca apunta a nada');
+  else bad('lote vinculada a su separacion', ((r6.data && r6.data.length) || 0) + ' vinculos');
 
   /* ── a second device: wipe everything local and pull from scratch ─────── */
   // Settle first. Every write called nudge(), so a background pass may still be
@@ -264,7 +264,7 @@ try {
   /* ── clean up the server ──────────────────────────────────────────────── */
   try {
     if (ids.bandeja.length) await db.from('alimentacion').delete().in('bandeja_id', ids.bandeja);
-    for (const t of ['cochada', 'separacion', 'ayuno', 'revision', 'bandeja', 'recoleccion', 'insectario']) {
+    for (const t of ['lote', 'separacion', 'ayuno', 'revision', 'bandeja', 'recoleccion', 'insectario']) {
       if (ids[t] && ids[t].length) await db.from(t).delete().in('id', ids[t]);
     }
     const left = await db.from('insectario').select('id').in('id', ids.insectario);

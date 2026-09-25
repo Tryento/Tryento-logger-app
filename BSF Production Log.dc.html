@@ -241,7 +241,7 @@ a:hover{color:#4ADE80}
         </sc-if>
 
         <sc-if value="{{ bd.showLoteLink }}" hint-placeholder-val="{{ false }}">
-          <button onClick="{{ bd.onOpenLote }}" style="width:100%;min-height:58px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Ver cochada {{ bd.loteId }} &#8250;</button>
+          <button onClick="{{ bd.onOpenLote }}" style="width:100%;min-height:58px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Ver lote {{ bd.loteId }} &#8250;</button>
         </sc-if>
 
         <div style="display:flex;flex-direction:column;gap:12px">
@@ -363,7 +363,7 @@ a:hover{color:#4ADE80}
               <input inputMode="decimal" value="{{ f.larva_limpia_g }}" onChange="{{ h.larva_limpia_g }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
               <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">g</div>
             </div>
-            <div style="font-size:14px;color:#7FA189">Esta bandeja quedará disponible para una cochada.</div>
+            <div style="font-size:14px;color:#7FA189">Esta bandeja quedará disponible para un lote.</div>
           </div>
         </sc-if>
 
@@ -653,7 +653,7 @@ a:hover{color:#4ADE80}
 
     <sc-if value="{{ isLotes }}" hint-placeholder-val="{{ false }}">
       <div style="display:flex;flex-direction:column;gap:14px">
-        <button onClick="{{ onNuevaCochada }}" style="width:100%;min-height:60px;border-radius:12px;border:1.5px dashed #2A4030;background:#141C16;font-size:17.5px;font-weight:700;color:#EAF7EC;cursor:pointer">+ Nueva cochada</button>
+        <button onClick="{{ onNuevaLote }}" style="width:100%;min-height:60px;border-radius:12px;border:1.5px dashed #2A4030;background:#141C16;font-size:17.5px;font-weight:700;color:#EAF7EC;cursor:pointer">+ Nuevo lote</button>
         <sc-for list="{{ loteRows }}" as="l" hint-placeholder-count="3">
           <button onClick="{{ l.onOpen }}" style="display:flex;flex-direction:column;gap:10px;width:100%;text-align:left;background:#141C16;border:1px solid #1D2A21;border-radius:13px;padding:14px 15px;cursor:pointer">
             <div style="display:flex;align-items:center;gap:10px">
@@ -694,7 +694,7 @@ a:hover{color:#4ADE80}
         </div>
 
         <div style="display:flex;flex-direction:column;gap:10px">
-          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">BANDEJAS EN ESTA COCHADA</div>
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">BANDEJAS EN ESTE LOTE</div>
           <sc-for list="{{ lote.separaciones }}" as="s" hint-placeholder-count="3">
             <div style="display:flex;align-items:center;gap:12px;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px 14px">
               <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15.5px;font-weight:600">{{ s.bandeja_label }}</span>
@@ -760,7 +760,7 @@ a:hover{color:#4ADE80}
 
         <sc-if value="{{ lote.showRechazoMotivo }}" hint-placeholder-val="{{ false }}">
           <div style="background:#1A1112;border:1px solid #F87171;border-radius:13px;padding:15px;color:#F87171;font-size:14.5px">
-            <div style="font-weight:700;margin-bottom:5px">Cochada rechazada</div>
+            <div style="font-weight:700;margin-bottom:5px">Lote rechazado</div>
             <div>{{ lote.rechazoMotivo }}</div>
           </div>
         </sc-if>
@@ -774,9 +774,9 @@ a:hover{color:#4ADE80}
       </div>
     </sc-if>
 
-    <sc-if value="{{ isNuevaCochada }}" hint-placeholder-val="{{ false }}">
+    <sc-if value="{{ isNuevoLote }}" hint-placeholder-val="{{ false }}">
       <div style="display:flex;flex-direction:column;gap:20px">
-        <div style="font-size:14.5px;color:#9FB8A6">El horno recibe hasta {{ ovenCapacidad }} bandejas metálicas por turno. Selecciona las separaciones que se pooleará en esta cochada.</div>
+        <div style="font-size:14.5px;color:#9FB8A6">El horno recibe hasta {{ ovenCapacidad }} bandejas metálicas por turno. Selecciona las separaciones que se pooleará en este lote.</div>
 
         <div style="display:flex;flex-direction:column;gap:9px">
           <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">FECHA</div>
@@ -823,7 +823,7 @@ a:hover{color:#4ADE80}
         </div>
 
         <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
-          <button onClick="{{ onSaveCochada }}" disabled="{{ cochadaDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ cochadaBg }};color:{{ cochadaFg }};font-size:19.5px;font-weight:700;cursor:pointer">{{ cochadaLabel }}</button>
+          <button onClick="{{ onSaveLote }}" disabled="{{ loteDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ loteBg }};color:{{ loteFg }};font-size:19.5px;font-weight:700;cursor:pointer">{{ loteLabel }}</button>
         </div>
       </div>
     </sc-if>
@@ -1183,8 +1183,8 @@ class Component extends DCLogic {
     this.setState({ prev: this.state.screen, screen: 'nuevaRecoleccion', form: { insectario_id: ins ? ins.id : '', fecha: this.now(), huevos_g: '', operator_name: this.state.operator || '' } });
   };
 
-  openNuevaCochada = async () => {
-    this.go('nuevaCochada', { form: { fecha: this.now(), separacion_ids: [], peso_inicial_kg: '', notas: '', operator_name: this.state.operator || '' } });
+  openNuevoLote = async () => {
+    this.go('nuevoLote', { form: { fecha: this.now(), separacion_ids: [], peso_inicial_kg: '', notas: '', operator_name: this.state.operator || '' } });
     const r = await this.api.listSeparacionesDisponibles();
     this.setState({ separacionesDisponibles: r.ok ? r.data : [] });
   };
@@ -1225,7 +1225,7 @@ class Component extends DCLogic {
     const i = arr.indexOf(id);
     if (i >= 0) { arr.splice(i, 1); }
     else {
-      if (arr.length >= cap) { this.toast('Máximo alcanzado', cap + ' bandejas metálicas por cochada', 'error'); return; }
+      if (arr.length >= cap) { this.toast('Máximo alcanzado', cap + ' bandejas metálicas por lote', 'error'); return; }
       arr.push(id);
     }
     const sum = arr.reduce((total, sid) => {
@@ -1321,13 +1321,13 @@ class Component extends DCLogic {
     this.openInsectarioDetalle(f.insectario_id);
   };
 
-  saveCochada = async () => {
+  saveLote = async () => {
     const f = this.state.form;
     this.setState({ saving: true });
     const r = await this.api.createLote(Object.assign({}, f, { bandejas_metalicas_usadas: (f.separacion_ids || []).length }));
     this.setState({ saving: false });
     if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
-    this.toast('Cochada creada', r.data.codigo);
+    this.toast('Lote creado', r.data.codigo);
     await this.refreshLists();
     this.openLoteDetalle(r.data.id);
   };
@@ -1390,14 +1390,14 @@ class Component extends DCLogic {
     // A rejection with no reason is not a record - the point is knowing WHY a
     // batch was lost so the process can change.
     this.ask({
-      title: 'Rechazar cochada',
+      title: 'Rechazar lote',
       hint: 'Por que se rechaza? (moho, tostado, prueba crujiente...)',
       placeholder: 'Motivo',
       confirmLabel: 'Rechazar'
     }, async motivo => {
-      const r = await this.api.rechazarCochada(lote.id, motivo);
+      const r = await this.api.rechazarLote(lote.id, motivo);
       if (!r.ok) return this.toast('No se guardo', r.error.message, 'error');
-      this.toast('Cochada rechazada', r.data.codigo, 'error');
+      this.toast('Lote rechazado', r.data.codigo, 'error');
       await this.refreshLists();
       this.openLoteDetalle(lote.id);
     });
@@ -1498,7 +1498,7 @@ class Component extends DCLogic {
       registrarEvento: 'Registrar evento', alimentarGrupal: 'Alimentar bandejas', nuevaBandeja: 'Nueva bandeja',
       insectarios: 'Insectarios', insectarioDetalle: s.insectarioDetalle ? s.insectarioDetalle.insectario.codigo : 'Insectario',
       nuevoInsectario: 'Nuevo insectario', nuevaRecoleccion: 'Nueva recolección',
-      lotes: 'Cochadas', loteDetalle: s.loteDetalle ? s.loteDetalle.lote.codigo : 'Cochada', nuevaCochada: 'Nueva cochada',
+      lotes: 'Lotes', loteDetalle: s.loteDetalle ? s.loteDetalle.lote.codigo : 'Lote', nuevoLote: 'Nuevo lote',
       sincronizacion: 'Sincronización'
     };
     const bandejasActivas = s.bandejas.filter(b => BANDEJA_ACTIVA(b.estado)).length;
@@ -1512,7 +1512,7 @@ class Component extends DCLogic {
       isAlimentarGrupal: screen === 'alimentarGrupal', isNuevaBandeja: screen === 'nuevaBandeja',
       isInsectarios: screen === 'insectarios', isInsectarioDetalle: screen === 'insectarioDetalle',
       isNuevoInsectario: screen === 'nuevoInsectario', isNuevaRecoleccion: screen === 'nuevaRecoleccion',
-      isLotes: screen === 'lotes', isLoteDetalle: screen === 'loteDetalle', isNuevaCochada: screen === 'nuevaCochada',
+      isLotes: screen === 'lotes', isLoteDetalle: screen === 'loteDetalle', isNuevoLote: screen === 'nuevoLote',
       isSync: screen === 'sincronizacion',
       showTabs: screen === 'home' || screen === 'bandejas' || screen === 'insectarios' || screen === 'lotes',
       f, h: this.handlers, ovenCapacidad: ovenCap,
@@ -1520,7 +1520,7 @@ class Component extends DCLogic {
       toastBg: s.toast && s.toast.tone === 'error' ? '#F87171' : '#22C55E', toastFg: '#061308',
       toastMarkBg: '#061308', toastMarkFg: s.toast && s.toast.tone === 'error' ? '#F87171' : '#22C55E',
       toastMark: s.toast && s.toast.tone === 'error' ? '!' : '✓',
-      tabs: [['home', 'Inicio'], ['bandejas', 'Bandejas'], ['insectarios', 'Insectarios'], ['lotes', 'Cochadas']].map(t => {
+      tabs: [['home', 'Inicio'], ['bandejas', 'Bandejas'], ['insectarios', 'Insectarios'], ['lotes', 'Lotes']].map(t => {
         const active = screen === t[0];
         return { label: t[1], fg: active ? '#EAF7EC' : '#5F7A68', mark: active ? NEON : 'transparent', onClick: () => this.setState({ screen: t[0], tab: t[0], prev: screen }) };
       })
@@ -1805,7 +1805,7 @@ class Component extends DCLogic {
       metrics: [{ label: 'PESO FINAL', value: l.peso_final_kg == null ? '—' : l.peso_final_kg + ' kg' }, { label: 'RENDIMIENTO', value: l.rendimiento_pct == null ? '—' : l.rendimiento_pct + '%' }, { label: 'BANDEJAS', value: l.n_bandejas + '/' + ovenCap }],
       onOpen: () => this.openLoteDetalle(l.id)
     }));
-    vals.onNuevaCochada = this.openNuevaCochada;
+    vals.onNuevaLote = this.openNuevoLote;
 
     const loD = s.loteDetalle;
     if (loD) {
@@ -1854,7 +1854,7 @@ class Component extends DCLogic {
     vals.onAprobarQc = this.aprobarQc; vals.onRechazarQc = this.rechazarQc;
     vals.onMarcarEmpacado = this.marcarEmpacado; vals.onMarcarDespachado = this.marcarDespachado;
 
-    /* nueva cochada */
+    /* nuevo lote */
     const selSep = f.separacion_ids || [];
     vals.separacionChips = s.separacionesDisponibles.map(sep => {
       const selected = selSep.indexOf(sep.id) >= 0;
@@ -1865,10 +1865,10 @@ class Component extends DCLogic {
     vals.noSeparacionesDisponibles = s.separacionesDisponibles.length === 0;
     vals.ovenCountLabel = selSep.length + ' / ' + ovenCap + ' bandejas metálicas';
     vals.ovenCountColor = selSep.length >= ovenCap ? '#FB923C' : '#22C55E';
-    vals.cochadaDisabled = s.saving || !selSep.length;
-    vals.cochadaBg = vals.cochadaDisabled ? DISABLED_BG : NEON; vals.cochadaFg = vals.cochadaDisabled ? DISABLED_FG : INK;
-    vals.cochadaLabel = s.saving ? 'Guardando…' : 'Crear cochada';
-    vals.onSaveCochada = this.saveCochada;
+    vals.loteDisabled = s.saving || !selSep.length;
+    vals.loteBg = vals.loteDisabled ? DISABLED_BG : NEON; vals.loteFg = vals.loteDisabled ? DISABLED_FG : INK;
+    vals.loteLabel = s.saving ? 'Guardando…' : 'Crear lote';
+    vals.onSaveLote = this.saveLote;
 
     return vals;
   }

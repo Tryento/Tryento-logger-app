@@ -95,7 +95,7 @@ select
   extract(day from ay.fecha - b.fecha)::int           as dias_siembra_a_ayuno,
   extract(day from s.fecha - ay.fecha)::int           as dias_ayuno_a_separacion,
   extract(day from s.fecha - b.fecha)::int            as dias_ciclo_bandeja,
-  extract(day from c.fecha - s.fecha)::int            as dias_separacion_a_cochada,
+  extract(day from c.fecha - s.fecha)::int            as dias_separacion_a_lote,
   extract(day from c.despachado_at - b.fecha)::int    as dias_total_a_despacho
 from app.bandeja b
 join app.recoleccion r on r.id = b.recoleccion_id
@@ -106,8 +106,8 @@ left join lateral (
   order by a.fecha limit 1
 ) ay on true
 left join app.separacion s on s.bandeja_id = b.id and s.deleted_at is null
-left join app.cochada_separacion cs on cs.separacion_id = s.id
-left join app.cochada c on c.id = cs.cochada_id and c.deleted_at is null
+left join app.lote_separacion cs on cs.separacion_id = s.id
+left join app.lote c on c.id = cs.lote_id and c.deleted_at is null
 where b.deleted_at is null
   and b.cerrada_admin_at is null;
 
@@ -144,7 +144,7 @@ group by i.id;
 
 
 -- 5 ── oven-run yield over time ---------------------------------------------
-create or replace view app.v_rendimiento_cochada as
+create or replace view app.v_rendimiento_lote as
 select
   c.id,
   c.codigo,
@@ -169,13 +169,13 @@ select
   avg(c.rendimiento_pct) over (
     order by c.fecha rows between 4 preceding and current row
   ) as rendimiento_media_movil_5
-from app.cochada c
+from app.lote c
 join lateral (
   select count(*)                              as n_separaciones,
          coalesce(sum(s.larva_limpia_g), 0)    as g_larva_aportada
-  from app.cochada_separacion cs
+  from app.lote_separacion cs
   join app.separacion s on s.id = cs.separacion_id
-  where cs.cochada_id = c.id
+  where cs.lote_id = c.id
 ) n on true
 where c.deleted_at is null;
 
@@ -277,22 +277,22 @@ select 'bandeja_sin_eventos_7d', count(*)
       select 1 from app.alimentacion a
       where a.bandeja_id = b.id and a.fecha > now() - interval '7 days')
 union all
-select 'separacion_sin_cochada_14d', count(*)
+select 'separacion_sin_lote_14d', count(*)
   from app.separacion s
   where s.deleted_at is null
     and s.fecha < now() - interval '14 days'
     and not exists (
-      select 1 from app.cochada_separacion cs where cs.separacion_id = s.id)
+      select 1 from app.lote_separacion cs where cs.separacion_id = s.id)
 union all
-select 'cochada_empacada_sin_despachar_30d', count(*)
-  from app.cochada
+select 'lote_empacada_sin_despachar_30d', count(*)
+  from app.lote
   where empacado_at is not null
     and despachado_at is null
     and empacado_at < now() - interval '30 days'
     and deleted_at is null
 union all
-select 'cochada_secando_mas_72h', count(*)
-  from app.cochada
+select 'lote_secando_mas_72h', count(*)
+  from app.lote
   where estado = 'secando'
     and fecha < now() - interval '72 hours'
     and deleted_at is null
@@ -310,6 +310,6 @@ create or replace view app.v_bandejas_activas as
 create or replace view app.v_insectarios_activos as
   select * from app.insectario where deleted_at is null and estado = 'activo';
 
-create or replace view app.v_cochadas_activas as
-  select * from app.cochada
+create or replace view app.v_lotes_activos as
+  select * from app.lote
   where deleted_at is null and estado not in ('despachado', 'rechazado');

@@ -31,7 +31,7 @@ import { uploadBlobsFor } from './blobs.js';
  *
  *  - GENERATED ALWAYS columns (`merma_pct`, `rendimiento_pct`,
  *    `poblacion_estimada`, the deviations) plus `estado`, which is either
- *    generated (insectario, cochada) or trigger-owned (bandeja). Postgres
+ *    generated (insectario, lote) or trigger-owned (bandeja). Postgres
  *    rejects an INSERT that supplies a generated column.
  *
  *  - Read-side conveniences that are not a column on ANY table
@@ -90,7 +90,7 @@ export function toWire(table, row) {
 async function execute(client, item) {
   if (item.op === 'upsert') {
     // onConflict:'id' + ignoreDuplicates makes a replayed item a no-op, while
-    // a DIFFERENT unique index (separacion.bandeja_id, cochada_separacion.
+    // a DIFFERENT unique index (separacion.bandeja_id, lote_separacion.
     // separacion_id) still raises 23505 — which is exactly what we want it to
     // do, because that means two devices recorded the same physical event.
     const { error } = await client
@@ -103,8 +103,8 @@ async function execute(client, item) {
   if (item.op === 'rpc' || item.op === 'cas') {
     const payload = item.rpc === 'log_alimentacion_grupal'
       ? { p_rows: (item.payload.p_rows || []).map(r => toWire('alimentacion', r)) }
-      : item.rpc === 'crear_cochada'
-        ? { p_cochada: toWire('cochada', item.payload.p_cochada), p_separacion_ids: item.payload.p_separacion_ids }
+      : item.rpc === 'crear_lote'
+        ? { p_lote: toWire('lote', item.payload.p_lote), p_separacion_ids: item.payload.p_separacion_ids }
         : item.payload;
     const { error } = await client.rpc(item.rpc, payload);
     if (error) throw toError(error);

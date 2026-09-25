@@ -71,10 +71,10 @@ export async function refreshBandeja(stores, bandejaId) {
   const abierto = ayunos.find(a => a.peso_final_kg === null || a.peso_final_kg === undefined) || null;
   const sep = seps[0] || null;
 
-  let cochadaId = null;
+  let loteId = null;
   if (sep) {
-    const links = await reqToPromise(stores.cochada_separacion.index('by_separacion').getAll(sep.id));
-    cochadaId = links[0]?.cochada_id ?? null;
+    const links = await reqToPromise(stores.lote_separacion.index('by_separacion').getAll(sep.id));
+    loteId = links[0]?.lote_id ?? null;
   }
 
   const cache = {
@@ -89,7 +89,7 @@ export async function refreshBandeja(stores, bandejaId) {
     ayuno_abierto_id: abierto?.id ?? null,
     separacion_id: sep?.id ?? null,
     larva_limpia_g: sep ? Number(sep.larva_limpia_g) || 0 : null,
-    cochada_id: cochadaId,
+    lote_id: loteId,
     updated_at: new Date().toISOString()
   };
 
@@ -108,7 +108,7 @@ export async function refreshBandeja(stores, bandejaId) {
 /** Stores a transaction must include to call refreshBandeja. */
 export const REFRESH_STORES = [
   'bandeja', 'bandeja_cache', 'alimentacion', 'ayuno', 'revision',
-  'separacion', 'cochada_separacion'
+  'separacion', 'lote_separacion'
 ];
 
 /** Refresh several trays in one transaction. */

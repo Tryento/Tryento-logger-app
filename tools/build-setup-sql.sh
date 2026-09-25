@@ -33,6 +33,12 @@ HEADER
 # Globbed, not listed: a hardcoded list means a new migration silently never
 # reaches the one-paste setup file.
 for f in $(ls supabase/migrations/*.sql | sort); do
+  # Repair scripts fix an EXISTING database. Bundling them into the fresh-install
+  # file would drop objects the files above it just created.
+  if head -3 "$f" | grep -q '@setup-skip'; then
+    echo "  skip    $(basename "$f")  (reparacion)"
+    continue
+  fi
   printf '\n\n-- ############################################################################\n' >> "$OUT"
   printf -- '-- %s\n' "$(basename "$f")" >> "$OUT"
   printf -- '-- ############################################################################\n\n' >> "$OUT"

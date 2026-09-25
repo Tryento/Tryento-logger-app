@@ -116,7 +116,7 @@ The mechanism is forced by where the inputs live — it is not a preference:
 
 | Entity | Inputs | Mechanism |
 |---|---|---|
-| `insectario`, `cochada` | same row | `GENERATED ALWAYS AS … STORED` |
+| `insectario`, `lote` | same row | `GENERATED ALWAYS AS … STORED` |
 | `bandeja` | other tables (`ayuno`, `separacion`) | trigger — a cross-table generated column is *impossible* in Postgres |
 
 **2. Tray state is monotonic.** `cosechada > en_ayuno > en_crecimiento`, and no
@@ -222,7 +222,7 @@ Exposed as SQL views in [`0002_views.sql`](supabase/migrations/0002_views.sql)
 so the Streamlit dashboard (`Tryento/Dashboard-demo`) stays thin:
 
 `v_rendimiento_bandeja` · `v_fcr_bandeja` · `v_tiempos_ciclo` ·
-`v_productividad_insectario` · `v_rendimiento_cochada` · `v_actividad_operario` ·
+`v_productividad_insectario` · `v_rendimiento_lote` · `v_actividad_operario` ·
 `v_consumo_alimento` · `v_calidad_datos`
 
 **Connection model matters.** Streamlit must connect as `analytics_ro` through

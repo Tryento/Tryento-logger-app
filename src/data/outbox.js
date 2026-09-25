@@ -186,7 +186,7 @@ export async function claimBatch(db, { limit = 50, now = Date.now() } = {}) {
     // ── per-row FIFO ────────────────────────────────────────────────────────
     // An operation must never overtake an earlier one on the SAME row.
     //
-    // This is what made `cerrar_ayuno` and `actualizar_qc_cochada` fail
+    // This is what made `cerrar_ayuno` and `actualizar_qc_lote` fail
     // silently: they carry no dependency of their own, so when the INSERT of
     // the row they update was held back waiting for its parent, the CAS ran
     // first, updated zero rows, reported success, and the weight was lost with

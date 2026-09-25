@@ -114,9 +114,9 @@ export function bandejaLabel(fecha, recolecta, noBandeja) {
 /**
  * `CO-260922-K7QM` — oven run. Date plus a random suffix rather than a counter,
  * because a global counter cannot be assigned offline without collisions and a
- * cochada is a physical event that must never be merged with another.
+ * lote is a physical event that must never be merged with another.
  */
-export function cochadaCodigo(fecha) {
+export function loteCodigo(fecha) {
   const d = farmDay(fecha) || farmDay();
   return `CO-${d.slice(2).replace(/-/g, '')}-${shortCode(4)}`;
 }

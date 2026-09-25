@@ -11,7 +11,7 @@ import { enqueue, OPEN_STATUSES, STUCK_STATUSES } from './outbox.js';
 export function storesFor(store, { withOutbox = true } = {}) {
   const set = new Set([store]);
   if (withOutbox) { set.add('outbox'); set.add('meta'); }
-  if (EVENT_STORES.includes(store) || store === 'cochada_separacion' || store === 'bandeja') {
+  if (EVENT_STORES.includes(store) || store === 'lote_separacion' || store === 'bandeja') {
     for (const s of REFRESH_STORES) set.add(s);
   }
   return [...set];
@@ -63,13 +63,13 @@ export async function applyServerRows(db, store, rows) {
   let applied = 0, skipped = 0;
 
   const names = new Set([store]);
-  const isEvent = EVENT_STORES.includes(store) || store === 'cochada_separacion';
+  const isEvent = EVENT_STORES.includes(store) || store === 'lote_separacion';
   if (isEvent || store === 'bandeja') for (const s of REFRESH_STORES) names.add(s);
 
   await withTx(db, [...names], 'readwrite', async s => {
     for (const row of rows) {
-      const key = store === 'cochada_separacion'
-        ? `${row.cochada_id}:${row.separacion_id}`
+      const key = store === 'lote_separacion'
+        ? `${row.lote_id}:${row.separacion_id}`
         : row.id;
       if (guarded.has(key) || guarded.has(row.id)) { skipped++; continue; }
       await reqToPromise(s[store].put(withIndexMirrors(store, row)));
@@ -90,7 +90,7 @@ export async function putLocal(db, store, rows) {
   const list = Array.isArray(rows) ? rows : [rows];
   const trays = new Set();
   const names = new Set([store]);
-  if (EVENT_STORES.includes(store) || store === 'bandeja' || store === 'cochada_separacion') {
+  if (EVENT_STORES.includes(store) || store === 'bandeja' || store === 'lote_separacion') {
     for (const s of REFRESH_STORES) names.add(s);
   }
   await withTx(db, [...names], 'readwrite', async s => {

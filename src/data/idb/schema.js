@@ -31,8 +31,8 @@ export const SYNCED_STORES = [
   'ayuno',
   'revision',
   'separacion',
-  'cochada',
-  'cochada_separacion'
+  'lote',
+  'lote_separacion'
 ];
 
 /** Stores that are purely local machinery and never pulled from the server. */
@@ -59,11 +59,11 @@ const STORE_DEFS = {
                      ['by_updated', 'updated_at']] },
   revision:      { keyPath: 'id', indexes: [['by_bandeja', 'bandeja_id'], ['by_updated', 'updated_at']] },
   separacion:    { keyPath: 'id', indexes: [['by_bandeja', 'bandeja_id'], ['by_updated', 'updated_at']] },
-  cochada:       { keyPath: 'id', indexes: [['by_estado', 'estado'], ['by_updated', 'updated_at']] },
-  cochada_separacion: {
-                   keyPath: ['cochada_id', 'separacion_id'],
+  lote:       { keyPath: 'id', indexes: [['by_estado', 'estado'], ['by_updated', 'updated_at']] },
+  lote_separacion: {
+                   keyPath: ['lote_id', 'separacion_id'],
                    indexes: [
-                     ['by_cochada', 'cochada_id'],
+                     ['by_lote', 'lote_id'],
                      ['by_separacion', 'separacion_id'],
                      ['by_updated', 'updated_at']] },
 

@@ -28,7 +28,7 @@ let _started = false;
  * Run `fn` as the single sync leader across all open tabs.
  *
  * Without this, two tabs drain the same queue concurrently. Idempotent upserts
- * survive that, but an RPC (the bulk feed, creating a cochada) is not
+ * survive that, but an RPC (the bulk feed, creating a lote) is not
  * guaranteed to, and neither are blob uploads.
  */
 async function asLeader(fn) {

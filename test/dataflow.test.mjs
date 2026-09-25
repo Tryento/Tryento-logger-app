@@ -256,7 +256,7 @@ test('estado is monotonic — a late feeding cannot un-harvest a tray', async ()
     'cosechada > en_ayuno > en_crecimiento, and nothing moves backwards');
 });
 
-test('cochada pools separaciones and runs the full QC lifecycle', async () => {
+test('lote pools separaciones and runs the full QC lifecycle', async () => {
   const created = await api.createLote({
     separacion_ids: [state.separacion.id], peso_inicial_kg: 0.41, operator_name: OP
   });
@@ -300,10 +300,10 @@ test('a failed oven run can be rejected, with a mandatory reason', async () => {
   const sep = await api.logSeparacion({ bandeja_id: state.bandeja2.id, larva_limpia_g: 380, operator_name: OP });
   const lote = await api.createLote({ separacion_ids: [sep.data.id], peso_inicial_kg: 0.38, operator_name: OP });
 
-  const noReason = await api.rechazarCochada(lote.data.id, '  ');
+  const noReason = await api.rechazarLote(lote.data.id, '  ');
   assert.equal(noReason.ok, false, 'a rejection without a reason is not a record');
 
-  const rejected = await api.rechazarCochada(lote.data.id, 'Moho en dos bandejas metálicas.');
+  const rejected = await api.rechazarLote(lote.data.id, 'Moho en dos bandejas metálicas.');
   assert.ok(rejected.ok, JSON.stringify(rejected.error));
   assert.equal(rejected.data.estado, 'rechazado');
   assert.equal(rejected.data.qc_aprobado, false);
@@ -363,7 +363,7 @@ test('the per-tray cache stays consistent with the events', async () => {
   assert.equal(cache.n_alimentaciones, 3);      // individual + grupal + late one
   assert.equal(cache.tiene_ayuno_abierto, 0);
   assert.equal(cache.larva_limpia_g, 410);
-  assert.ok(cache.cochada_id, 'links through to the oven run');
+  assert.ok(cache.lote_id, 'links through to the oven run');
 });
 
 test('insectario detail carries its recolecciones', async () => {

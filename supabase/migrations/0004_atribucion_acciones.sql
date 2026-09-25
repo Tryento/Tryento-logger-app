@@ -1,8 +1,8 @@
 -- ============================================================================
 -- Quién hizo cada acción de un toque.
 --
--- `registrado_por` en insectario y cochada dice quién CREÓ el registro. No dice
--- quién marcó el atractante tres semanas después, ni quién despachó la cochada
+-- `registrado_por` en insectario y lote dice quién CREÓ el registro. No dice
+-- quién marcó el atractante tres semanas después, ni quién despachó el lote
 -- — y muchas veces no es la misma persona.
 --
 -- Las acciones de un toque sólo estampaban la fecha, así que ese dato se perdía.
@@ -18,7 +18,7 @@ alter table app.insectario
   add column if not exists fecha_ovipositores_por text,
   add column if not exists cierre_real_por        text;
 
-alter table app.cochada
+alter table app.lote
   add column if not exists qc_por          text,
   add column if not exists empacado_por    text,
   add column if not exists despachado_por  text,
@@ -57,14 +57,14 @@ begin
   return r;
 end $$;
 
-create or replace function app.actualizar_qc_cochada(
+create or replace function app.actualizar_qc_lote(
   p_id uuid, p_tiempo numeric, p_peso_final numeric,
   p_color text, p_prueba text, p_aprobado boolean, p_foto_key text,
   p_por text default null)
-returns app.cochada language plpgsql set search_path = app, public as $$
-declare r app.cochada;
+returns app.lote language plpgsql set search_path = app, public as $$
+declare r app.lote;
 begin
-  update app.cochada set
+  update app.lote set
     tiempo_secado_horas = coalesce(p_tiempo,     tiempo_secado_horas),
     peso_final_kg       = coalesce(p_peso_final, peso_final_kg),
     qc_color_dorado     = coalesce(p_color,      qc_color_dorado),
@@ -74,52 +74,52 @@ begin
     qc_por              = coalesce(nullif(p_por, ''), qc_por)
    where id = p_id and despachado_at is null and rechazado_at is null
   returning * into r;
-  if r.id is null then select * into r from app.cochada where id = p_id; end if;
+  if r.id is null then select * into r from app.lote where id = p_id; end if;
   return r;
 end $$;
 
 create or replace function app.marcar_empacado(p_id uuid, p_vencimiento date, p_por text default null)
-returns app.cochada language plpgsql set search_path = app, public as $$
-declare r app.cochada;
+returns app.lote language plpgsql set search_path = app, public as $$
+declare r app.lote;
 begin
-  update app.cochada
+  update app.lote
      set empacado_at = now(),
          empacado_por = coalesce(nullif(p_por, ''), empacado_por),
          fecha_vencimiento = coalesce(
            p_vencimiento, ((now() at time zone 'America/Caracas')::date + 180))
    where id = p_id and empacado_at is null and qc_aprobado is true
   returning * into r;
-  if r.id is null then select * into r from app.cochada where id = p_id; end if;
+  if r.id is null then select * into r from app.lote where id = p_id; end if;
   return r;
 end $$;
 
 create or replace function app.marcar_despachado(p_id uuid, p_por text default null)
-returns app.cochada language plpgsql set search_path = app, public as $$
-declare r app.cochada;
+returns app.lote language plpgsql set search_path = app, public as $$
+declare r app.lote;
 begin
-  update app.cochada
+  update app.lote
      set despachado_at = now(),
          despachado_por = coalesce(nullif(p_por, ''), despachado_por)
    where id = p_id and despachado_at is null and empacado_at is not null
   returning * into r;
-  if r.id is null then select * into r from app.cochada where id = p_id; end if;
+  if r.id is null then select * into r from app.lote where id = p_id; end if;
   return r;
 end $$;
 
-create or replace function app.rechazar_cochada(p_id uuid, p_motivo text, p_por text default null)
-returns app.cochada language plpgsql set search_path = app, public as $$
-declare r app.cochada;
+create or replace function app.rechazar_lote(p_id uuid, p_motivo text, p_por text default null)
+returns app.lote language plpgsql set search_path = app, public as $$
+declare r app.lote;
 begin
   if coalesce(trim(p_motivo), '') = '' then
     raise exception 'motivo de rechazo requerido' using errcode = '22023';
   end if;
-  update app.cochada
+  update app.lote
      set rechazado_at = now(),
          rechazo_motivo = p_motivo,
          rechazado_por = coalesce(nullif(p_por, ''), rechazado_por),
          qc_aprobado = false
    where id = p_id and rechazado_at is null and despachado_at is null
   returning * into r;
-  if r.id is null then select * into r from app.cochada where id = p_id; end if;
+  if r.id is null then select * into r from app.lote where id = p_id; end if;
   return r;
 end $$;

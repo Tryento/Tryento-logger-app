@@ -12,18 +12,22 @@ About 20 minutes. Two services, both free tier:
 
 ---
 
-> ### ⚠ Si ya tienes la base creada: corre `0004` ANTES de desplegar
+> ### ⚠ Si ya tienes la base creada: corre `0004` y `0005` ANTES de desplegar
 >
-> `supabase/migrations/0004_atribucion_acciones.sql` agrega quién hizo cada
-> acción de un toque (atractante, cierre, QC, empacado, despacho, rechazo).
+> **`0004_atribucion_acciones.sql`** agrega quién hizo cada acción de un toque
+> (atractante, cierre, QC, empacado, despacho, rechazo).
 >
-> **El orden importa.** La app nueva llama a esas funciones con un parámetro
-> más. Si despliegas primero, Atractante y Cierre dejan de funcionar hasta que
-> corras el SQL. Corre el SQL primero y todo sigue andando, incluso desde
-> teléfonos con la versión vieja.
+> **`0005_renombrar_lote.sql`** devuelve `cochada` a `lote`, el nombre que usa
+> el equipo en AppSheet. Renombra en el lugar, sin tocar los datos. Después de
+> correrlo, vuelve a pegar `SETUP_COMPLETO.sql` para recrear las funciones y
+> vistas con los nombres nuevos.
 >
-> SQL Editor → pega `0004_atribucion_acciones.sql` → Run. Es seguro correrlo
-> dos veces.
+> **El orden importa.** La app nueva llama a las funciones con un parámetro más
+> y con los nombres nuevos. Si despliegas primero, Atractante, Cierre y todo lo
+> de Lotes dejan de funcionar hasta correr el SQL.
+>
+> En una base NUEVA no hace falta ninguno de los dos: `SETUP_COMPLETO.sql` ya
+> viene con todo.
 
 ## Step 0 — be in the right folder
 
@@ -83,9 +87,9 @@ the built-in terminal always starts in the right place.
 6. Wait for the green **Success. No rows returned**. It takes a few seconds.
 
 **Confirm it worked** — click **Table Editor** in the sidebar, and in the schema
-dropdown at the top (it says `public`) choose **`app`**. You should see 13
+dropdown at the top (it says `public`) choose **`app`**. You should see 12
 tables: `alimentacion`, `ayuno`, `ayuno_huerfano`, `bandeja`, `catalogo`,
-`cochada`, `cochada_separacion`, `insectario`, `migracion_log`, `recoleccion`,
+`insectario`, `lote`, `lote_separacion`, `migracion_log`, `recoleccion`,
 `revision`, `separacion`.
 
 If you see an error instead, run the three files in `supabase/migrations/` one

@@ -25,7 +25,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PREFIX = 'ZZTEST-';
 
 let pass = 0, fail = 0;
-const created = { cochada: [], separacion: [], ayuno: [], revision: [], alimentacion: [], bandeja: [], recoleccion: [], insectario: [] };
+const created = { lote: [], separacion: [], ayuno: [], revision: [], alimentacion: [], bandeja: [], recoleccion: [], insectario: [] };
 
 function ok(label, extra = '') { pass++; console.log(`  ok    ${label}${extra ? '   ' + extra : ''}`); }
 function bad(label, why, fix) {
@@ -246,32 +246,32 @@ async function main() {
   /* 7 ── the oven run and its join rows, in one transaction ──────────────── */
   const cochId = uuid();
   {
-    const { error } = await db.rpc('crear_cochada', {
-      p_cochada: {
+    const { error } = await db.rpc('crear_lote', {
+      p_lote: {
         id: cochId, codigo: PREFIX + 'C' + Date.now(), fecha: new Date().toISOString(),
         peso_inicial_kg: 0.41, bandejas_metalicas_usadas: 1, notas: '',
         registrado_por: 'check-backend', dispositivo_id: uuid()
       },
       p_separacion_ids: [sepId]
     });
-    if (error) { bad('crear cochada (RPC)', error.message); }
+    if (error) { bad('crear lote (RPC)', error.message); }
     else {
-      created.cochada.push(cochId);
-      const { data: links } = await db.from('cochada_separacion').select('separacion_id').eq('cochada_id', cochId);
-      if (links?.length === 1) ok('cochada + separaciones', 'creadas juntas, nunca a medias');
-      else bad('cochada + separaciones', `se crearon ${links?.length ?? 0} vínculos, se esperaba 1`);
+      created.lote.push(cochId);
+      const { data: links } = await db.from('lote_separacion').select('separacion_id').eq('lote_id', cochId);
+      if (links?.length === 1) ok('lote + separaciones', 'creadas juntas, nunca a medias');
+      else bad('lote + separaciones', `se crearon ${links?.length ?? 0} vínculos, se esperaba 1`);
 
-      await db.rpc('actualizar_qc_cochada', {
+      await db.rpc('actualizar_qc_lote', {
         p_id: cochId, p_tiempo: 14, p_peso_final: 0.11,
         p_color: 'Muy Crujiente', p_prueba: null, p_aprobado: true, p_foto_key: null
       });
-      const { data: c } = await db.from('cochada').select('estado, rendimiento_pct').eq('id', cochId).single();
-      if (c?.estado === 'en_qc') ok('ciclo de la cochada', `en_qc, rendimiento ${c.rendimiento_pct}%`);
-      else bad('ciclo de la cochada', `estado = ${c?.estado}, se esperaba en_qc`);
+      const { data: c } = await db.from('lote').select('estado, rendimiento_pct').eq('id', cochId).single();
+      if (c?.estado === 'en_qc') ok('ciclo de el lote', `en_qc, rendimiento ${c.rendimiento_pct}%`);
+      else bad('ciclo de el lote', `estado = ${c?.estado}, se esperaba en_qc`);
 
       // Dispatching before packing must be impossible.
       await db.rpc('marcar_despachado', { p_id: cochId });
-      const { data: c2 } = await db.from('cochada').select('estado').eq('id', cochId).single();
+      const { data: c2 } = await db.from('lote').select('estado').eq('id', cochId).single();
       if (c2?.estado === 'en_qc') ok('orden del proceso', 'no deja despachar sin empacar');
       else bad('orden del proceso', `permitió pasar a "${c2?.estado}" sin empacar`);
     }
@@ -280,7 +280,7 @@ async function main() {
   /* 8 ── the analytics views the dashboard reads ─────────────────────────── */
   {
     const views = ['v_rendimiento_bandeja', 'v_fcr_bandeja', 'v_tiempos_ciclo',
-                   'v_productividad_insectario', 'v_rendimiento_cochada',
+                   'v_productividad_insectario', 'v_rendimiento_lote',
                    'v_actividad_operario', 'v_calidad_datos', 'v_estado_drift'];
     const missing = [];
     for (const v of views) {
@@ -315,7 +315,7 @@ async function main() {
 
   /* 10 ── clean up ───────────────────────────────────────────────────────── */
   {
-    const order = ['cochada', 'separacion', 'ayuno', 'revision', 'alimentacion', 'bandeja', 'recoleccion', 'insectario'];
+    const order = ['lote', 'separacion', 'ayuno', 'revision', 'alimentacion', 'bandeja', 'recoleccion', 'insectario'];
     let left = 0;
     for (const table of order) {
       const ids = created[table];
