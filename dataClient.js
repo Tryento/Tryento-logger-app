@@ -91,13 +91,35 @@ async function refreshCatalogos() {
 /* ── initialisation ─────────────────────────────────────────────────────── */
 
 let _ready = null;
+const _initErrors = [];
 
+/** Problems hit during start-up, surfaced on the sync screen. */
+export const initErrors = () => _initErrors.slice();
+
+/**
+ * Boot the data layer.
+ *
+ * Every step is individually guarded so that refreshStatus() ALWAYS runs. If
+ * start-up threw halfway — which is what a stale local database did after the
+ * store rename — the status was never published, and the sync screen rendered
+ * "not loaded yet" as "no hay servidor configurado". A backend problem that was
+ * not one, with nothing on screen pointing at the real cause.
+ */
 async function init() {
   const db = await openDb();
-  await loadCachedSession(db);
-  await seedIfEmpty(db);
-  await refreshCatalogos();
+
+  const step = async (name, fn) => {
+    try { await fn(); } catch (e) {
+      console.error(`[tryento] fallo al iniciar (${name})`, e);
+      _initErrors.push(`${name}: ${e.message}`);
+    }
+  };
+
+  await step('sesión', () => loadCachedSession(db));
+  await step('catálogos', () => seedIfEmpty(db));
+  await step('listas', () => refreshCatalogos());
   requestPersistentStorage().catch(() => {});
+
   await refreshStatus();
   if (isBackendConfigured()) startSync().catch(e => console.warn('[tryento] sync no inició', e));
   return db;

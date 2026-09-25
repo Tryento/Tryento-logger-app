@@ -91,7 +91,7 @@ export async function refreshStatus() {
 
 /** Short Spanish label + tone for the header chip. */
 export function statusLabel(s) {
-  if (!s) return { text: '...', tone: 'idle' };
+  if (!s) return { text: 'Conectando…', tone: 'idle' };
   if (!s.configured) return { text: 'Sólo local', tone: 'warn' };
   if (s.conflicts > 0) return { text: `${s.conflicts} conflicto${s.conflicts > 1 ? 's' : ''}`, tone: 'error' };
   if (s.stuck > 0) return { text: `${s.stuck} sin enviar`, tone: 'error' };

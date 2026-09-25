@@ -1647,12 +1647,19 @@ class Component extends DCLogic {
       await this.refreshLists();
       await this.refreshSecondary();
     };
-    vals.syncHeadline = !sync.configured ? 'Sólo en este equipo'
+    // "Todavia no se" and "no hay servidor" are different things. Rendering the
+    // first as the second is what made a failed start-up look like a backend
+    // problem: the app had simply never finished loading its status.
+    const syncUnknown = !s.sync;
+    vals.syncHeadline = syncUnknown ? 'Conectando…'
+      : !sync.configured ? 'Sólo en este equipo'
       : sync.conflicts ? 'Hay registros rechazados'
       : !sync.online ? 'Sin conexión'
       : sync.pending ? 'Enviando trabajo pendiente'
       : 'Todo sincronizado';
-    vals.syncDetail = !sync.configured
+    vals.syncDetail = syncUnknown
+      ? 'Revisando el estado de la sincronización…'
+      : !sync.configured
       ? 'No hay servidor configurado, así que nada sale de este teléfono. Sirve para probar, no para producción.'
       : [
           sync.pending ? sync.pending + ' registro(s) esperando enviarse' : 'Sin registros pendientes',
