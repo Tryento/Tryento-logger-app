@@ -1,0 +1,54 @@
+# Netlify headers. Mirrored in netlify.toml; this copy is what ships inside
+# dist/ so drag-and-drop and CLI deploys behave like a git build.
+
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), payment=(), usb=(), camera=(self)
+  Cross-Origin-Opener-Policy: same-origin
+  # 'unsafe-eval' is REQUIRED and cannot be removed: the DC runtime compiles the
+  # component's logic with new Function() (support.js:844). It is the cost of
+  # keeping the .dc.html authoring format. Everything else is locked to self —
+  # no CDN can inject script, because nothing is loaded from one.
+  # connect-src must list your Supabase project; wss is for realtime/auth.
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; media-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'self'
+
+# The shell must revalidate, or a deploy never reaches a device that already
+# has the old one cached.
+/
+  Cache-Control: public, max-age=0, must-revalidate
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+# The service worker decides what every other asset does, so it must never be
+# served stale. A cached sw.js is a device permanently stuck on an old build.
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+/sw-precache.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Deployment config: must be re-readable so a key rotation propagates.
+/app-config.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+/manifest.webmanifest
+  Cache-Control: public, max-age=3600
+
+# Content-addressed in practice (a change means a new build and a new SW
+# version, which re-fetches everything), so these can be cached hard.
+/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+/img/*
+  Cache-Control: public, max-age=604800
+
+# App modules change with each build; the SW handles versioning, but keep the
+# browser honest for the first load after a deploy.
+/src/*
+  Cache-Control: public, max-age=0, must-revalidate
+/dataClient.js
+  Cache-Control: public, max-age=0, must-revalidate
+/support.js
+  Cache-Control: public, max-age=0, must-revalidate

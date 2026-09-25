@@ -1,0 +1,1798 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A0A0A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TryEnto">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./img/apple-touch-icon.png">
+<link rel="icon" href="./img/icon.svg" type="image/svg+xml">
+
+<!-- Self-hosted React. support.js:1840 early-returns from loadReactUmd() when
+     window.React already exists, so loading our own copies first takes over
+     with no edit to the generated runtime. Fetching these from unpkg is what
+     made the app impossible to open in a shed with no signal. -->
+<script src="./vendor/react.production.min.js"></script>
+<script src="./vendor/react-dom.production.min.js"></script>
+<script src="./vendor/supabase.js"></script>
+
+<script src="./app-config.js"></script>
+<script src="./support.js"></script>
+<script type="module" src="./dataClient.js"></script>
+
+<script>
+  // Registered here rather than in <helmet> because this block is parsed as
+  // part of the real document and is guaranteed to execute; helmet children are
+  // cloned into <head>, where inline script execution is less predictable.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function (e) {
+        // A failed registration only costs offline support; the app still runs.
+        console.warn('[tryento] service worker no registrado', e);
+      });
+    });
+  }
+</script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<!-- Fonts are served from this origin. fonts.googleapis.com is unreachable in
+     the shed, and a missing stylesheet there meant a blank, unstyled screen —
+     the offline requirement failing before any data was even involved.
+     Regenerate with `npm run vendor`. -->
+<link href="./fonts/fonts.css" rel="stylesheet" />
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:#000000}
+body{font-family:Inter,'Helvetica Neue',Helvetica,sans-serif;color:#EAF7EC;-webkit-font-smoothing:antialiased;text-wrap:pretty}
+input,select,textarea,button{font-family:inherit;color:inherit;margin:0}
+::placeholder{color:#5F7A68}
+select{appearance:none;-webkit-appearance:none}
+a{color:#22C55E;text-decoration:none}
+a:hover{color:#4ADE80}
+@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+</style>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#0A0A0A"/><rect x="30" y="30" width="40" height="40" rx="8" fill="#22C55E"/><text x="50" y="58" text-anchor="middle" font-family="Inter,Helvetica,sans-serif" font-size="20" font-weight="800" fill="#061308">TE</text></svg></template>
+</helmet>
+
+<div style="min-height:100vh;display:flex;justify-content:center;background:#000000">
+<div style="width:100%;max-width:480px;min-height:100vh;background:#0A0A0A;display:flex;flex-direction:column;box-shadow:0 0 0 1px rgba(163,255,18,0.10)">
+
+  <div style="position:sticky;top:0;z-index:30;background:#0A0A0A;color:#EAF7EC;display:flex;align-items:center;gap:12px;padding:12px 12px;min-height:66px;border-bottom:2px solid #22C55E">
+    <sc-if value="{{ showBack }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ onBack }}" style="width:46px;height:46px;flex:none;border:1px solid #1F3A29;background:#111A14;color:#EAF7EC;border-radius:10px;font-size:22px;line-height:1;cursor:pointer">&#8592;</button>
+    </sc-if>
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:center;gap:7px">
+        <img src="img/logo.png" alt="" style="height:15px;width:auto;display:block" />
+        <span style="font-size:12px;font-weight:800;letter-spacing:.16em;color:#22C55E;white-space:nowrap">TRYENTO</span>
+      </div>
+      <div style="font-size:19px;font-weight:600;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ screenTitle }}</div>
+    </div>
+    <!-- Sync chip. Offline capture without a visible pending count is how a
+         phone ends up lost with a day of records nobody knew were still on it. -->
+    <button onClick="{{ onOpenSync }}" style="flex:none;min-height:46px;padding:0 11px;border:1px solid {{ syncBd }};background:{{ syncBg }};color:{{ syncFg }};border-radius:10px;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer">{{ syncLabel }}</button>
+    <button onClick="{{ onOpenOperator }}" style="flex:none;min-height:46px;padding:0 14px;border:1px solid #1F3A29;background:#111A14;color:#EAF7EC;border-radius:10px;font-size:15px;font-weight:600;white-space:nowrap;cursor:pointer">{{ operatorShort }}</button>
+  </div>
+
+  <div style="flex:1;padding:16px 14px 26px">
+
+    <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;gap:24px">
+        <div style="font-size:14.5px;color:#9FB8A6;font-weight:500">{{ homeStatus }}</div>
+
+        <sc-if value="{{ isTiles }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <sc-for list="{{ homeActions }}" as="a" hint-placeholder-count="4">
+              <button onClick="{{ a.onClick }}" style="display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start;gap:14px;min-height:104px;padding:14px;border-radius:14px;border:none;background:{{ a.bg }};color:{{ a.fg }};text-align:left;cursor:pointer">
+                <div style="width:26px;height:6px;border-radius:3px;background:{{ a.mark }}"></div>
+                <div style="font-size:19px;font-weight:700;line-height:1.15;letter-spacing:-0.01em">{{ a.label }}</div>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isRows }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <sc-for list="{{ homeActions }}" as="a" hint-placeholder-count="4">
+              <button onClick="{{ a.onClick }}" style="display:flex;align-items:center;gap:14px;width:100%;min-height:72px;padding:0 16px;border-radius:12px;border:none;background:{{ a.bg }};color:{{ a.fg }};text-align:left;cursor:pointer">
+                <div style="width:8px;height:34px;border-radius:4px;background:{{ a.mark }};flex:none"></div>
+                <div style="flex:1;font-size:19px;font-weight:700;letter-spacing:-0.01em">{{ a.label }}</div>
+                <div style="font-size:22px;opacity:.5">&#8250;</div>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">BANDEJAS RECIENTES</div>
+            <button onClick="{{ onSeeAllBandejas }}" style="min-height:36px;padding:0 4px;border:none;background:none;font-size:14.5px;font-weight:600;color:#22C55E;white-space:nowrap;cursor:pointer">Ver todas &#8250;</button>
+          </div>
+          <sc-for list="{{ recentBandejas }}" as="b" hint-placeholder-count="4">
+            <button onClick="{{ b.onOpen }}" style="display:flex;align-items:stretch;gap:12px;width:100%;text-align:left;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px;min-height:74px;cursor:pointer">
+              <div style="width:6px;flex:none;border-radius:3px;background:{{ b.estadoBg }}"></div>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;justify-content:center">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:16px;font-weight:600;letter-spacing:-0.02em">{{ b.id_bandeja }}</span>
+                  <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;flex:none;padding:3px 7px;border-radius:5px;background:{{ b.estadoBg }};color:#061308">{{ b.estadoLabel }}</span>
+                </div>
+                <div style="font-size:14px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ b.line2 }}</div>
+              </div>
+              <div style="display:flex;align-items:center;color:#4E6B58;font-size:22px">&#8250;</div>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isOperatorScreen }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div style="font-size:16px;color:#9FB8A6">Toca tu nombre. Queda registrado en todo lo que guardes hasta que otra persona lo cambie.</div>
+
+        <sc-if value="{{ hasKnownNames }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <sc-for list="{{ operatorRows }}" as="o" hint-placeholder-count="3">
+              <button onClick="{{ o.onClick }}" style="display:flex;align-items:center;justify-content:space-between;width:100%;min-height:66px;padding:0 16px;border-radius:12px;border:1.5px solid {{ o.bd }};background:{{ o.bg }};color:{{ o.fg }};font-size:19px;font-weight:600;text-align:left;cursor:pointer">
+                <span>{{ o.name }}</span>
+                <span style="font-size:15px;font-weight:600;opacity:.75">{{ o.tag }}</span>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <div style="display:flex;flex-direction:column;gap:9px;border-top:1px solid #1D2A21;padding-top:18px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">{{ addNameLabel }}</div>
+          <div style="font-size:14px;color:#9FB8A6">Se agrega a la lista para todos, no hace falta repetirlo.</div>
+          <input value="{{ f.operator_input }}" onChange="{{ h.operator_input }}" placeholder="Escribe el nombre" style="width:100%;min-height:62px;padding:0 16px;border:1.5px solid #26382C;border-radius:12px;background:#141C16;color:#EAF7EC;font-size:20px;font-weight:600" />
+          <button onClick="{{ onUseTypedName }}" disabled="{{ useNameDisabled }}" style="width:100%;min-height:58px;border-radius:12px;border:none;background:{{ useNameBg }};color:{{ useNameFg }};font-size:17px;font-weight:700;cursor:pointer">{{ useNameLabel }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isBandejas }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:18px">
+        <input value="{{ f.q }}" onChange="{{ h.q }}" placeholder="Buscar por ID de bandeja o insectario" style="width:100%;min-height:56px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:17px;font-weight:500" />
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">ESTADO</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ bandejaEstadoChips }}" as="c" hint-placeholder-count="3">
+              <button onClick="{{ c.onClick }}" style="min-height:46px;padding:0 14px;border-radius:9px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">INSECTARIO</div>
+          <div style="position:relative">
+            <select value="{{ f.filterInsectario }}" onChange="{{ h.filterInsectario }}" style="width:100%;min-height:54px;padding:0 34px 0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16px;font-weight:500">
+              <sc-for list="{{ insectarioFilterOptions }}" as="o" hint-placeholder-count="3">
+                <option value="{{ o.value }}">{{ o.label }}</option>
+              </sc-for>
+            </select>
+            <span style="position:absolute;right:13px;top:50%;transform:translateY(-50%);color:#7FA189;font-size:13px;pointer-events:none">&#9662;</span>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">CREADA</div>
+          <div style="display:flex;gap:8px">
+            <sc-for list="{{ rangeChips }}" as="c" hint-placeholder-count="3">
+              <button onClick="{{ c.onClick }}" style="flex:1;min-height:48px;border-radius:9px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-top:2px">
+          <div style="font-size:13.5px;font-weight:600;color:#9FB8A6;letter-spacing:.02em;white-space:nowrap">{{ resultCount }}</div>
+          <button onClick="{{ onClearFilters }}" style="min-height:36px;padding:0 4px;border:none;background:none;font-size:14.5px;font-weight:600;color:#22C55E;white-space:nowrap;cursor:pointer">Limpiar filtros</button>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ bandejaResults }}" as="b" hint-placeholder-count="5">
+            <button onClick="{{ b.onOpen }}" style="display:flex;align-items:stretch;gap:12px;width:100%;text-align:left;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px;min-height:74px;cursor:pointer">
+              <div style="width:6px;flex:none;border-radius:3px;background:{{ b.estadoBg }}"></div>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;justify-content:center">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:16px;font-weight:600;letter-spacing:-0.02em">{{ b.id_bandeja }}</span>
+                  <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;flex:none;padding:3px 7px;border-radius:5px;background:{{ b.estadoBg }};color:#061308">{{ b.estadoLabel }}</span>
+                </div>
+                <div style="font-size:14px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ b.line2 }}</div>
+              </div>
+              <div style="display:flex;align-items:center;color:#4E6B58;font-size:22px">&#8250;</div>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isBandejaDetalle }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="background:#141C16;border:1px solid #1D2A21;border-radius:14px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:14px 15px;background:{{ bd.estadoBg }};color:#061308">
+            <div style="flex:1;font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:21px;font-weight:600;letter-spacing:-0.02em">{{ bd.id_bandeja }}</div>
+            <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;flex:none">{{ bd.estadoLabel }}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#1F3A29">
+            <sc-for list="{{ bd.facts }}" as="x" hint-placeholder-count="4">
+              <div style="background:#141C16;padding:12px 15px;display:flex;flex-direction:column;gap:3px">
+                <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:#7FA189;white-space:nowrap">{{ x.label }}</div>
+                <div style="font-size:16px;font-weight:600;letter-spacing:-0.01em;overflow:hidden;text-overflow:ellipsis">{{ x.value }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="padding:11px 15px;border-top:1px solid #1F3A29;font-size:14.5px;color:#9FB8A6">{{ bd.notesLine }}</div>
+        </div>
+
+        <sc-if value="{{ bd.showQuickActions }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">SIGUIENTE ACCIÓN</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+              <sc-for list="{{ bd.quickActions }}" as="a" hint-placeholder-count="4">
+                <button onClick="{{ a.onClick }}" style="min-height:60px;padding:0 12px;border-radius:11px;border:1.5px solid {{ a.bd }};background:{{ a.bg }};color:{{ a.fg }};font-size:16.5px;font-weight:700;letter-spacing:-0.01em;white-space:nowrap;cursor:pointer">{{ a.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ bd.showLoteLink }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ bd.onOpenLote }}" style="width:100%;min-height:58px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Ver cochada {{ bd.loteId }} &#8250;</button>
+        </sc-if>
+
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">{{ bd.timelineLabel }}</div>
+          <div style="display:flex;flex-direction:column;gap:0">
+            <sc-for list="{{ bd.eventos }}" as="l" hint-placeholder-count="5">
+              <div style="display:flex;gap:13px">
+                <div style="width:14px;flex:none;display:flex;flex-direction:column;align-items:center">
+                  <div style="width:13px;height:13px;border-radius:7px;margin-top:5px;background:{{ l.dot }}"></div>
+                  <div style="flex:1;width:2px;background:#1D2A21"></div>
+                </div>
+                <div style="flex:1;min-width:0;padding-bottom:18px;display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+                    <div style="flex:1;min-width:0;font-size:17px;font-weight:700;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ l.evento }}</div>
+                    <div style="font-size:13px;color:#7FA189;font-family:'IBM Plex Mono',monospace;flex:none;white-space:nowrap">{{ l.when }}</div>
+                  </div>
+                  <div style="font-size:15px;color:#C9E2CF;font-weight:500">{{ l.detail }}</div>
+                  <div style="font-size:13.5px;color:#7FA189">{{ l.meta }}</div>
+                  <div style="font-size:14.5px;color:#A0AEA0;font-style:italic">{{ l.notas }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isRegistrarEvento }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="display:flex;flex-direction:column;gap:11px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">BANDEJA</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ bandejaChips }}" as="c" hint-placeholder-count="6">
+              <button onClick="{{ c.onClick }}" style="min-height:52px;padding:0 14px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15.5px;font-weight:600;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+          <input value="{{ f.bandejaSearch }}" onChange="{{ h.bandejaSearch }}" placeholder="O busca cualquier bandeja" style="width:100%;min-height:54px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ bandejaSearchResults }}" as="b" hint-placeholder-count="0">
+              <button onClick="{{ b.onPick }}" style="display:flex;align-items:center;gap:10px;width:100%;min-height:58px;padding:0 13px;border-radius:10px;border:1.5px solid #1D2A21;background:#141C16;text-align:left;cursor:pointer">
+                <span style="width:6px;height:30px;border-radius:3px;background:{{ b.estadoBg }};flex:none"></span>
+                <span style="flex:1;font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:16px;font-weight:600">{{ b.id_bandeja }}</span>
+                <span style="font-size:14px;color:#9FB8A6;white-space:nowrap">{{ b.estadoLabel }}</span>
+              </button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">TIPO DE EVENTO</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ eventoChips }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.onClick }}" style="min-height:52px;padding:0 14px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">FECHA Y HORA</div>
+          <div style="display:flex;gap:8px">
+            <input type="datetime-local" value="{{ f.fecha }}" onChange="{{ h.fecha }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+            <button onClick="{{ onSetNow }}" style="flex:none;min-height:56px;padding:0 18px;border-radius:11px;border:1.5px solid #22C55E;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Ahora</button>
+          </div>
+        </div>
+
+        <sc-if value="{{ showAlimentoFields }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">TIPO DE ALIMENTO</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              <sc-for list="{{ tipoAlimentoChips }}" as="c" hint-placeholder-count="4">
+                <button onClick="{{ c.onClick }}" style="min-height:52px;padding:0 14px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <input inputMode="decimal" value="{{ f.cantidad_kg }}" onChange="{{ h.cantidad_kg }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+              <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">kg</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showAyunoFields }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">PESO INICIAL</div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <input inputMode="decimal" value="{{ f.peso_inicial_kg }}" onChange="{{ h.peso_inicial_kg }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+                <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">kg</div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">HORAS DE AYUNO</div>
+              <div style="display:flex;align-items:center;gap:12px">
+                <button onClick="{{ onHorasMinus }}" style="width:56px;height:56px;flex:none;border-radius:11px;border:1.5px solid #26382C;background:#141C16;color:#EAF7EC;font-size:24px;font-weight:600;cursor:pointer">&#8722;</button>
+                <div style="flex:1;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:24px;font-weight:600">{{ horasLabel }}</div>
+                <button onClick="{{ onHorasPlus }}" style="width:56px;height:56px;flex:none;border-radius:11px;border:1.5px solid #26382C;background:#141C16;color:#EAF7EC;font-size:24px;font-weight:600;cursor:pointer">&#43;</button>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">PESO FINAL (opcional por ahora)</div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <input inputMode="decimal" value="{{ f.peso_final_kg }}" onChange="{{ h.peso_final_kg }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+                <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">kg</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;background:{{ mermaBg }};border-radius:12px;padding:15px 16px">
+              <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+                <div style="font-size:11.5px;font-weight:700;letter-spacing:.1em;color:{{ mermaLabelFg }};white-space:nowrap">MERMA (AUTO)</div>
+                <div style="font-size:13.5px;color:{{ mermaLabelFg }}">{{ mermaHint }}</div>
+              </div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:600;color:{{ mermaFg }};letter-spacing:-0.02em">{{ mermaValue }}</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showSeparacionFields }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">LARVA LIMPIA</div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <input inputMode="decimal" value="{{ f.larva_limpia_g }}" onChange="{{ h.larva_limpia_g }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+              <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">g</div>
+            </div>
+            <div style="font-size:14px;color:#7FA189">Esta bandeja quedará disponible para una cochada.</div>
+          </div>
+        </sc-if>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">FOTO Y NOTAS</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <label style="flex:none;display:flex;align-items:center;gap:9px;min-height:56px;padding:0 16px;border-radius:11px;border:1.5px solid #26382C;background:#141C16;font-size:16px;font-weight:600;cursor:pointer">
+              <span style="width:15px;height:15px;border-radius:8px;border:3px solid #EAF7EC;display:inline-block"></span>
+              <span>{{ photoLabel }}</span>
+              <input type="file" accept="image/*" capture="environment" onChange="{{ onPhoto }}" style="display:none" />
+            </label>
+            <div style="flex:1;min-width:0;font-size:14px;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ photoName }}</div>
+          </div>
+          <textarea value="{{ f.notas }}" onChange="{{ h.notas }}" placeholder="Notas (opcional)" rows="3" style="width:100%;padding:13px 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500;resize:vertical"></textarea>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">REGISTRADO POR</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ operatorChips }}" as="c" hint-placeholder-count="6">
+              <button onClick="{{ c.onClick }}" style="min-height:50px;padding:0 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
+          <button onClick="{{ onSaveEvento }}" disabled="{{ eventoDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ eventoBg }};color:{{ eventoFg }};font-size:19.5px;font-weight:700;letter-spacing:-0.01em;cursor:pointer">{{ eventoLabel }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isAlimentarGrupal }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="font-size:14.5px;color:#9FB8A6">Un solo envío crea una ficha de alimentación por cada bandeja seleccionada, en un solo paso — sin depender de un cálculo posterior.</div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">FECHA Y HORA</div>
+          <div style="display:flex;gap:8px">
+            <input type="datetime-local" value="{{ f.fecha }}" onChange="{{ h.fecha }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+            <button onClick="{{ onSetNow }}" style="flex:none;min-height:56px;padding:0 18px;border-radius:11px;border:1.5px solid #22C55E;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Ahora</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">BANDEJAS ACTIVAS</div>
+            <div style="font-size:13.5px;font-weight:700;color:#22C55E;white-space:nowrap">{{ selectedCountLabel }}</div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ grupalBandejaChips }}" as="c" hint-placeholder-count="8">
+              <button onClick="{{ c.onClick }}" style="min-height:52px;padding:0 14px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15.5px;font-weight:600;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">TIPO DE ALIMENTO</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ tipoAlimentoChips }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.onClick }}" style="min-height:52px;padding:0 14px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">CANTIDAD POR BANDEJA</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input inputMode="decimal" value="{{ f.cantidad_kg }}" onChange="{{ h.cantidad_kg }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+            <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">kg</div>
+          </div>
+        </div>
+
+        <textarea value="{{ f.notas }}" onChange="{{ h.notas }}" placeholder="Notas (opcional)" rows="3" style="width:100%;padding:13px 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500;resize:vertical"></textarea>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">REGISTRADO POR</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ operatorChips }}" as="c" hint-placeholder-count="6">
+              <button onClick="{{ c.onClick }}" style="min-height:50px;padding:0 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
+          <button onClick="{{ onSaveGrupal }}" disabled="{{ grupalDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ grupalBg }};color:{{ grupalFg }};font-size:19.5px;font-weight:700;cursor:pointer">{{ grupalLabel }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isNuevaBandeja }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">RECOLECCIÓN DE ORIGEN</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ recoleccionChips }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.onClick }}" style="min-height:56px;padding:0 14px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">NO. DE BANDEJA</div>
+          <input inputMode="numeric" placeholder="Nº escrito en la bandeja" value="{{ f.no_bandeja }}" onChange="{{ h.no_bandeja }}" style="width:100%;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+          <div style="font-size:13.5px;color:{{ noBandejaHintFg }}">{{ noBandejaHint }}</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:14.5px;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ID: {{ idBandejaPreview }}</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">FECHA</div>
+          <div style="display:flex;gap:8px">
+            <input type="datetime-local" value="{{ f.fecha }}" onChange="{{ h.fecha }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+            <button onClick="{{ onSetNow }}" style="flex:none;min-height:56px;padding:0 18px;border-radius:11px;border:1.5px solid #22C55E;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Ahora</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">GRAMOS DE HUEVOS</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input inputMode="decimal" value="{{ f.gramos_huevos }}" onChange="{{ h.gramos_huevos }}" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+            <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">g</div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">INICIADOR</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input inputMode="decimal" value="{{ f.iniciador_g }}" onChange="{{ h.iniciador_g }}" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+            <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">g</div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ tipoIniciadorChips }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.onClick }}" style="min-height:50px;padding:0 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <textarea value="{{ f.notas }}" onChange="{{ h.notas }}" placeholder="Notas (opcional)" rows="3" style="width:100%;padding:13px 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500;resize:vertical"></textarea>
+
+        <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
+          <button onClick="{{ onSaveBandeja }}" disabled="{{ nuevaBandejaDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ nuevaBandejaBg }};color:{{ nuevaBandejaFg }};font-size:19.5px;font-weight:700;cursor:pointer">{{ nuevaBandejaLabel }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isInsectarios }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <button onClick="{{ onNuevoInsectario }}" style="width:100%;min-height:60px;border-radius:12px;border:1.5px dashed #2A4030;background:#141C16;font-size:17.5px;font-weight:700;color:#EAF7EC;cursor:pointer">+ Nuevo insectario</button>
+        <sc-for list="{{ insectarioRows }}" as="g" hint-placeholder-count="3">
+          <button onClick="{{ g.onOpen }}" style="display:flex;flex-direction:column;gap:10px;width:100%;text-align:left;background:#141C16;border:1px solid #1D2A21;border-radius:13px;padding:14px 15px;cursor:pointer">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:20px;font-weight:600">{{ g.id }}</span>
+              <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;padding:3px 7px;border-radius:5px;background:{{ g.estadoBg }};color:#061308">{{ g.estadoLabel }}</span>
+              <span style="flex:1"></span>
+              <span style="color:#4E6B58;font-size:22px">&#8250;</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              <sc-for list="{{ g.metrics }}" as="m" hint-placeholder-count="3">
+                <div style="flex:1 1 88px;background:#111A14;border-radius:9px;padding:9px 11px;display:flex;flex-direction:column;gap:2px">
+                  <div style="font-size:10.5px;font-weight:600;letter-spacing:.08em;color:#7FA189;white-space:nowrap">{{ m.label }}</div>
+                  <div style="font-family:'IBM Plex Mono',monospace;font-size:16.5px;font-weight:600;white-space:nowrap">{{ m.value }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </button>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isInsectarioDetalle }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="background:#141C16;border:1px solid #1D2A21;border-radius:14px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:14px 15px;background:{{ ins.estadoBg }};color:#061308">
+            <div style="flex:1;font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:21px;font-weight:600">{{ ins.id }}</div>
+            <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;flex:none">{{ ins.estadoLabel }}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#1F3A29">
+            <sc-for list="{{ ins.facts }}" as="x" hint-placeholder-count="4">
+              <div style="background:#141C16;padding:12px 15px;display:flex;flex-direction:column;gap:3px">
+                <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:#7FA189;white-space:nowrap">{{ x.label }}</div>
+                <div style="font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis">{{ x.value }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="padding:11px 15px;border-top:1px solid #1F3A29;font-size:14.5px;color:#9FB8A6">{{ ins.notesLine }}</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+          <button onClick="{{ ins.onAtractante }}" disabled="{{ ins.atractanteDone }}" style="min-height:58px;border-radius:11px;border:1.5px solid {{ ins.atractanteBd }};background:{{ ins.atractanteBg }};color:{{ ins.atractanteFg }};font-size:16px;font-weight:700;cursor:pointer">{{ ins.atractanteLabel }}</button>
+          <button onClick="{{ ins.onCierre }}" disabled="{{ ins.cierreDone }}" style="min-height:58px;border-radius:11px;border:1.5px solid {{ ins.cierreBd }};background:{{ ins.cierreBg }};color:{{ ins.cierreFg }};font-size:16px;font-weight:700;cursor:pointer">{{ ins.cierreLabel }}</button>
+        </div>
+
+        <button onClick="{{ onNuevaRecoleccion }}" style="width:100%;min-height:60px;border-radius:12px;border:none;background:#22C55E;color:#061308;font-size:18px;font-weight:700;cursor:pointer">+ Nueva recolección</button>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">{{ ins.recoleccionesLabel }}</div>
+          <sc-for list="{{ ins.recolecciones }}" as="r" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:12px;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px 14px">
+              <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15.5px;font-weight:600">{{ r.id }}</span>
+              <span style="flex:1;font-size:14px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.fecha }}</span>
+              <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15px;color:#C9E2CF">{{ r.huevos }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isNuevoInsectario }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">NOMBRE DEL INSECTARIO</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ nombreChips }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.onClick }}" style="min-height:54px;padding:0 18px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:17px;font-weight:600;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:14.5px;color:#7FA189;white-space:nowrap">ID: {{ idInsectarioPreview }}</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">FECHA DE INICIO</div>
+          <div style="display:flex;gap:8px">
+            <input type="date" value="{{ f.fecha_inicio }}" onChange="{{ h.fecha_inicio }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+            <button onClick="{{ onSetHoyInicio }}" style="flex:none;min-height:56px;padding:0 18px;border-radius:11px;border:1.5px solid #22C55E;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Hoy</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">GENERACIÓN DE MOSCAS</div>
+          <input value="{{ f.generacion_moscas }}" onChange="{{ h.generacion_moscas }}" placeholder="p. ej. F8" style="width:100%;min-height:56px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">BIOMASA</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input inputMode="decimal" value="{{ f.biomasa_kg }}" onChange="{{ h.biomasa_kg }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+            <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">kg</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">PROY. OVIPOSITORES</div>
+            <input type="date" value="{{ f.proyeccion_ovipositores }}" onChange="{{ h.proyeccion_ovipositores }}" style="width:100%;min-height:54px;padding:0 12px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:14.5px;font-weight:500" />
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">PROY. CIERRE</div>
+            <input type="date" value="{{ f.proyeccion_cierre }}" onChange="{{ h.proyeccion_cierre }}" style="width:100%;min-height:54px;padding:0 12px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:14.5px;font-weight:500" />
+          </div>
+        </div>
+
+        <textarea value="{{ f.notas }}" onChange="{{ h.notas }}" placeholder="Notas (opcional)" rows="3" style="width:100%;padding:13px 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500;resize:vertical"></textarea>
+
+        <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
+          <button onClick="{{ onSaveInsectario }}" disabled="{{ nuevoInsectarioDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ nuevoInsectarioBg }};color:{{ nuevoInsectarioFg }};font-size:19.5px;font-weight:700;cursor:pointer">{{ nuevoInsectarioLabel }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isNuevaRecoleccion }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="display:flex;align-items:center;gap:10px;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:13px 15px">
+          <span style="font-size:12px;font-weight:600;letter-spacing:.09em;color:#7FA189;white-space:nowrap">INSECTARIO</span>
+          <span style="flex:1;font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:18px;font-weight:600">{{ f.insectario_id }}</span>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">FECHA</div>
+          <div style="display:flex;gap:8px">
+            <input type="datetime-local" value="{{ f.fecha }}" onChange="{{ h.fecha }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+            <button onClick="{{ onSetNow }}" style="flex:none;min-height:56px;padding:0 18px;border-radius:11px;border:1.5px solid #22C55E;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Ahora</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">HUEVOS</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input inputMode="decimal" value="{{ f.huevos_g }}" onChange="{{ h.huevos_g }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+            <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">g</div>
+          </div>
+        </div>
+
+        <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
+          <button onClick="{{ onSaveRecoleccion }}" disabled="{{ nuevaRecoleccionDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ nuevaRecoleccionBg }};color:{{ nuevaRecoleccionFg }};font-size:19.5px;font-weight:700;cursor:pointer">{{ nuevaRecoleccionLabel }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isLotes }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <button onClick="{{ onNuevaCochada }}" style="width:100%;min-height:60px;border-radius:12px;border:1.5px dashed #2A4030;background:#141C16;font-size:17.5px;font-weight:700;color:#EAF7EC;cursor:pointer">+ Nueva cochada</button>
+        <sc-for list="{{ loteRows }}" as="l" hint-placeholder-count="3">
+          <button onClick="{{ l.onOpen }}" style="display:flex;flex-direction:column;gap:10px;width:100%;text-align:left;background:#141C16;border:1px solid #1D2A21;border-radius:13px;padding:14px 15px;cursor:pointer">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:17px;font-weight:600;overflow:hidden;text-overflow:ellipsis">{{ l.id }}</span>
+              <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;flex:none;padding:3px 7px;border-radius:5px;background:{{ l.estadoBg }};color:#061308">{{ l.estadoLabel }}</span>
+              <span style="flex:1"></span>
+              <span style="color:#4E6B58;font-size:22px;flex:none">&#8250;</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              <sc-for list="{{ l.metrics }}" as="m" hint-placeholder-count="3">
+                <div style="flex:1 1 88px;background:#111A14;border-radius:9px;padding:9px 11px;display:flex;flex-direction:column;gap:2px">
+                  <div style="font-size:10.5px;font-weight:600;letter-spacing:.08em;color:#7FA189;white-space:nowrap">{{ m.label }}</div>
+                  <div style="font-family:'IBM Plex Mono',monospace;font-size:16.5px;font-weight:600;white-space:nowrap">{{ m.value }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </button>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isLoteDetalle }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="background:#141C16;border:1px solid #1D2A21;border-radius:14px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:14px 15px;background:{{ lote.estadoBg }};color:#061308">
+            <div style="flex:1;font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:18px;font-weight:600;overflow:hidden;text-overflow:ellipsis">{{ lote.id }}</div>
+            <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;flex:none">{{ lote.estadoLabel }}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#1F3A29">
+            <sc-for list="{{ lote.facts }}" as="x" hint-placeholder-count="4">
+              <div style="background:#141C16;padding:12px 15px;display:flex;flex-direction:column;gap:3px">
+                <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:#7FA189;white-space:nowrap">{{ x.label }}</div>
+                <div style="font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis">{{ x.value }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="padding:11px 15px;border-top:1px solid #1F3A29;font-size:14.5px;color:#9FB8A6">{{ lote.notesLine }}</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">BANDEJAS EN ESTA COCHADA</div>
+          <sc-for list="{{ lote.separaciones }}" as="s" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:12px;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px 14px">
+              <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15.5px;font-weight:600">{{ s.bandeja_label }}</span>
+              <span style="flex:1"></span>
+              <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15px;color:#C9E2CF">{{ s.larva }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ lote.showQcPanel }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:14px;background:#141C16;border:1px solid #1D2A21;border-radius:13px;padding:15px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">SECADO Y CONTROL DE CALIDAD</div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;font-weight:600;letter-spacing:.08em;color:#7FA189;white-space:nowrap">TIEMPO DE SECADO</div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <input inputMode="decimal" value="{{ f.tiempo_secado_horas }}" onChange="{{ h.tiempo_secado_horas }}" placeholder="0" style="flex:1;min-width:0;min-height:56px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#0A0A0A;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600" />
+                <div style="font-size:16px;font-weight:600;color:#9FB8A6;flex:none">horas</div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;font-weight:600;letter-spacing:.08em;color:#7FA189;white-space:nowrap">PESO FINAL</div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <input inputMode="decimal" value="{{ f.peso_final_kg }}" onChange="{{ h.peso_final_kg }}" placeholder="0" style="flex:1;min-width:0;min-height:56px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#0A0A0A;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600" />
+                <div style="font-size:16px;font-weight:600;color:#9FB8A6;flex:none">kg</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;background:{{ rendBg }};border-radius:12px;padding:13px 15px">
+              <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+                <div style="font-size:11.5px;font-weight:700;letter-spacing:.1em;color:{{ rendLabelFg }};white-space:nowrap">RENDIMIENTO (AUTO)</div>
+                <div style="font-size:13px;color:{{ rendLabelFg }}">{{ rendHint }}</div>
+              </div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:27px;font-weight:600;color:{{ rendFg }};letter-spacing:-0.02em">{{ rendValue }}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;font-weight:600;letter-spacing:.08em;color:#7FA189;white-space:nowrap">COLOR / DORADO</div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px">
+                <sc-for list="{{ qcChips }}" as="c" hint-placeholder-count="4">
+                  <button onClick="{{ c.onClick }}" style="min-height:48px;padding:0 13px;border-radius:9px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:14.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+            <textarea value="{{ f.qc_prueba_crujiente }}" onChange="{{ h.qc_prueba_crujiente }}" placeholder="Notas de la prueba crujiente (opcional)" rows="2" style="width:100%;padding:12px 14px;border:1.5px solid #26382C;border-radius:11px;background:#0A0A0A;color:#EAF7EC;font-size:15.5px;font-weight:500;resize:vertical"></textarea>
+            <label style="display:flex;align-items:center;justify-content:center;gap:9px;min-height:52px;padding:0 16px;border-radius:11px;border:1.5px solid #26382C;background:#0A0A0A;font-size:15.5px;font-weight:600;cursor:pointer">
+              <span style="width:14px;height:14px;border-radius:7px;border:3px solid #EAF7EC;display:inline-block"></span>
+              <span>{{ qcPhotoLabel }}</span>
+              <input type="file" accept="image/*" capture="environment" onChange="{{ onQcPhoto }}" style="display:none" />
+            </label>
+            <button onClick="{{ onSaveQc }}" disabled="{{ qcDisabled }}" style="width:100%;min-height:58px;border-radius:11px;border:none;background:{{ qcBg }};color:{{ qcFg }};font-size:17px;font-weight:700;cursor:pointer">{{ qcLabel }}</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ lote.showDecision }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:10px;background:#141C16;border:1px solid #1D2A21;border-radius:13px;padding:15px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189">DECISIÓN DE CALIDAD</div>
+            <div style="font-size:14px;color:#9FB8A6">Aprobar o rechazar es una decisión explícita: anotar el peso final no la toma por ti.</div>
+            <div style="display:flex;gap:10px">
+              <button onClick="{{ onAprobarQc }}" style="flex:1;min-height:58px;border-radius:11px;border:none;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Aprobar</button>
+              <button onClick="{{ onRechazarQc }}" style="flex:1;min-height:58px;border-radius:11px;border:1.5px solid #F87171;background:#1A1112;color:#F87171;font-size:16px;font-weight:700;cursor:pointer">Rechazar</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ lote.showRechazoMotivo }}" hint-placeholder-val="{{ false }}">
+          <div style="background:#1A1112;border:1px solid #F87171;border-radius:13px;padding:15px;color:#F87171;font-size:14.5px">
+            <div style="font-weight:700;margin-bottom:5px">Cochada rechazada</div>
+            <div>{{ lote.rechazoMotivo }}</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ lote.showEmpacar }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ onMarcarEmpacado }}" style="width:100%;min-height:62px;border-radius:12px;border:none;background:#22C55E;color:#061308;font-size:18px;font-weight:700;cursor:pointer">Marcar empacado</button>
+        </sc-if>
+        <sc-if value="{{ lote.showDespachar }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ onMarcarDespachado }}" style="width:100%;min-height:62px;border-radius:12px;border:none;background:#22C55E;color:#061308;font-size:18px;font-weight:700;cursor:pointer">Marcar despachado</button>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isNuevaCochada }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="font-size:14.5px;color:#9FB8A6">El horno recibe hasta {{ ovenCapacidad }} bandejas metálicas por turno. Selecciona las separaciones que se pooleará en esta cochada.</div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">FECHA</div>
+          <div style="display:flex;gap:8px">
+            <input type="datetime-local" value="{{ f.fecha }}" onChange="{{ h.fecha }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+            <button onClick="{{ onSetNow }}" style="flex:none;min-height:56px;padding:0 18px;border-radius:11px;border:1.5px solid #22C55E;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Ahora</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">SEPARACIONES DISPONIBLES</div>
+            <div style="font-size:13.5px;font-weight:700;color:{{ ovenCountColor }};white-space:nowrap">{{ ovenCountLabel }}</div>
+          </div>
+          <sc-if value="{{ hasSeparacionesDisponibles }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              <sc-for list="{{ separacionChips }}" as="c" hint-placeholder-count="4">
+                <button onClick="{{ c.onClick }}" style="min-height:54px;padding:0 14px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15px;font-weight:600;cursor:pointer">{{ c.label }}</button>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ noSeparacionesDisponibles }}" hint-placeholder-val="{{ false }}">
+            <div style="background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:16px;font-size:15px;color:#9FB8A6">No hay separaciones disponibles todavía — registra una Separación desde una bandeja primero.</div>
+          </sc-if>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">PESO INICIAL (suma automática)</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input inputMode="decimal" value="{{ f.peso_inicial_kg }}" onChange="{{ h.peso_inicial_kg }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+            <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">kg</div>
+          </div>
+        </div>
+
+        <textarea value="{{ f.notas }}" onChange="{{ h.notas }}" placeholder="Notas (opcional)" rows="3" style="width:100%;padding:13px 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500;resize:vertical"></textarea>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">REGISTRADO POR</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ operatorChips }}" as="c" hint-placeholder-count="6">
+              <button onClick="{{ c.onClick }}" style="min-height:50px;padding:0 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
+          <button onClick="{{ onSaveCochada }}" disabled="{{ cochadaDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ cochadaBg }};color:{{ cochadaFg }};font-size:19.5px;font-weight:700;cursor:pointer">{{ cochadaLabel }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSync }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:18px">
+
+        <div style="background:#141C16;border:1px solid #1D2A21;border-radius:14px;padding:15px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:11px;height:11px;border-radius:6px;background:{{ syncDotBg }};flex:none"></div>
+            <div style="flex:1;font-size:17px;font-weight:700">{{ syncHeadline }}</div>
+          </div>
+          <div style="font-size:14.5px;color:#9FB8A6">{{ syncDetail }}</div>
+          <sc-if value="{{ showClockWarning }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:14px;color:#FB923C;background:#1F1710;border:1px solid #FB923C;border-radius:10px;padding:11px">
+              El reloj de este equipo está desfasado. Corrige la hora antes de seguir registrando: las fechas se guardan desde el dispositivo.
+            </div>
+          </sc-if>
+          <button onClick="{{ onForceSync }}" style="width:100%;min-height:54px;border-radius:11px;border:none;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Sincronizar ahora</button>
+        </div>
+
+        <sc-if value="{{ hasConflicts }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:11px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189">{{ conflictsLabel }}</div>
+            <div style="font-size:14px;color:#9FB8A6">Estos registros no se pudieron guardar en el servidor. Revisa cada uno y decide si reintentar o descartar.</div>
+            <sc-for list="{{ conflictRows }}" as="c" hint-placeholder-count="2">
+              <div style="background:#1A1112;border:1px solid #F87171;border-radius:13px;padding:14px;display:flex;flex-direction:column;gap:10px">
+                <div style="font-size:15.5px;font-weight:600;color:#EAF7EC">{{ c.explanation }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#9FB8A6">{{ c.meta }}</div>
+                <div style="display:flex;gap:9px">
+                  <button onClick="{{ c.onRetry }}" style="flex:1;min-height:50px;border-radius:10px;border:1.5px solid #22C55E;background:#0E2415;color:#4ADE80;font-size:15px;font-weight:700;cursor:pointer">Reintentar</button>
+                  <button onClick="{{ c.onDiscard }}" style="flex:1;min-height:50px;border-radius:10px;border:1.5px solid #64748B;background:#141C16;color:#9FB8A6;font-size:15px;font-weight:700;cursor:pointer">Descartar</button>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ hasAyunosAbiertos }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:11px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189">{{ ayunosLabel }}</div>
+            <div style="font-size:14px;color:#9FB8A6">Un ayuno se cierra en la segunda visita, al pesar otra vez. Sin ese peso no hay merma.</div>
+            <sc-for list="{{ ayunoRows }}" as="a" hint-placeholder-count="2">
+              <button onClick="{{ a.onClose }}" style="width:100%;text-align:left;background:#141C16;border:1px solid #FB923C;border-radius:13px;padding:14px;display:flex;align-items:center;gap:11px;cursor:pointer;color:#EAF7EC">
+                <div style="flex:1;min-width:0">
+                  <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600">{{ a.label }}</div>
+                  <div style="font-size:13.5px;color:#9FB8A6">{{ a.sub }}</div>
+                </div>
+                <div style="font-size:14px;font-weight:700;color:#FB923C;white-space:nowrap">Cerrar ayuno</div>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+
+      </div>
+    </sc-if>
+
+  </div>
+
+  <sc-if value="{{ showTabs }}" hint-placeholder-val="{{ true }}">
+    <div style="position:sticky;bottom:0;z-index:20;display:flex;background:#141C16;border-top:1px solid #1E251E">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+        <button onClick="{{ t.onClick }}" style="flex:1;min-height:66px;border:none;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;color:{{ t.fg }}">
+          <div style="width:22px;height:4px;border-radius:2px;background:{{ t.mark }}"></div>
+          <div style="font-size:13.5px;font-weight:700;letter-spacing:.01em;white-space:nowrap">{{ t.label }}</div>
+        </button>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;padding:0 14px 84px;pointer-events:none;z-index:60">
+      <div style="width:100%;max-width:452px;display:flex;align-items:center;gap:13px;background:{{ toastBg }};color:{{ toastFg }};border-radius:13px;padding:15px 16px;box-shadow:0 10px 30px rgba(0,0,0,0.5);animation:toastIn .18s ease-out">
+        <div style="width:30px;height:30px;flex:none;border-radius:16px;background:{{ toastMarkBg }};color:{{ toastMarkFg }};display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700">{{ toastMark }}</div>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:17px;font-weight:700;letter-spacing:-0.01em">{{ toastMsg }}</div>
+          <div style="font-size:14px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ toastSub }}</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:430,&quot;height&quot;:932},&quot;homeLayout&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;tiles&quot;,&quot;rows&quot;],&quot;default&quot;:&quot;tiles&quot;,&quot;tsType&quot;:&quot;'tiles'|'rows'&quot;,&quot;section&quot;:&quot;Variaciones&quot;},&quot;ovenCapacidad&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:8,&quot;min&quot;:4,&quot;max&quot;:12,&quot;step&quot;:1,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Configuración&quot;},&quot;defaultTipoAlimento&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Bagazo&quot;,&quot;Yogurt&quot;,&quot;Afrecho&quot;,&quot;Mezcla&quot;],&quot;default&quot;:&quot;Bagazo&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Configuración&quot;}}">
+// Three explicit states, not two inferred ones. The middle state matters: a
+// tray in ayuno is not available to feed and not yet harvested, and the old
+// two-state model made that invisible.
+const ESTADO_BANDEJA = {
+  en_crecimiento: { label: 'En crecimiento', bg: '#22C55E' },
+  en_ayuno: { label: 'En ayuno', bg: '#FB923C' },
+  cosechada: { label: 'Cosechada', bg: '#38BDF8' }
+};
+// A tray is "open" for new events while it has not been harvested.
+const BANDEJA_ACTIVA = e => e === 'en_crecimiento' || e === 'en_ayuno';
+const ESTADO_INSECTARIO = {
+  activo: { label: 'Activo', bg: '#22C55E' },
+  cerrado: { label: 'Cerrado', bg: '#64748B' }
+};
+const ESTADO_LOTE = {
+  secando: { label: 'Secando', bg: '#FB923C' },
+  en_qc: { label: 'En QC', bg: '#A78BFA' },
+  empacado: { label: 'Empacado', bg: '#38BDF8' },
+  despachado: { label: 'Despachado', bg: '#64748B' },
+  rechazado: { label: 'Rechazado', bg: '#F87171' }
+};
+const EVENTO_META = {
+  alimentacion: { label: 'Alimentación', dot: '#22C55E' },
+  ayuno: { label: 'Ayuno', dot: '#FB923C' },
+  revision: { label: 'Revisión', dot: '#A78BFA' },
+  separacion: { label: 'Separación', dot: '#38BDF8' }
+};
+const EVENTO_ORDER = ['alimentacion', 'ayuno', 'revision', 'separacion'];
+const NEON = '#22C55E';
+const INK = '#061308';
+const CARD = '#141C16';
+const BORDER = '#26382C';
+const TEXT = '#EAF7EC';
+const DISABLED_BG = '#17211A';
+const DISABLED_FG = '#5A6F60';
+
+const FIELDS = ['q', 'filterInsectario', 'bandejaSearch', 'fecha', 'bandeja_id', 'tipo_evento', 'tipo_alimento',
+  'cantidad_kg', 'peso_inicial_kg', 'peso_final_kg', 'larva_limpia_g', 'notas', 'operator_name',
+  'recoleccion_id', 'no_bandeja', 'gramos_huevos', 'iniciador_g', 'tipo_iniciador',
+  'nombre_insectario', 'fecha_inicio', 'generacion_moscas', 'biomasa_kg', 'proyeccion_ovipositores', 'proyeccion_cierre',
+  'huevos_g', 'tiempo_secado_horas', 'qc_prueba_crujiente', 'operator_input'];
+
+class Component extends DCLogic {
+  state = {
+    screen: 'operator', prev: 'home', tab: 'home', ready: false, saving: false,
+    insectarios: [], bandejas: [], recolecciones: [], lotes: [], operators: [], operator: null,
+    bandejaDetalle: null, insectarioDetalle: null, loteDetalle: null, separacionesDisponibles: [],
+    form: {}, estadoFilter: '', insFilter: '', range: 'any', toast: null,
+    photoName: '', photoId: null, photoUrl: null,
+    qcPhotoName: '', qcPhotoId: null, qcPhotoUrl: null,
+    sync: null, conflicts: [], ayunosAbiertos: []
+  };
+
+  get handlers() {
+    if (!this._h) {
+      this._h = {};
+      FIELDS.forEach(k => { this._h[k] = e => this.setField(k, e && e.target ? e.target.value : e); });
+    }
+    return this._h;
+  }
+
+  async componentDidMount() {
+    const api = await this.loadApi();
+    this.api = api;
+    let saved = null;
+    try { saved = window.localStorage.getItem('tryento.operator'); } catch (e) { saved = null; }
+    const [ins, band, rec, lot, ops] = await Promise.all([
+      api.listInsectarios({}), api.listBandejas({}), api.listRecolecciones({}), api.listLotes({}), api.listOperators()
+    ]);
+    this.setState({
+      ready: true,
+      insectarios: ins.ok ? ins.data : [], bandejas: band.ok ? band.data : [], recolecciones: rec.ok ? rec.data : [],
+      lotes: lot.ok ? lot.data : [], operators: ops.ok ? ops.data : [],
+      operator: saved || null, screen: saved ? 'home' : 'operator'
+    });
+
+    // A background pull brings other people's work down; without this the
+    // screen would keep showing whatever was true when it was opened.
+    if (api.onChange) {
+      this._unsubSync = api.onChange(async sync => {
+        this.setState({ sync });
+        if (sync && (sync.pending === 0 || sync.conflicts)) await this.refreshSecondary();
+      });
+    }
+    await this.refreshSecondary();
+  }
+
+  refreshSecondary = async () => {
+    if (!this.api) return;
+    const [cf, ay] = await Promise.all([
+      this.api.listConflicts ? this.api.listConflicts({}) : { ok: true, data: [] },
+      this.api.listAyunosAbiertos ? this.api.listAyunosAbiertos() : { ok: true, data: [] }
+    ]);
+    this.setState({
+      conflicts: cf.ok ? cf.data : [],
+      ayunosAbiertos: ay.ok ? ay.data : []
+    });
+  };
+
+  componentWillUnmount() {
+    clearTimeout(this._toastTimer);
+    if (this._unsubSync) this._unsubSync();
+  }
+
+  loadApi() {
+    if (window.__BSF_DATA_CLIENT__) return Promise.resolve(window.__BSF_DATA_CLIENT__);
+    return new Promise(resolve => {
+      let done = false;
+      const finish = api => { if (!done) { done = true; resolve(api); } };
+      const poll = setInterval(() => { if (window.__BSF_DATA_CLIENT__) { clearInterval(poll); finish(window.__BSF_DATA_CLIENT__); } }, 40);
+      setTimeout(() => { clearInterval(poll); if (!done) import('./dataClient.js').then(finish).catch(() => finish(window.__BSF_DATA_CLIENT__ || null)); }, 2000);
+    });
+  }
+
+  /* ---------------------------------------------------------------- plumbing */
+
+  setField(k, v) { this.setState(s => ({ form: Object.assign({}, s.form, { [k]: v }) })); }
+
+  toast(msg, sub, tone) {
+    clearTimeout(this._toastTimer);
+    this.setState({ toast: { msg, sub, tone: tone || 'ok' } });
+    this._toastTimer = setTimeout(() => this.setState({ toast: null }), 2800);
+  }
+
+  now() {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  today() { return this.now().slice(0, 10); }
+  ddmm(dateStr) { const d = new Date((dateStr || this.now())); const p = n => String(n).padStart(2, '0'); return p(d.getDate()) + p(d.getMonth() + 1); }
+
+  async refreshLists() {
+    const [ins, band, rec, lot] = await Promise.all([this.api.listInsectarios({}), this.api.listBandejas({}), this.api.listRecolecciones({}), this.api.listLotes({})]);
+    this.setState({ insectarios: ins.ok ? ins.data : this.state.insectarios, bandejas: band.ok ? band.data : this.state.bandejas, recolecciones: rec.ok ? rec.data : this.state.recolecciones, lotes: lot.ok ? lot.data : this.state.lotes });
+  }
+
+  fmt(dt) {
+    if (!dt) return '—';
+    const d = new Date(dt);
+    if (isNaN(d)) return dt;
+    const m = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][d.getMonth()];
+    const p = n => String(n).padStart(2, '0');
+    const hasTime = String(dt).indexOf('T') >= 0;
+    return d.getDate() + ' ' + m + (hasTime ? ' · ' + p(d.getHours()) + ':' + p(d.getMinutes()) : '');
+  }
+  rel(dt) {
+    if (!dt) return '';
+    const mins = Math.round((Date.now() - new Date(dt).getTime()) / 60000);
+    if (mins < 1) return 'ahora mismo';
+    if (mins < 60) return 'hace ' + mins + 'm';
+    if (mins < 1440) return 'hace ' + Math.round(mins / 60) + 'h';
+    const days = Math.round(mins / 1440);
+    return days === 1 ? 'ayer' : 'hace ' + days + 'd';
+  }
+  ageDays(dt) { if (!dt) return '—'; return Math.max(0, Math.floor((Date.now() - new Date(dt).getTime()) / 86400000)) + 'd'; }
+  diasLabel(n) { return n == null ? '—' : (n > 0 ? '+' : '') + n + ' d'; }
+
+  chip(label, active, onClick, activeBg, activeFg) {
+    return { label, onClick, bg: active ? (activeBg || NEON) : CARD, fg: active ? (activeFg || INK) : TEXT, bd: active ? (activeBg || NEON) : BORDER };
+  }
+
+  bandejaRow(b) {
+    const meta = ESTADO_BANDEJA[b.estado] || ESTADO_BANDEJA.en_crecimiento;
+    const last = b.last_evento;
+    return {
+      id_bandeja: b.id_bandeja, estadoLabel: meta.label, estadoBg: meta.bg,
+      // insectario_codigo, not insectario_id: the PK is an opaque UUID now and
+      // the code is what the team reads.
+      line2: (b.insectario_codigo || '—') + '  ·  ' + (last ? (EVENTO_META[last.tipo] || {}).label + ' ' + this.rel(last.fecha) : 'sin eventos'),
+      onOpen: () => this.openBandejaDetalle(b.id)
+    };
+  }
+
+  /* -------------------------------------------------------------- navigation */
+
+  go(screen, extra) { this.setState(Object.assign({ prev: this.state.screen, screen }, extra || {})); }
+
+  // Prefill with whoever is currently registering, so changing a typo is an
+  // edit rather than retyping the whole name.
+  openOperatorScreen = () => {
+    this.go('operator', {
+      form: Object.assign({}, this.state.form, { operator_input: this.state.operator || '' })
+    });
+  };
+
+  openBandejaDetalle = async id => {
+    this.go('bandejaDetalle', { bandejaDetalle: null });
+    const r = await this.api.getBandejaDetail(id);
+    this.setState({ bandejaDetalle: r.ok ? r.data : null });
+    if (!r.ok) this.toast('No se pudo abrir', r.error.message, 'error');
+  };
+
+  openInsectarioDetalle = async id => {
+    this.go('insectarioDetalle', { insectarioDetalle: null });
+    const r = await this.api.getInsectarioDetail(id);
+    this.setState({ insectarioDetalle: r.ok ? r.data : null });
+    if (!r.ok) this.toast('No se pudo abrir', r.error.message, 'error');
+  };
+
+  openLoteDetalle = async id => {
+    this.go('loteDetalle', { loteDetalle: null, form: {} });
+    const r = await this.api.getLoteDetail(id);
+    this.setState({ loteDetalle: r.ok ? r.data : null, form: r.ok ? { tiempo_secado_horas: r.data.lote.tiempo_secado_horas || '', peso_final_kg: r.data.lote.peso_final_kg || '', qc_prueba_crujiente: r.data.lote.qc_prueba_crujiente || '', qc_color_dorado: r.data.lote.qc_color_dorado || '' } : {} });
+    if (!r.ok) this.toast('No se pudo abrir', r.error.message, 'error');
+  };
+
+  openRegistrarEvento = (tipoEvento, bandejaId) => {
+    this.setState({
+      prev: this.state.screen, screen: 'registrarEvento', photoName: '',
+      form: {
+        bandeja_id: bandejaId || '', bandejaSearch: '', tipo_evento: tipoEvento || '', fecha: this.now(),
+        tipo_alimento: tipoEvento === 'alimentacion' ? (this.props.defaultTipoAlimento || 'Bagazo') : '',
+        cantidad_kg: '', peso_inicial_kg: '', horas_ayuno: 24, peso_final_kg: '', larva_limpia_g: '',
+        notas: '', operator_name: this.state.operator || ''
+      }
+    });
+  };
+
+  openAlimentarGrupal = () => {
+    this.setState({
+      prev: this.state.screen, screen: 'alimentarGrupal',
+      form: { fecha: this.now(), bandeja_ids: [], tipo_alimento: this.props.defaultTipoAlimento || 'Bagazo', cantidad_kg: '', notas: '', operator_name: this.state.operator || '' }
+    });
+  };
+
+  openNuevaBandeja = recoleccionId => {
+    const rc = recoleccionId || (this.state.recolecciones[0] && this.state.recolecciones[0].id) || '';
+    this.setState({
+      prev: this.state.screen, screen: 'nuevaBandeja',
+      // no_bandeja starts EMPTY on purpose. The marker goes on the physical
+      // tray first, so the operator types the number that is already written
+      // there. Pre-filling a guess invites a mismatch between the tray in the
+      // rack and the record in the app, which nothing downstream could detect.
+      form: { recoleccion_id: rc, no_bandeja: '', fecha: this.now(), gramos_huevos: 0.5, iniciador_g: 300, tipo_iniciador: 'Bagazo', notas: '' }
+    });
+  };
+
+  openNuevoInsectario = () => {
+    this.setState({
+      prev: this.state.screen, screen: 'nuevoInsectario',
+      form: { nombre_insectario: 'ICA', fecha_inicio: this.today(), generacion_moscas: '', biomasa_kg: '', proyeccion_ovipositores: '', proyeccion_cierre: '', notas: '' }
+    });
+  };
+
+  openNuevaRecoleccion = () => {
+    const ins = this.state.insectarioDetalle ? this.state.insectarioDetalle.insectario : null;
+    this.setState({ prev: this.state.screen, screen: 'nuevaRecoleccion', form: { insectario_id: ins ? ins.id : '', fecha: this.now(), huevos_g: '' } });
+  };
+
+  openNuevaCochada = async () => {
+    this.go('nuevaCochada', { form: { fecha: this.now(), separacion_ids: [], peso_inicial_kg: '', notas: '', operator_name: this.state.operator || '' } });
+    const r = await this.api.listSeparacionesDisponibles();
+    this.setState({ separacionesDisponibles: r.ok ? r.data : [] });
+  };
+
+  back = () => {
+    const s = this.state.screen;
+    if (s === 'bandejaDetalle') return this.setState({ screen: this.state.tab === 'home' ? 'home' : this.state.tab });
+    if (s === 'insectarioDetalle') return this.setState({ screen: 'insectarios', tab: 'insectarios' });
+    if (s === 'loteDetalle') return this.setState({ screen: 'lotes', tab: 'lotes' });
+    if (s === 'operator') return this.setState({ screen: this.state.tab === 'home' ? 'home' : this.state.tab });
+    const prev = this.state.prev;
+    this.setState({ screen: prev === s ? 'home' : prev });
+  };
+
+  onSeeAllBandejas = () => this.setState({ screen: 'bandejas', tab: 'bandejas', prev: this.state.screen });
+
+  pickOperator = name => {
+    try { window.localStorage.setItem('tryento.operator', name); } catch (e) { /* ignore */ }
+    // Tapping a chip also refreshes its recency, so the people actually working
+    // today stay at the top of the list instead of whoever was added first.
+    if (this.api && this.api.rememberOperator) this.api.rememberOperator(name);
+    const nextForm = this.state.form && this.state.form.operator_name !== undefined ? Object.assign({}, this.state.form, { operator_name: name }) : this.state.form;
+    this.setState({ operator: name, form: nextForm, screen: this.state.prev === 'operator' ? 'home' : this.state.prev });
+  };
+
+  /* ----------------------------------------------------------- toggles/steppers */
+
+  toggleGrupalBandeja = id => this.setState(s => {
+    const arr = (s.form.bandeja_ids || []).slice();
+    const i = arr.indexOf(id);
+    if (i >= 0) arr.splice(i, 1); else arr.push(id);
+    return { form: Object.assign({}, s.form, { bandeja_ids: arr }) };
+  });
+
+  toggleSeparacion = id => {
+    const cap = this.props.ovenCapacidad || 8;
+    const arr = (this.state.form.separacion_ids || []).slice();
+    const i = arr.indexOf(id);
+    if (i >= 0) { arr.splice(i, 1); }
+    else {
+      if (arr.length >= cap) { this.toast('Máximo alcanzado', cap + ' bandejas metálicas por cochada', 'error'); return; }
+      arr.push(id);
+    }
+    const sum = arr.reduce((total, sid) => {
+      const sep = this.state.separacionesDisponibles.find(s => s.id === sid);
+      return total + (sep && sep.larva_limpia_g ? sep.larva_limpia_g : 0);
+    }, 0);
+    this.setState(s => ({ form: Object.assign({}, s.form, { separacion_ids: arr, peso_inicial_kg: Math.round(sum) / 1000 }) }));
+  };
+
+  adjustHoras = delta => this.setState(s => ({ form: Object.assign({}, s.form, { horas_ayuno: Math.max(1, (Number(s.form.horas_ayuno) || 24) + delta) }) }));
+
+  // The prototype kept only file.name and threw the image away, so no photo was
+  // ever stored anywhere. These now decode, downscale and persist the actual
+  // bytes, which survive offline and upload after the rows.
+  capture = async (e, key) => {
+    const file = e && e.target && e.target.files && e.target.files[0];
+    if (!file) return;
+    this.setState({ saving: true });
+    const r = await this.api.capturePhoto(file);
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('Foto no guardada', r.error.message, 'error');
+    const url = await this.api.localPhotoUrl(r.data.blob_id);
+    const kb = Math.round(r.data.bytes / 1024);
+    this.setState(key === 'qc'
+      ? { qcPhotoId: r.data.blob_id, qcPhotoName: kb + ' KB', qcPhotoUrl: url }
+      : { photoId: r.data.blob_id, photoName: kb + ' KB', photoUrl: url });
+  };
+  onPhoto = e => this.capture(e, 'evento');
+  onQcPhoto = e => this.capture(e, 'qc');
+
+  /* ------------------------------------------------------------------ saves */
+
+  saveEvento = async () => {
+    const f = this.state.form;
+    this.setState({ saving: true });
+    let r;
+    const common = { bandeja_id: f.bandeja_id, fecha: f.fecha, operator_name: f.operator_name, notas: f.notas, blob_id: this.state.photoId || null };
+    if (f.tipo_evento === 'alimentacion') r = await this.api.logAlimentacion(Object.assign({}, common, { tipo_alimento: f.tipo_alimento, cantidad_kg: f.cantidad_kg }));
+    else if (f.tipo_evento === 'ayuno') r = await this.api.logAyuno(Object.assign({}, common, { peso_inicial_kg: f.peso_inicial_kg, horas_ayuno: f.horas_ayuno, peso_final_kg: f.peso_final_kg }));
+    else if (f.tipo_evento === 'revision') r = await this.api.logRevision(common);
+    else if (f.tipo_evento === 'separacion') r = await this.api.logSeparacion(Object.assign({}, common, { larva_limpia_g: f.larva_limpia_g }));
+    else r = { ok: false, error: { message: 'Selecciona un tipo de evento.' } };
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    const tray = this.state.bandejas.find(b => b.id === f.bandeja_id);
+    this.toast('Guardado', (EVENTO_META[f.tipo_evento] || {}).label + ' · ' + (tray ? tray.id_bandeja : ''));
+    this.setState({ photoId: null, photoName: '', photoUrl: null });
+    await this.refreshLists();
+    this.openBandejaDetalle(f.bandeja_id);
+  };
+
+  saveGrupal = async () => {
+    const f = this.state.form;
+    this.setState({ saving: true });
+    const r = await this.api.logAlimentacionGrupal(f);
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Alimentación registrada', r.data.created + ' bandejas · en una sola operación');
+    await this.refreshLists();
+    this.setState({ screen: 'home', tab: 'home' });
+  };
+
+  saveBandeja = async () => {
+    const f = this.state.form;
+    this.setState({ saving: true });
+    const r = await this.api.createBandeja(f);
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Bandeja creada', r.data.id_bandeja);
+    await this.refreshLists();
+    this.openBandejaDetalle(r.data.id);
+  };
+
+  saveInsectario = async () => {
+    const f = this.state.form;
+    this.setState({ saving: true });
+    const r = await this.api.createInsectario(f);
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Insectario creado', r.data.codigo);
+    await this.refreshLists();
+    this.openInsectarioDetalle(r.data.id);
+  };
+
+  saveRecoleccion = async () => {
+    const f = this.state.form;
+    this.setState({ saving: true });
+    const r = await this.api.createRecoleccion(f);
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Recolección registrada', 'Recolecta ' + r.data.recolecta);
+    await this.refreshLists();
+    this.openInsectarioDetalle(f.insectario_id);
+  };
+
+  saveCochada = async () => {
+    const f = this.state.form;
+    this.setState({ saving: true });
+    const r = await this.api.createLote(Object.assign({}, f, { bandejas_metalicas_usadas: (f.separacion_ids || []).length }));
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Cochada creada', r.data.codigo);
+    await this.refreshLists();
+    this.openLoteDetalle(r.data.id);
+  };
+
+  saveQc = async () => {
+    const f = this.state.form;
+    const id = this.state.loteDetalle.lote.id;
+    this.setState({ saving: true });
+    const r = await this.api.updateLoteQC(id, Object.assign({}, f, { blob_id: this.state.qcPhotoId || null }));
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Secado y QC guardados', r.data.codigo);
+    await this.refreshLists();
+    this.openLoteDetalle(id);
+  };
+
+  aprobarQc = async () => {
+    const id = this.state.loteDetalle.lote.id;
+    const r = await this.api.updateLoteQC(id, { qc_aprobado: true });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Calidad aprobada', r.data.codigo);
+    await this.refreshLists();
+    this.openLoteDetalle(id);
+  };
+
+  rechazarQc = async () => {
+    const id = this.state.loteDetalle.lote.id;
+    // A rejection with no reason is not a record — the point is knowing WHY a
+    // batch was lost so the process can change.
+    const motivo = window.prompt('¿Por qué se rechaza esta cochada? (moho, tostado, prueba crujiente…)');
+    if (!motivo || !motivo.trim()) return;
+    const r = await this.api.rechazarCochada(id, motivo);
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Cochada rechazada', r.data.codigo, 'error');
+    await this.refreshLists();
+    this.openLoteDetalle(id);
+  };
+
+  useTypedName = async () => {
+    const nombre = (this.state.form.operator_input || '').trim();
+    if (!nombre) return;
+    const r = await this.api.rememberOperator(nombre);
+    if (!r.ok) return this.toast('Nombre no válido', r.error.message, 'error');
+    const ops = await this.api.listOperators();
+    this.setState({ operators: ops.ok ? ops.data : this.state.operators });
+    this.pickOperator(r.data.nombre);
+  };
+
+  resolveConflict = async (id, action) => {
+    const r = await this.api.resolveConflict(id, action);
+    if (!r.ok) return this.toast('No se pudo resolver', r.error.message, 'error');
+    this.toast(action === 'retry' ? 'Reintentando' : 'Descartado', '');
+    await this.refreshLists();
+    await this.refreshSecondary();
+  };
+
+  // The second half of a fast: weigh out ~24 h after weighing in. The prototype
+  // had no way to record this at all, so merma_pct was permanently null.
+  cerrarAyuno = async ayuno => {
+    const v = window.prompt('Peso final del ayuno en ' + ayuno.bandeja_label + ' (kg)\nPeso inicial: ' + ayuno.peso_inicial_kg + ' kg');
+    if (v === null || !String(v).trim()) return;
+    const r = await this.api.logAyunoFin(ayuno.id, { peso_final_kg: v });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    const merma = r.data.peso_inicial_kg > 0
+      ? Math.round(((r.data.peso_inicial_kg - r.data.peso_final_kg) / r.data.peso_inicial_kg) * 1000) / 10
+      : null;
+    this.toast('Ayuno cerrado', merma == null ? '' : 'Merma ' + merma + '%');
+    await this.refreshLists();
+    await this.refreshSecondary();
+  };
+
+  marcarEmpacado = async () => {
+    const id = this.state.loteDetalle.lote.id;
+    const r = await this.api.marcarEmpacado(id);
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Marcado como empacado', r.data.codigo);
+    await this.refreshLists();
+    this.openLoteDetalle(id);
+  };
+
+  marcarDespachado = async () => {
+    const id = this.state.loteDetalle.lote.id;
+    const r = await this.api.marcarDespachado(id);
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Marcado como despachado', r.data.codigo);
+    await this.refreshLists();
+    this.openLoteDetalle(id);
+  };
+
+  doAtractante = async () => {
+    const id = this.state.insectarioDetalle.insectario.id;
+    const r = await this.api.marcarAtractante(id);
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Atractante registrado', id);
+    await this.refreshLists();
+    this.openInsectarioDetalle(id);
+  };
+
+  doCierre = async () => {
+    const id = this.state.insectarioDetalle.insectario.id;
+    const r = await this.api.marcarCierre(id);
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Cierre registrado', id);
+    await this.refreshLists();
+    this.openInsectarioDetalle(id);
+  };
+
+  /* -------------------------------------------------------------- renderVals */
+
+  renderVals() {
+    const s = this.state;
+    const f = s.form || {};
+    const screen = s.screen;
+    const layout = this.props.homeLayout || 'tiles';
+    const ovenCap = this.props.ovenCapacidad || 8;
+    const titles = {
+      home: 'Inicio', operator: '¿Quién registra?', bandejas: 'Bandejas',
+      bandejaDetalle: s.bandejaDetalle ? s.bandejaDetalle.bandeja.id_bandeja : 'Bandeja',
+      registrarEvento: 'Registrar evento', alimentarGrupal: 'Alimentar bandejas', nuevaBandeja: 'Nueva bandeja',
+      insectarios: 'Insectarios', insectarioDetalle: s.insectarioDetalle ? s.insectarioDetalle.insectario.codigo : 'Insectario',
+      nuevoInsectario: 'Nuevo insectario', nuevaRecoleccion: 'Nueva recolección',
+      lotes: 'Cochadas', loteDetalle: s.loteDetalle ? s.loteDetalle.lote.codigo : 'Cochada', nuevaCochada: 'Nueva cochada',
+      sincronizacion: 'Sincronización'
+    };
+    const bandejasActivas = s.bandejas.filter(b => BANDEJA_ACTIVA(b.estado)).length;
+
+    const vals = {
+      screenTitle: titles[screen] || 'Inicio',
+      showBack: screen !== 'home' && screen !== 'bandejas' && screen !== 'insectarios' && screen !== 'lotes',
+      onBack: this.back, operatorShort: s.operator || 'Elegir nombre', onOpenOperator: () => this.openOperatorScreen(),
+      isHome: screen === 'home', isOperatorScreen: screen === 'operator', isBandejas: screen === 'bandejas',
+      isBandejaDetalle: screen === 'bandejaDetalle', isRegistrarEvento: screen === 'registrarEvento',
+      isAlimentarGrupal: screen === 'alimentarGrupal', isNuevaBandeja: screen === 'nuevaBandeja',
+      isInsectarios: screen === 'insectarios', isInsectarioDetalle: screen === 'insectarioDetalle',
+      isNuevoInsectario: screen === 'nuevoInsectario', isNuevaRecoleccion: screen === 'nuevaRecoleccion',
+      isLotes: screen === 'lotes', isLoteDetalle: screen === 'loteDetalle', isNuevaCochada: screen === 'nuevaCochada',
+      isSync: screen === 'sincronizacion',
+      showTabs: screen === 'home' || screen === 'bandejas' || screen === 'insectarios' || screen === 'lotes',
+      f, h: this.handlers, ovenCapacidad: ovenCap,
+      hasToast: !!s.toast, toastMsg: s.toast ? s.toast.msg : '', toastSub: s.toast ? s.toast.sub : '',
+      toastBg: s.toast && s.toast.tone === 'error' ? '#F87171' : '#22C55E', toastFg: '#061308',
+      toastMarkBg: '#061308', toastMarkFg: s.toast && s.toast.tone === 'error' ? '#F87171' : '#22C55E',
+      toastMark: s.toast && s.toast.tone === 'error' ? '!' : '✓',
+      tabs: [['home', 'Inicio'], ['bandejas', 'Bandejas'], ['insectarios', 'Insectarios'], ['lotes', 'Cochadas']].map(t => {
+        const active = screen === t[0];
+        return { label: t[1], fg: active ? '#EAF7EC' : '#5F7A68', mark: active ? NEON : 'transparent', onClick: () => this.setState({ screen: t[0], tab: t[0], prev: screen }) };
+      })
+    };
+
+    /* home */
+    vals.isTiles = layout === 'tiles';
+    vals.isRows = layout === 'rows';
+    vals.homeStatus = s.ready ? bandejasActivas + ' bandejas activas · ' + (s.operator ? 'registrando como ' + s.operator : 'sin nombre elegido') : 'Cargando datos de producción…';
+    vals.homeActions = [
+      { label: 'Alimentar', bg: '#111A14', fg: TEXT, mark: NEON, onClick: this.openAlimentarGrupal },
+      { label: 'Separar bandeja', bg: '#111A14', fg: TEXT, mark: '#38BDF8', onClick: () => this.openRegistrarEvento('separacion') },
+      { label: 'Registrar ayuno', bg: '#111A14', fg: TEXT, mark: '#FB923C', onClick: () => this.openRegistrarEvento('ayuno') },
+      { label: 'Nueva bandeja', bg: NEON, fg: INK, mark: INK, onClick: () => this.openNuevaBandeja() }
+    ];
+    vals.recentBandejas = s.bandejas.slice(0, 4).map(b => this.bandejaRow(b));
+    // The handler existed as a class field but was never published into vals,
+    // and only renderVals() output reaches the template (support.js:1085) — so
+    // "Ver todas" on the home screen did nothing at all.
+    vals.onSeeAllBandejas = this.onSeeAllBandejas;
+
+    /* operator screen */
+    const typed = (f.operator_input || '').trim();
+    vals.useNameDisabled = !typed;
+    vals.useNameBg = typed ? NEON : DISABLED_BG;
+    vals.useNameFg = typed ? INK : DISABLED_FG;
+    vals.useNameLabel = typed ? 'Registrar como ' + typed : 'Escribe tu nombre';
+    vals.addNameLabel = s.operators.length ? '¿NO ESTÁS EN LA LISTA?' : 'TU NOMBRE';
+    vals.onUseTypedName = () => this.useTypedName();
+    vals.hasKnownNames = s.operators.length > 0;
+    vals.operatorRows = s.operators.map(n => ({
+      name: n, tag: n === s.operator ? 'actual' : '', bg: n === s.operator ? NEON : CARD, fg: n === s.operator ? INK : TEXT, bd: n === s.operator ? NEON : BORDER, onClick: () => this.pickOperator(n)
+    }));
+
+    /* bandejas list */
+    vals.bandejaEstadoChips = [this.chip('Todas', !s.estadoFilter, () => this.setState({ estadoFilter: '' }))].concat(
+      Object.keys(ESTADO_BANDEJA).map(k => this.chip(ESTADO_BANDEJA[k].label, s.estadoFilter === k, () => this.setState({ estadoFilter: k }), ESTADO_BANDEJA[k].bg, INK)));
+    const insIds = [...new Set(s.bandejas.map(b => b.insectario_id).filter(Boolean))];
+    vals.insectarioFilterOptions = [{ value: '', label: 'Todos' }].concat(insIds.map(id => ({ value: id, label: id })));
+    vals.rangeChips = [['any', 'Cualquiera'], ['7', '7 días'], ['30', '30 días']].map(r => this.chip(r[1], s.range === r[0], () => this.setState({ range: r[0] })));
+    const days = s.range === '7' ? 7 : s.range === '30' ? 30 : null;
+    const cutoff = days ? new Date(Date.now() - days * 86400000).toISOString().slice(0, 16) : null;
+    const q = (f.q || '').toLowerCase();
+    const filtered = s.bandejas.filter(b => {
+      if (q && !(b.id_bandeja.toLowerCase().includes(q) || (b.insectario_codigo || '').toLowerCase().includes(q))) return false;
+      if (s.estadoFilter && b.estado !== s.estadoFilter) return false;
+      if (f.filterInsectario && b.insectario_id !== f.filterInsectario) return false;
+      if (cutoff && b.fecha < cutoff) return false;
+      return true;
+    });
+    vals.bandejaResults = filtered.map(b => this.bandejaRow(b));
+    vals.resultCount = filtered.length + (filtered.length === 1 ? ' bandeja' : ' bandejas');
+    vals.onClearFilters = () => this.setState({ estadoFilter: '', range: 'any', form: Object.assign({}, f, { q: '', filterInsectario: '' }) });
+
+    /* bandeja detalle */
+    const bd = s.bandejaDetalle;
+    if (bd) {
+      const meta = ESTADO_BANDEJA[bd.bandeja.estado] || ESTADO_BANDEJA.en_crecimiento;
+      const openAyuno = (s.ayunosAbiertos || []).find(a => a.bandeja_id === bd.bandeja.id);
+      const quick = BANDEJA_ACTIVA(bd.bandeja.estado) ? [
+        // Closing the open fast comes first: it is time-sensitive (the weigh-out
+        // is ~24 h after the weigh-in) and it is the only way merma is ever
+        // recorded.
+        ...(openAyuno ? [{ label: 'Cerrar ayuno', bg: '#FB923C', fg: INK, bd: '#FB923C', onClick: () => this.cerrarAyuno(openAyuno) }] : []),
+        { label: 'Alimentar', bg: '#111A14', fg: TEXT, bd: '#1E4A2F', onClick: () => this.openRegistrarEvento('alimentacion', bd.bandeja.id) },
+        { label: 'Ayuno', bg: '#111A14', fg: TEXT, bd: '#1E4A2F', onClick: () => this.openRegistrarEvento('ayuno', bd.bandeja.id) },
+        { label: 'Revisión', bg: '#111A14', fg: TEXT, bd: '#1E4A2F', onClick: () => this.openRegistrarEvento('revision', bd.bandeja.id) },
+        { label: 'Separar', bg: '#111A14', fg: TEXT, bd: '#1E4A2F', onClick: () => this.openRegistrarEvento('separacion', bd.bandeja.id) }
+      ] : [];
+      vals.bd = {
+        id_bandeja: bd.bandeja.id_bandeja, estadoLabel: meta.label, estadoBg: meta.bg,
+        facts: [
+          { label: 'INSECTARIO', value: bd.bandeja.insectario_codigo || '—' },
+          { label: 'RECOLECCIÓN', value: bd.bandeja.recolecta || '—' },
+          { label: 'FECHA', value: this.fmt(bd.bandeja.fecha) + ' · ' + this.ageDays(bd.bandeja.fecha) },
+          { label: 'INICIADOR', value: (bd.bandeja.iniciador_g || '—') + ' g · ' + (bd.bandeja.tipo_iniciador || '—') }
+        ],
+        notesLine: bd.bandeja.notas || (bd.bandeja.separacion ? 'Separada — larva limpia: ' + bd.bandeja.separacion.larva_limpia_g + ' g' : 'Sin separar todavía'),
+        showQuickActions: quick.length > 0, quickActions: quick,
+        showLoteLink: !!bd.lote, loteId: bd.lote ? bd.lote.codigo : '', onOpenLote: () => this.openLoteDetalle(bd.lote.id),
+        timelineLabel: 'HISTORIAL · ' + bd.eventos.length + ' EVENTOS',
+        eventos: bd.eventos.map(l => ({
+          evento: (EVENTO_META[l.tipo] || {}).label || l.tipo, when: this.fmt(l.fecha), detail: this.eventoDetalle(l),
+          meta: [l.operator_name, l.foto ? 'foto' : ''].filter(Boolean).join(' · '),
+          notas: l.tipo === 'revision' ? '' : (l.notas || ''), dot: (EVENTO_META[l.tipo] || {}).dot || '#5F7A68'
+        }))
+      };
+    } else {
+      vals.bd = { id_bandeja: '', estadoLabel: '', estadoBg: '#1D2A21', facts: [], notesLine: 'Cargando…', showQuickActions: false, quickActions: [], showLoteLink: false, timelineLabel: 'HISTORIAL', eventos: [] };
+    }
+
+    /* sincronización */
+    const sync = s.sync || {};
+    const TONE = { ok: ['#0E2415', '#4ADE80', '#1E4A2F'], warn: ['#1F1710', '#FB923C', '#5A3A18'],
+                   error: ['#1A1112', '#F87171', '#7A2E2E'], busy: ['#111A14', '#9FB8A6', '#1F3A29'],
+                   idle: ['#111A14', '#5F7A68', '#1F3A29'] };
+    const lbl = this.api && this.api.statusLabel ? this.api.statusLabel(s.sync) : { text: '…', tone: 'idle' };
+    const tone = TONE[lbl.tone] || TONE.idle;
+    vals.syncLabel = lbl.text; vals.syncBg = tone[0]; vals.syncFg = tone[1]; vals.syncBd = tone[2];
+    vals.syncDotBg = tone[1];
+    vals.onOpenSync = () => this.setState({ prev: screen, screen: 'sincronizacion' });
+    vals.onForceSync = async () => {
+      if (!this.api || !this.api.sync) return;
+      this.toast('Sincronizando…', '');
+      await this.api.sync();
+      await this.refreshLists();
+      await this.refreshSecondary();
+    };
+    vals.syncHeadline = !sync.configured ? 'Sólo en este equipo'
+      : sync.conflicts ? 'Hay registros rechazados'
+      : !sync.online ? 'Sin conexión'
+      : sync.pending ? 'Enviando trabajo pendiente'
+      : 'Todo sincronizado';
+    vals.syncDetail = !sync.configured
+      ? 'No hay servidor configurado, así que nada sale de este teléfono. Sirve para probar, no para producción.'
+      : [
+          sync.pending ? sync.pending + ' registro(s) esperando enviarse' : 'Sin registros pendientes',
+          sync.pendingPhotos ? sync.pendingPhotos + ' foto(s) por subir' : null,
+          sync.pendingWarning ? 'Llevan más de 12 h sin enviarse — conéctate pronto.' : null,
+          sync.lastSyncAt ? 'Última sincronización ' + this.rel(new Date(sync.lastSyncAt).toISOString()) : null
+        ].filter(Boolean).join(' · ');
+    vals.showClockWarning = !!sync.clockSkewed;
+
+    const cfs = s.conflicts || [];
+    vals.hasConflicts = cfs.length > 0;
+    vals.conflictsLabel = 'CONFLICTOS · ' + cfs.length;
+    vals.conflictRows = cfs.map(c => ({
+      explanation: c.explanation,
+      meta: (c.table || c.rpc || '') + ' · ' + this.fmt(c.created_at),
+      onRetry: () => this.resolveConflict(c.id, 'retry'),
+      onDiscard: () => this.resolveConflict(c.id, 'discard')
+    }));
+
+    const ays = s.ayunosAbiertos || [];
+    vals.hasAyunosAbiertos = ays.length > 0;
+    vals.ayunosLabel = 'AYUNOS ABIERTOS · ' + ays.length;
+    vals.ayunoRows = ays.map(a => ({
+      label: a.bandeja_label,
+      sub: 'Inició ' + this.rel(a.fecha) + ' · ' + a.peso_inicial_kg + ' kg · ' + a.horas_ayuno + ' h',
+      onClose: () => this.cerrarAyuno(a)
+    }));
+
+    /* shared pickers */
+    vals.operatorChips = s.operators.map(n => this.chip(n, f.operator_name === n, () => this.setField('operator_name', n)));
+    vals.tipoAlimentoChips = (this.api ? this.api.TIPO_ALIMENTO : []).map(t => this.chip(t, f.tipo_alimento === t, () => this.setField('tipo_alimento', t)));
+    vals.tipoIniciadorChips = (this.api ? this.api.TIPO_INICIADOR : []).map(t => this.chip(t, f.tipo_iniciador === t, () => this.setField('tipo_iniciador', t)));
+    vals.onSetNow = () => this.setField('fecha', this.now());
+    vals.onPhoto = this.onPhoto; vals.photoLabel = s.photoName ? 'Rehacer' : 'Agregar foto'; vals.photoName = s.photoName || 'Sin foto';
+
+    /* registrar evento */
+    const recentB = s.bandejas.slice(0, 6);
+    vals.bandejaChips = recentB.map(b => this.chip(b.id_bandeja, f.bandeja_id === b.id, () => this.setField('bandeja_id', b.id)));
+    const bq = (f.bandejaSearch || '').toLowerCase();
+    vals.bandejaSearchResults = bq ? s.bandejas.filter(b => b.id_bandeja.toLowerCase().includes(bq)).slice(0, 6).map(b => ({
+      id_bandeja: b.id_bandeja, estadoLabel: (ESTADO_BANDEJA[b.estado] || {}).label, estadoBg: (ESTADO_BANDEJA[b.estado] || {}).bg,
+      onPick: () => this.setState(st => ({ form: Object.assign({}, st.form, { bandeja_id: b.id, bandejaSearch: '' }) }))
+    })) : [];
+    vals.eventoChips = EVENTO_ORDER.map(k => this.chip(EVENTO_META[k].label, f.tipo_evento === k, () => this.setField('tipo_evento', k), EVENTO_META[k].dot, INK));
+    vals.showAlimentoFields = f.tipo_evento === 'alimentacion';
+    vals.showAyunoFields = f.tipo_evento === 'ayuno';
+    vals.showSeparacionFields = f.tipo_evento === 'separacion';
+    vals.horasLabel = (f.horas_ayuno || 24) + ' h';
+    vals.onHorasMinus = () => this.adjustHoras(-6); vals.onHorasPlus = () => this.adjustHoras(6);
+    const pi = parseFloat(f.peso_inicial_kg), pf = parseFloat(f.peso_final_kg);
+    const merma = pi > 0 && !isNaN(pf) ? Math.round(((pi - pf) / pi) * 1000) / 10 : null;
+    vals.mermaValue = merma == null ? '—' : merma + '%';
+    vals.mermaHint = merma == null ? 'Necesita peso inicial y final' : pi + ' → ' + pf + ' kg';
+    vals.mermaBg = merma == null ? '#17211A' : '#0E2415'; vals.mermaFg = merma == null ? '#5A6F60' : '#4ADE80'; vals.mermaLabelFg = merma == null ? '#5A6F60' : '#5FBF7F';
+
+    const evReady = !!f.bandeja_id && !!f.tipo_evento &&
+      (f.tipo_evento !== 'alimentacion' || !!f.tipo_alimento) &&
+      (f.tipo_evento !== 'ayuno' || !!f.peso_inicial_kg) &&
+      (f.tipo_evento !== 'separacion' || !!f.larva_limpia_g);
+    vals.eventoDisabled = s.saving || !evReady;
+    vals.eventoBg = vals.eventoDisabled ? DISABLED_BG : NEON; vals.eventoFg = vals.eventoDisabled ? DISABLED_FG : INK;
+    vals.eventoLabel = s.saving ? 'Guardando…' : 'Guardar ' + ((EVENTO_META[f.tipo_evento] || {}).label || 'evento').toLowerCase();
+    vals.onSaveEvento = this.saveEvento;
+
+    /* alimentar grupal */
+    // Trays still in ayuno are deliberately included: fasting is part of the
+    // rearing cycle and a tray only leaves the feeding pool once harvested.
+    const activas = s.bandejas.filter(b => BANDEJA_ACTIVA(b.estado));
+    vals.grupalBandejaChips = activas.map(b => this.chip(b.id_bandeja, (f.bandeja_ids || []).indexOf(b.id) >= 0, () => this.toggleGrupalBandeja(b.id)));
+    vals.selectedCountLabel = (f.bandeja_ids || []).length + ' seleccionadas';
+    vals.grupalDisabled = s.saving || !(f.bandeja_ids || []).length || !f.tipo_alimento || !f.cantidad_kg;
+    vals.grupalBg = vals.grupalDisabled ? DISABLED_BG : NEON; vals.grupalFg = vals.grupalDisabled ? DISABLED_FG : INK;
+    vals.grupalLabel = s.saving ? 'Guardando…' : 'Alimentar ' + (f.bandeja_ids || []).length + ' bandejas';
+    vals.onSaveGrupal = this.saveGrupal;
+
+    /* nueva bandeja */
+    vals.recoleccionChips = s.recolecciones.slice(0, 6).map(r => this.chip(r.insectario_nombre + ' · ' + r.recolecta, f.recoleccion_id === r.id, () => this.setField('recoleccion_id', r.id)));
+    const rec = s.recolecciones.find(r => r.id === f.recoleccion_id);
+    vals.idBandejaPreview = rec ? this.ddmm(f.fecha) + '.' + rec.recolecta + '.' + (f.no_bandeja || '?') : '—';
+    // Warn before saving rather than after: a duplicate number means two
+    // physical trays are wearing the same label, which is a floor problem.
+    const dupNo = !!f.no_bandeja && s.bandejas.some(b =>
+      b.recoleccion_id === f.recoleccion_id && String(b.no_bandeja) === String(f.no_bandeja));
+    vals.noBandejaHint = dupNo
+      ? 'Ya existe una bandeja Nº ' + f.no_bandeja + ' en esta recolección.'
+      : 'Escribe el número marcado en la bandeja.';
+    vals.noBandejaHintFg = dupNo ? '#F87171' : '#7FA189';
+    vals.nuevaBandejaDisabled = s.saving || !f.recoleccion_id || !f.no_bandeja || dupNo;
+    vals.nuevaBandejaBg = vals.nuevaBandejaDisabled ? DISABLED_BG : NEON; vals.nuevaBandejaFg = vals.nuevaBandejaDisabled ? DISABLED_FG : INK;
+    vals.nuevaBandejaLabel = s.saving ? 'Guardando…' : 'Crear bandeja';
+    vals.onSaveBandeja = this.saveBandeja;
+
+    /* insectarios */
+    vals.insectarioRows = s.insectarios.map(i => ({
+      id: i.codigo, estadoLabel: (ESTADO_INSECTARIO[i.estado] || {}).label, estadoBg: (ESTADO_INSECTARIO[i.estado] || {}).bg,
+      metrics: [{ label: 'BIOMASA', value: (i.biomasa_kg == null ? '—' : i.biomasa_kg + ' kg') }, { label: 'POBLACIÓN EST.', value: i.poblacion_estimada == null ? '—' : i.poblacion_estimada.toLocaleString('es') }, { label: 'GENERACIÓN', value: i.generacion_moscas || '—' }],
+      onOpen: () => this.openInsectarioDetalle(i.id)
+    }));
+    vals.onNuevoInsectario = this.openNuevoInsectario;
+
+    const insD = s.insectarioDetalle;
+    if (insD) {
+      const ins = insD.insectario;
+      const meta = ESTADO_INSECTARIO[ins.estado] || ESTADO_INSECTARIO.activo;
+      vals.ins = {
+        id: ins.codigo, estadoLabel: meta.label, estadoBg: meta.bg,
+        facts: [
+          { label: 'GENERACIÓN', value: ins.generacion_moscas || '—' },
+          { label: 'BIOMASA', value: ins.biomasa_kg == null ? '—' : ins.biomasa_kg + ' kg' },
+          { label: 'POBLACIÓN EST.', value: ins.poblacion_estimada == null ? '—' : ins.poblacion_estimada.toLocaleString('es') },
+          { label: 'PROY. CIERRE', value: ins.proyeccion_cierre || '—' },
+          { label: 'FECHA OVIPOSITORES', value: ins.fecha_ovipositores || '—' },
+          { label: 'CIERRE REAL', value: ins.cierre_real || '—' },
+          { label: 'DESV. OVIPOSITORES', value: this.diasLabel(ins.desviacion_ovipositores_dias) },
+          { label: 'DESV. CIERRE', value: this.diasLabel(ins.desviacion_cierre_dias) }
+        ],
+        notesLine: ins.notas || (ins.estado === 'activo' && ins.proyeccion_cierre && ins.proyeccion_cierre < this.today() ? 'Cierre proyectado ya pasó — considerar registrar Cierre.' : 'Sin notas'),
+        atractanteDone: !!ins.fecha_ovipositores, atractanteLabel: ins.fecha_ovipositores ? '✓ Atractante' : 'Atractante',
+        atractanteBg: ins.fecha_ovipositores ? DISABLED_BG : '#111A14', atractanteFg: ins.fecha_ovipositores ? DISABLED_FG : TEXT, atractanteBd: ins.fecha_ovipositores ? DISABLED_BG : '#1E4A2F',
+        onAtractante: this.doAtractante,
+        cierreDone: !!ins.cierre_real, cierreLabel: ins.cierre_real ? '✓ Cierre' : 'Cierre',
+        cierreBg: ins.cierre_real ? DISABLED_BG : '#111A14', cierreFg: ins.cierre_real ? DISABLED_FG : TEXT, cierreBd: ins.cierre_real ? DISABLED_BG : '#1E4A2F',
+        onCierre: this.doCierre,
+        recoleccionesLabel: 'RECOLECCIONES · ' + insD.recolecciones.length,
+        recolecciones: insD.recolecciones.map(r => ({ id: r.id, fecha: this.fmt(r.fecha), huevos: (r.huevos_g == null ? '—' : r.huevos_g + ' g') }))
+      };
+    } else {
+      vals.ins = { id: '', estadoLabel: '', estadoBg: '#1D2A21', facts: [], notesLine: 'Cargando…', atractanteDone: true, atractanteLabel: 'Atractante', atractanteBg: DISABLED_BG, atractanteFg: DISABLED_FG, atractanteBd: DISABLED_BG, onAtractante: () => {}, cierreDone: true, cierreLabel: 'Cierre', cierreBg: DISABLED_BG, cierreFg: DISABLED_FG, cierreBd: DISABLED_BG, onCierre: () => {}, recoleccionesLabel: 'RECOLECCIONES', recolecciones: [] };
+    }
+    vals.onNuevaRecoleccion = this.openNuevaRecoleccion;
+
+    /* nuevo insectario */
+    vals.nombreChips = (this.api ? this.api.NOMBRES_INSECTARIO : []).map(n => this.chip(n, f.nombre_insectario === n, () => this.setField('nombre_insectario', n)));
+    vals.idInsectarioPreview = f.nombre_insectario ? f.nombre_insectario + '-' + this.ddmm(f.fecha_inicio) : '—';
+    vals.onSetHoyInicio = () => this.setField('fecha_inicio', this.today());
+    vals.nuevoInsectarioDisabled = s.saving || !f.nombre_insectario || !f.fecha_inicio;
+    vals.nuevoInsectarioBg = vals.nuevoInsectarioDisabled ? DISABLED_BG : NEON; vals.nuevoInsectarioFg = vals.nuevoInsectarioDisabled ? DISABLED_FG : INK;
+    vals.nuevoInsectarioLabel = s.saving ? 'Guardando…' : 'Crear insectario';
+    vals.onSaveInsectario = this.saveInsectario;
+
+    /* nueva recoleccion */
+    vals.nuevaRecoleccionDisabled = s.saving || !f.insectario_id;
+    vals.nuevaRecoleccionBg = vals.nuevaRecoleccionDisabled ? DISABLED_BG : NEON; vals.nuevaRecoleccionFg = vals.nuevaRecoleccionDisabled ? DISABLED_FG : INK;
+    vals.nuevaRecoleccionLabel = s.saving ? 'Guardando…' : 'Registrar recolección';
+    vals.onSaveRecoleccion = this.saveRecoleccion;
+
+    /* lotes */
+    vals.loteRows = s.lotes.map(l => ({
+      id: l.codigo, estadoLabel: (ESTADO_LOTE[l.estado] || {}).label, estadoBg: (ESTADO_LOTE[l.estado] || {}).bg,
+      metrics: [{ label: 'PESO FINAL', value: l.peso_final_kg == null ? '—' : l.peso_final_kg + ' kg' }, { label: 'RENDIMIENTO', value: l.rendimiento_pct == null ? '—' : l.rendimiento_pct + '%' }, { label: 'BANDEJAS', value: l.n_bandejas + '/' + ovenCap }],
+      onOpen: () => this.openLoteDetalle(l.id)
+    }));
+    vals.onNuevaCochada = this.openNuevaCochada;
+
+    const loD = s.loteDetalle;
+    if (loD) {
+      const lote = loD.lote;
+      const meta = ESTADO_LOTE[lote.estado] || ESTADO_LOTE.secando;
+      vals.lote = {
+        id: lote.codigo, estadoLabel: meta.label, estadoBg: meta.bg,
+        facts: [
+          { label: 'FECHA', value: this.fmt(lote.fecha) },
+          { label: 'PESO INICIAL', value: lote.peso_inicial_kg == null ? '—' : lote.peso_inicial_kg + ' kg' },
+          { label: 'PESO FINAL', value: lote.peso_final_kg == null ? '—' : lote.peso_final_kg + ' kg' },
+          { label: 'RENDIMIENTO', value: lote.rendimiento_pct == null ? '—' : lote.rendimiento_pct + '%' },
+          { label: 'SECADO', value: lote.tiempo_secado_horas == null ? '—' : lote.tiempo_secado_horas + ' h' },
+          { label: 'BANDEJAS METÁLICAS', value: lote.bandejas_metalicas_usadas + '/' + ovenCap },
+          { label: 'COLOR / DORADO', value: lote.qc_color_dorado || '—' },
+          { label: 'VENCIMIENTO', value: lote.fecha_vencimiento || '—' }
+        ],
+        notesLine: lote.qc_prueba_crujiente || lote.notas || 'Sin notas',
+        separaciones: loD.separaciones.map(x => ({ bandeja_label: x.bandeja_label, larva: (x.larva_limpia_g == null ? '—' : x.larva_limpia_g + ' g') })),
+        // The panel stays open through en_qc. In the prototype it was gated on
+        // 'secando' alone, and entering peso_final_kg flipped the state to
+        // en_qc — which hid the very form that edits peso_final_kg, so a typo
+        // was uncorrectable.
+        showQcPanel: lote.estado === 'secando' || lote.estado === 'en_qc',
+        showDecision: (lote.estado === 'secando' || lote.estado === 'en_qc') && lote.peso_final_kg != null && lote.qc_aprobado !== true,
+        showRechazoMotivo: lote.estado === 'rechazado',
+        rechazoMotivo: lote.rechazo_motivo || '',
+        showEmpacar: lote.estado === 'en_qc' && lote.qc_aprobado === true,
+        showDespachar: lote.estado === 'empacado'
+      };
+    } else {
+      vals.lote = { id: '', estadoLabel: '', estadoBg: '#1D2A21', facts: [], notesLine: 'Cargando…', separaciones: [], showQcPanel: false, showDecision: false, showRechazoMotivo: false, rechazoMotivo: '', showEmpacar: false, showDespachar: false };
+    }
+    const rpi = loD ? loD.lote.peso_inicial_kg : null, rpf = parseFloat(f.peso_final_kg);
+    const rend = rpi > 0 && !isNaN(rpf) ? Math.round((rpf / rpi) * 1000) / 10 : null;
+    vals.rendValue = rend == null ? '—' : rend + '%';
+    vals.rendHint = rend == null ? 'Necesita peso final' : rpi + ' → ' + rpf + ' kg';
+    vals.rendBg = rend == null ? '#17211A' : '#0E2415'; vals.rendFg = rend == null ? '#5A6F60' : '#4ADE80'; vals.rendLabelFg = rend == null ? '#5A6F60' : '#5FBF7F';
+    vals.qcChips = (this.api ? this.api.QC_COLOR_DORADO : []).map(c => this.chip(c, f.qc_color_dorado === c, () => this.setField('qc_color_dorado', c)));
+    vals.qcPhotoLabel = s.qcPhotoName ? 'Rehacer foto' : 'Foto de la prueba crujiente';
+    vals.onQcPhoto = this.onQcPhoto;
+    vals.qcDisabled = s.saving || !f.peso_final_kg;
+    vals.qcBg = vals.qcDisabled ? DISABLED_BG : NEON; vals.qcFg = vals.qcDisabled ? DISABLED_FG : INK;
+    vals.qcLabel = s.saving ? 'Guardando…' : 'Guardar secado y QC';
+    vals.onSaveQc = this.saveQc;
+    vals.onAprobarQc = this.aprobarQc; vals.onRechazarQc = this.rechazarQc;
+    vals.onMarcarEmpacado = this.marcarEmpacado; vals.onMarcarDespachado = this.marcarDespachado;
+
+    /* nueva cochada */
+    const selSep = f.separacion_ids || [];
+    vals.separacionChips = s.separacionesDisponibles.map(sep => {
+      const selected = selSep.indexOf(sep.id) >= 0;
+      const atCap = !selected && selSep.length >= ovenCap;
+      return { label: sep.bandeja_label + ' · ' + sep.larva_limpia_g + 'g', onClick: () => this.toggleSeparacion(sep.id), bg: selected ? NEON : (atCap ? '#111A14' : CARD), fg: selected ? INK : (atCap ? DISABLED_FG : TEXT), bd: selected ? NEON : BORDER };
+    });
+    vals.hasSeparacionesDisponibles = s.separacionesDisponibles.length > 0;
+    vals.noSeparacionesDisponibles = s.separacionesDisponibles.length === 0;
+    vals.ovenCountLabel = selSep.length + ' / ' + ovenCap + ' bandejas metálicas';
+    vals.ovenCountColor = selSep.length >= ovenCap ? '#FB923C' : '#22C55E';
+    vals.cochadaDisabled = s.saving || !selSep.length;
+    vals.cochadaBg = vals.cochadaDisabled ? DISABLED_BG : NEON; vals.cochadaFg = vals.cochadaDisabled ? DISABLED_FG : INK;
+    vals.cochadaLabel = s.saving ? 'Guardando…' : 'Crear cochada';
+    vals.onSaveCochada = this.saveCochada;
+
+    return vals;
+  }
+
+  eventoDetalle(l) {
+    if (l.tipo === 'alimentacion') return (l.cantidad_kg == null ? '—' : l.cantidad_kg + ' kg') + (l.tipo_alimento ? ' · ' + l.tipo_alimento : '') + (l.origen === 'grupal' ? ' · grupal' : '');
+    if (l.tipo === 'ayuno') {
+      const merma = l.peso_inicial_kg > 0 && l.peso_final_kg != null ? Math.round(((l.peso_inicial_kg - l.peso_final_kg) / l.peso_inicial_kg) * 1000) / 10 : null;
+      return l.peso_inicial_kg + ' kg → ' + (l.peso_final_kg == null ? '…' : l.peso_final_kg + ' kg') + (merma != null ? ' · merma ' + merma + '%' : '') + ' · ' + l.horas_ayuno + ' h';
+    }
+    if (l.tipo === 'separacion') return (l.larva_limpia_g == null ? '—' : l.larva_limpia_g + ' g larva limpia');
+    return l.notas || 'Revisión registrada';
+  }
+}
+
+</script>
+</body>
+</html>

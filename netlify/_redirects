@@ -1,0 +1,7 @@
+# Netlify serves real files first and only falls through to these on a miss.
+#
+# The app has no client-side router, so this only matters for someone opening a
+# bookmarked or mistyped path — send them to the app rather than a 404 page.
+# 200 (rewrite), not 301: the URL must stay put so the service worker scope and
+# the PWA start_url still match.
+/*    /index.html   200

@@ -1,0 +1,28 @@
+{
+  "name": "tryento-logger-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TryEnto BSF production logger — offline-first PWA over Supabase",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "vendor": "node tools/vendor.mjs",
+    "serve": "node tools/serve.mjs",
+    "test": "node --test",
+    "check:sql": "node tools/check-sql.mjs",
+    "check:ui": "node tools/check-ui.mjs",
+    "check:backend": "node tools/check-backend.mjs",
+    "check": "npm run test && npm run check:ui && npm run check:sql",
+    "migration:csv": "node tools/csv-to-staging.mjs"
+  },
+  "devDependencies": {
+    "@fontsource/ibm-plex-mono": "^5.1.1",
+    "@fontsource/inter": "^5.1.1",
+    "@supabase/supabase-js": "^2.47.10",
+    "fake-indexeddb": "^6.0.0",
+    "libpg-query": "^18.1.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "sharp": "^0.35.4"
+  }
+}

@@ -1,0 +1,67 @@
+# Netlify build configuration.
+#
+# `publish` is dist/, NEVER the repo root: the root contains migration/csv/,
+# which holds the farm's exported production data. See tools/build.mjs.
+
+[build]
+  command = "npm run vendor && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # Nothing here is secret. The Supabase anon key lives in app-config.js and is
+  # public by design — row-level security is the boundary, not the key. A
+  # service-role key must NEVER appear in a Netlify environment variable for
+  # this site: the build output is public, and anything a build step can read
+  # can be baked into a published file by accident.
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), payment=(), usb=(), camera=(self)"
+    Cross-Origin-Opener-Policy = "same-origin"
+    # 'unsafe-eval' is required by the DC runtime (new Function(), support.js:844)
+    # and cannot be dropped without abandoning the .dc.html format. Everything
+    # else is self-only, and since no asset is loaded from a CDN there is no
+    # third-party script surface at all.
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; media-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'self'"
+
+# A cached service worker is a device permanently stuck on an old build.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/sw-precache.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# Must be re-readable so rotating the Supabase key actually propagates.
+[[headers]]
+  for = "/app-config.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/vendor/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/fonts/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
