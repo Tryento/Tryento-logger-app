@@ -12,76 +12,108 @@ About 20 minutes. Two services, both free tier:
 
 ---
 
-## Part A — Supabase (10 min)
+## Step 0 — be in the right folder
 
-### A1. Create the project
-
-[supabase.com](https://supabase.com) → **New project**. Region closest to the
-farm (Venezuela → `East US`). **Save the database password** — you can reset it
-but not recover it.
-
-Wait for it to finish provisioning (~2 min).
-
-### A2. Run the setup SQL
-
-**One file, one paste.** In Supabase: **SQL Editor** → **New query**.
-
-You need the CONTENTS of the file, not its name — pasting
-`supabase/SETUP_COMPLETO.sql` into the editor makes Postgres try to run that
-text as SQL and it fails with `syntax error at or near "supabase"`.
-
-Easiest way, in VS Code: open **`supabase/SETUP_COMPLETO.sql`**, `Ctrl+A`,
-`Ctrl+C`, paste into the editor, **Run**.
-
-Or copy it straight to the clipboard from PowerShell:
+The repo sits one level down from the GitHub folder. Every `npm` command below
+must run from the folder that contains `package.json`:
 
 ```powershell
-[System.IO.File]::ReadAllText("$PWD\supabase\SETUP_COMPLETO.sql") | Set-Clipboard
+cd C:\Users\Zoned\Documents\GitHub\Tryento-logger-app\Tryento-logger-app
 ```
 
-It should report success and create 13 tables. That one file contains all three
-migrations in order:
+Check you are in the right place — this must print a file, not an error:
 
-| Part | Creates |
-|---|---|
-| `0001_schema.sql` | Tables, constraints, triggers, permissions |
-| `0002_views.sql` | Analytics views |
-| `0003_seed.sql` | Dropdown values, the names Maria and Ricardo, photo bucket |
+```powershell
+dir package.json
+```
 
-If it errors, run the three files in `supabase/migrations/` one at a time
-instead — you get a much clearer idea of where it stopped.
+If npm says `Could not read package.json`, you are one level too high.
 
-> Editing a migration later? Run `bash tools/build-setup-sql.sh` to regenerate
-> the combined file. `npm run check:sql` fails if you forget.
-
-### A3. One setting that will otherwise waste your afternoon
-
-**Settings → API → Exposed schemas** → add **`app`** → Save.
-
-The tables live in a schema called `app`, and Supabase only publishes `public`
-by default. Miss this and *every single request returns 404* with an error that
-looks nothing like a settings problem. It is the most common failure by far.
-
-### A4. Copy two values
-
-**Settings → API**:
-
-- **Project URL** — like `https://abcdefgh.supabase.co`
-- **anon public** key — the long one starting `eyJ...`
-
-Take the **anon public** key, not `service_role`. The anon key is meant to be
-public; `service_role` bypasses everything and must never leave the dashboard.
+In VS Code: **File -> Open Folder** -> pick the *inner* `Tryento-logger-app`, so
+the built-in terminal always starts in the right place.
 
 ---
 
-## Part B — Configure and push (5 min)
+## Part A — Supabase
 
-### B1. Fill in `app-config.js`
+### A1. Create the project
+
+1. Go to **https://supabase.com/dashboard** and sign in.
+2. Click **New project**.
+3. Fill in:
+   - **Organization** — pick yours (or create one; any name).
+   - **Name** — `tryento` (only you see this).
+   - **Database Password** — click **Generate a password** and **save it in your
+     password manager**. You will not need it for the app, but you cannot
+     recover it later, only reset it.
+   - **Region** — `East US (North Virginia)`.
+4. Click **Create new project**.
+5. Wait until the top of the page stops saying *"Setting up project"* — about
+   2 minutes. Do not continue before it finishes.
+
+### A2. Run the setup SQL
+
+1. In the **left sidebar**, click **SQL Editor** (the `>_` icon).
+2. Click **+ New query** (top left of that panel).
+3. In VS Code, open **`supabase/SETUP_COMPLETO.sql`** from this repo. Press
+   `Ctrl+A`, then `Ctrl+C`.
+
+   > Copy the file's **contents**. Pasting the file *name* gives
+   > `syntax error at or near "supabase"`.
+
+   Or put it straight on your clipboard from PowerShell, run in the repo folder:
+   ```powershell
+   [System.IO.File]::ReadAllText("$PWD\supabase\SETUP_COMPLETO.sql") | Set-Clipboard
+   ```
+4. Click into the empty query box, press `Ctrl+V`.
+5. Click **Run** (bottom right, or `Ctrl+Enter`).
+6. Wait for the green **Success. No rows returned**. It takes a few seconds.
+
+**Confirm it worked** — click **Table Editor** in the sidebar, and in the schema
+dropdown at the top (it says `public`) choose **`app`**. You should see 13
+tables: `alimentacion`, `ayuno`, `ayuno_huerfano`, `bandeja`, `catalogo`,
+`cochada`, `cochada_separacion`, `insectario`, `migracion_log`, `recoleccion`,
+`revision`, `separacion`.
+
+If you see an error instead, run the three files in `supabase/migrations/` one
+at a time — you get a clearer idea of where it stopped.
+
+### A3. Expose the `app` schema
+
+Without this every request returns 404 and the app will look broken.
+
+1. Sidebar → **Settings** (gear icon, bottom of the sidebar).
+2. Click **API**. *(If there is no "Exposed schemas" box on that page, look for
+   **Data API** in the settings list — Supabase has moved this setting between
+   the two.)*
+3. Find **Exposed schemas**. It is a multi-select showing `public` and `graphql_public`.
+4. Click it and tick **`app`** so all three are selected.
+5. Click **Save**.
+
+### A4. Copy the anon key
+
+1. Still in **Settings**, open **API Keys** *(older projects: the keys are on
+   the same **API** page under "Project API keys")*.
+2. Copy the key labelled **`anon`** / **`public`** / **publishable**. It is long
+   and starts with `eyJ`.
+
+   **Not** the one labelled `service_role` / `secret`. That one ignores all
+   security rules, and this file is downloadable by anyone who opens your site.
+3. You do **not** need the Project URL — it is already filled in for your
+   project (`https://roxgnhrdrgcrfybaevov.supabase.co`).
+
+---
+
+## Part B — Connect the app
+
+### B1. Paste the key
+
+Open **`app-config.js`** in the repo root. Put the key between the quotes:
 
 ```js
 window.__TRYENTO_CONFIG__ = {
-  supabaseUrl: 'https://abcdefgh.supabase.co',
-  supabaseAnonKey: 'eyJhbGciOi...',
+  supabaseUrl: 'https://roxgnhrdrgcrfybaevov.supabase.co',
+  supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',   // <-- aquí
   authMode: 'none',
   dbSchema: 'app',
   storageBucket: 'fotos',
@@ -90,33 +122,37 @@ window.__TRYENTO_CONFIG__ = {
 };
 ```
 
-### B2. Prove the database works before you deploy anything
+Save the file.
+
+### B2. Check that the database actually works
+
+In a terminal, in the repo folder:
 
 ```bash
 npm install
 npm run check:backend
 ```
 
-This writes a real colony, tray, feeding, fast, harvest and oven run to **your**
-Supabase, checks the computed values and the state machine came out right, and
-then deletes everything it created. It is the difference between "the SQL ran"
-and "storage actually works".
+This writes a real colony, tray, feeding, fast, harvest and oven run to your
+Supabase, checks the triggers fired and the computed values are right, then
+deletes everything it created.
 
-Every line should say `ok`. If one says `FAIL`, it tells you exactly what to
-fix. **Do not continue until this is clean.**
+Expected output ends with:
 
-### B3. Push to GitHub
+```
+La base está lista: escritura, claves foráneas, triggers, restricciones,
+vistas y almacenamiento de fotos funcionan.
+```
 
-The repo is already set up (`Tryento/Tryento-logger-app`, branch `main`):
+If any line says `FAIL`, it names the fix. **Do not continue until it is clean.**
+
+### B3. Push
 
 ```bash
 git add .
 git commit -m "App de registro de producción"
 git push
 ```
-
-`.gitignore` already excludes `node_modules/`, `dist/` and `migration/csv/` —
-verified, so your exported farm data cannot be committed by accident.
 
 ---
 

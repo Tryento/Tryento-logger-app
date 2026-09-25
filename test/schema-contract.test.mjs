@@ -86,15 +86,22 @@ export function parseSchema(rawSql) {
 
     const columns = new Set();
     const generated = new Set();
+    const required = new Set();
     for (const part of splitTopLevel(body)) {
       const t = part.trim();
       if (!t || NOT_A_COLUMN.test(t)) continue;
       const col = (/^["']?(\w+)["']?/.exec(t) || [])[1];
       if (!col) continue;
       columns.add(col);
-      if (/generated\s+always/i.test(t)) generated.add(col);
+      const isGenerated = /generated\s+always/i.test(t);
+      if (isGenerated) generated.add(col);
+      // Required = the client MUST supply it. NOT NULL (or a primary key) with
+      // no DEFAULT to fall back on, and not computed by the database.
+      const notNull = /\bnot\s+null\b/i.test(t) || /\bprimary\s+key\b/i.test(t);
+      const hasDefault = /\bdefault\b/i.test(t);
+      if (notNull && !hasDefault && !isGenerated) required.add(col);
     }
-    tables.set(name, { columns, generated });
+    tables.set(name, { columns, generated, required });
   }
   return tables;
 }
@@ -128,6 +135,15 @@ test('the migration parses into tables with columns', () => {
   assert.ok(TABLES.get('ayuno').generated.has('merma_pct'));
   assert.ok(TABLES.get('cochada').generated.has('rendimiento_pct'));
   assert.ok(!TABLES.get('bandeja').generated.has('estado'), 'bandeja.estado is trigger-owned, not generated');
+
+  // Required-column parsing must actually be finding things, or the check below
+  // passes vacuously.
+  assert.ok(TABLES.get('recoleccion').required.has('insectario_id'),
+    'recoleccion.insectario_id is NOT NULL with no default');
+  assert.ok(TABLES.get('recoleccion').required.has('recolecta'));
+  assert.ok(TABLES.get('bandeja').required.has('no_bandeja'));
+  assert.ok(!TABLES.get('bandeja').required.has('notas'), "notas has a default, so it is not required");
+  assert.ok(!TABLES.get('bandeja').required.has('estado'), 'estado has a default');
 });
 
 test('exercise every write, then verify every queued payload', async () => {
@@ -169,11 +185,22 @@ test('exercise every write, then verify every queued payload', async () => {
   const checkRow = (table, row, label) => {
     const spec = TABLES.get(table);
     if (!spec) { problems.push(`${label}: no such table "${table}" in the migration`); return; }
-    for (const key of Object.keys(toWire(row))) {
+    const wire = toWire(table, row);
+    for (const key of Object.keys(wire)) {
       if (!spec.columns.has(key)) {
         problems.push(`${label}: sends "${key}", which app.${table} does not have`);
       } else if (spec.generated.has(key)) {
         problems.push(`${label}: sends "${key}", a GENERATED ALWAYS column — Postgres rejects the whole insert`);
+      }
+    }
+    // The other half, and the one that actually bit: a NOT NULL column with no
+    // default that the client never sends. `recoleccion.insectario_id` was
+    // being stripped by an over-eager shared deny-list, so every collection
+    // failed with a not-null violation — and every tray and event behind it
+    // was blocked too.
+    for (const col of spec.required) {
+      if (!(col in wire) || wire[col] === null || wire[col] === undefined) {
+        problems.push(`${label}: never sends "${col}", which app.${table} requires (NOT NULL, no default)`);
       }
     }
   };
@@ -200,7 +227,7 @@ test('exercise every write, then verify every queued payload', async () => {
 test('generated and derived values are stripped before sending', async () => {
   // Explicit spot-checks, so a regression names the field rather than just
   // failing somewhere in the sweep above.
-  const wire = toWire({
+  const wire = toWire('insectario', {
     id: 'x', codigo: 'ICB-0105', biomasa_kg: 3.1,
     poblacion_estimada: 155000,           // GENERATED
     desviacion_cierre_dias: null,         // GENERATED

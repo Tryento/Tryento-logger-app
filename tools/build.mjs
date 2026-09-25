@@ -122,6 +122,26 @@ async function main() {
   if (leaked.length) throw new Error(`dist/ contiene archivos que no deben publicarse:\n  ${leaked.join('\n  ')}`);
   console.log('  check   no migration data, SQL or tooling in dist/');
 
+  // A build with no Supabase key produces an app that silently runs local-only:
+  // it looks completely normal, captures fine, and never sends anything
+  // anywhere. That is a legitimate demo mode, so this warns rather than fails —
+  // but it must be impossible to ship by accident without noticing.
+  const cfgSrc = await readFile(p('app-config.js'), 'utf8');
+  const win = {};
+  new Function('window', cfgSrc)(win);
+  const cfg = win.__TRYENTO_CONFIG__ || {};
+  if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) {
+    console.log('');
+    console.log('  ###################################################################');
+    console.log('  #  ATENCION: app-config.js no tiene supabaseUrl/supabaseAnonKey.  #');
+    console.log('  #  Esta version NO guarda nada en el servidor.                    #');
+    console.log('  #  La app dira "Solo local" y los datos se quedan en el telefono. #');
+    console.log('  ###################################################################');
+    console.log('');
+  } else {
+    console.log(`  config  ${cfg.supabaseUrl}  (authMode: ${cfg.authMode || 'none'})`);
+  }
+
   console.log(`\ndist/ listo para publicar.`);
 }
 

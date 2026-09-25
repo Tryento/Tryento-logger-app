@@ -161,23 +161,61 @@ export async function claimBatch(db, { limit = 50, now = Date.now() } = {}) {
   const pending = all
     .filter(it => it.status === STATUS.PENDING && (it.next_attempt_at || 0) <= now)
     .sort((a, b) => a.seq - b.seq);
-  const byRow = new Map();
-  for (const it of all) if (it.row_id) byRow.set(it.row_id, it);
+
+  // Rows that still owe the server something, and rows that will never land.
+  const owing = new Set();
+  const stuckByRow = new Map();
+  for (const it of all) {
+    if (!it.row_id) continue;
+    if (OPEN_STATUSES.includes(it.status)) owing.add(it.row_id);
+    if (STUCK_STATUSES.includes(it.status)) stuckByRow.set(it.row_id, it);
+  }
 
   const ready = [];
   const blocked = [];
+  // Rows whose earlier operation is going out in THIS batch. Items are executed
+  // in seq order, so a later item may rely on one already queued ahead of it.
+  const satisfied = new Set();
+  // Rows whose earlier operation was held back. Nothing for that row may
+  // overtake it.
+  const held = new Set();
+
   for (const item of pending) {
     let skip = false;
-    for (const dep of item.depends_on || []) {
-      const parent = byRow.get(dep);
-      if (!parent || parent.status === STATUS.DONE) continue;
-      if (STUCK_STATUSES.includes(parent.status)) { blocked.push({ item, parent }); skip = true; break; }
-      skip = true; // parent still queued — try again next pass
-      break;
+
+    // ── per-row FIFO ────────────────────────────────────────────────────────
+    // An operation must never overtake an earlier one on the SAME row.
+    //
+    // This is what made `cerrar_ayuno` and `actualizar_qc_cochada` fail
+    // silently: they carry no dependency of their own, so when the INSERT of
+    // the row they update was held back waiting for its parent, the CAS ran
+    // first, updated zero rows, reported success, and the weight was lost with
+    // nothing queued, nothing stuck and nothing to see.
+    if (item.row_id && held.has(item.row_id)) skip = true;
+
+    // ── declared dependencies ───────────────────────────────────────────────
+    if (!skip) {
+      for (const dep of item.depends_on || []) {
+        if (satisfied.has(dep)) continue;              // goes out earlier in this batch
+        if (stuckByRow.has(dep)) {                     // will never land
+          blocked.push({ item, parent: stuckByRow.get(dep) });
+          skip = true;
+          break;
+        }
+        if (owing.has(dep)) { skip = true; break; }    // still queued: try next pass
+      }
     }
-    if (!skip) ready.push(item);
+
+    if (skip) {
+      if (item.row_id) held.add(item.row_id);
+      continue;
+    }
+
+    ready.push(item);
+    if (item.row_id) satisfied.add(item.row_id);
     if (ready.length >= limit) break;
   }
+
   return { ready, blocked };
 }
 

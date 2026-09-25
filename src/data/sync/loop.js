@@ -21,7 +21,7 @@ import { SYNC_INTERVAL_MS } from '../config.js';
 
 const LOCK = 'tryento-sync';
 let _timer = null;
-let _running = false;
+let _inflight = null;
 let _started = false;
 
 /**
@@ -86,8 +86,36 @@ async function ensureSession(db) {
   return true;
 }
 
+/**
+ * Run one sync pass.
+ *
+ * Concurrency, and why it is not just a boolean guard:
+ *
+ *   A background pass is nearly always in flight — every write calls nudge().
+ *   The original guard returned immediately if one was running, which meant a
+ *   FORCED sync (the operator tapping "Sincronizar ahora", or the last write of
+ *   the day) could silently do nothing and the work would sit in the queue
+ *   until the next timer tick. Worse, that was invisible: the queue count just
+ *   did not move.
+ *
+ *   So: an opportunistic call still coalesces into the running pass, but a
+ *   forced one WAITS for it and then runs its own, so the caller's request is
+ *   actually honoured.
+ */
 export async function syncNow({ force = false } = {}) {
-  if (_running) return { skipped: 'ya en curso' };
+  if (_inflight) {
+    if (!force) return { skipped: 'ya en curso' };
+    await _inflight.catch(() => {});
+  }
+  _inflight = runSyncPass({ force });
+  try {
+    return await _inflight;
+  } finally {
+    _inflight = null;
+  }
+}
+
+async function runSyncPass({ force }) {
   const db = await openDb();
 
   if (!canSync()) {
@@ -95,7 +123,6 @@ export async function syncNow({ force = false } = {}) {
     return { skipped: 'sin conexión' };
   }
 
-  _running = true;
   setSyncing(true);
   await refreshStatus();
 
@@ -124,7 +151,6 @@ export async function syncNow({ force = false } = {}) {
     console.warn('[tryento] sync falló', err);
     return { error: err.message };
   } finally {
-    _running = false;
     setSyncing(false);
     await refreshStatus();
   }

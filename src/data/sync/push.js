@@ -25,46 +25,62 @@ import { rowById } from '../store.js';
 import { uploadBlobsFor } from './blobs.js';
 
 /**
- * Columns that must never be sent.
+ * Columns that must never be sent, for EVERY table.
  *
  * Three groups:
  *
  *  - GENERATED ALWAYS columns (`merma_pct`, `rendimiento_pct`,
- *    `poblacion_estimada`, the deviations, and `estado` on insectario/cochada).
- *    Postgres rejects any INSERT that supplies one. `bandeja.estado` is a real
- *    column but is trigger-owned, so it is stripped too and the trigger sets it.
+ *    `poblacion_estimada`, the deviations) plus `estado`, which is either
+ *    generated (insectario, cochada) or trigger-owned (bandeja). Postgres
+ *    rejects an INSERT that supplies a generated column.
  *
- *  - Read-side joins that have no column at all (`insectario_nombre`,
- *    `last_evento`, `lote_id`, …).
+ *  - Read-side conveniences that are not a column on ANY table
+ *    (`insectario_nombre`, `last_evento`, `n_bandejas`, …).
  *
- *  - `updated_at` and `synced_at`, which the SERVER must own. This one matters:
- *    the pull cursor is a range over `updated_at`. A device that has been
- *    offline for two days would otherwise insert rows stamped two days ago —
- *    already behind every other device's cursor — and those rows would never be
- *    pulled by anyone. Letting the server default them to now() on insert makes
- *    a late arrival always land ahead of every cursor. `created_at` is kept: it
- *    is genuinely "when the operator entered this".
+ *  - `updated_at` / `synced_at`, which the SERVER must own. This one matters:
+ *    the pull cursor is a range over `updated_at`. A device offline for two
+ *    days would otherwise insert rows stamped two days ago — already behind
+ *    every other device's cursor — and nobody would ever pull them. Letting the
+ *    server default them makes a late arrival land ahead of every cursor.
+ *    `created_at` is kept: it is genuinely "when the operator entered this".
  */
-const LOCAL_ONLY = new Set(['_abierto', '_resuelto', 'estado', 'merma_pct',
-  'rendimiento_pct', 'poblacion_estimada', 'desviacion_cierre_dias',
-  'desviacion_ovipositores_dias', 'n_bandejas', 'despachado', 'empacado',
-  'last_evento', 'separacion', 'lote_id', 'insectario_id', 'insectario_nombre',
-  'insectario_codigo', 'recolecta', 'tiene_ayuno_abierto', 'ayuno_abierto_id',
+const STRIP_ALWAYS = new Set([
+  '_abierto', '_resuelto',
+  'estado', 'merma_pct', 'rendimiento_pct', 'poblacion_estimada',
+  'desviacion_cierre_dias', 'desviacion_ovipositores_dias',
+  'n_bandejas', 'despachado', 'empacado', 'last_evento', 'separacion',
+  'lote_id', 'insectario_nombre', 'insectario_codigo',
+  'tiene_ayuno_abierto', 'ayuno_abierto_id',
   'kg_alimento_total', 'n_alimentaciones', 'abierto',
-  'updated_at', 'synced_at']);
+  'updated_at', 'synced_at'
+]);
 
 /**
- * Strip derived and generated columns before sending.
+ * Columns to strip only from SPECIFIC tables, because the same name is a real
+ * column somewhere else.
  *
- * `estado`, `merma_pct`, `rendimiento_pct` and the deviation fields are
- * GENERATED ALWAYS columns server-side — Postgres rejects any INSERT that
- * supplies them. The joins (`insectario_nombre`, `last_evento`, ...) are read
- * conveniences that have no column at all.
+ * This exists because of a bug worth remembering: `insectario_id` and
+ * `recolecta` are joined onto bandeja rows for display, but they are genuine
+ * NOT NULL columns on `recoleccion`. Stripping them globally made every
+ * recolección fail with "null value in column insectario_id violates not-null
+ * constraint" — and since the failure was terminal, every tray and event
+ * behind it was blocked too. One over-eager entry in a shared deny-list broke
+ * the entire sync chain below the first table.
  */
-export function toWire(row) {
+const STRIP_PER_TABLE = {
+  bandeja: new Set(['insectario_id', 'recolecta'])
+};
+
+export function toWire(table, row) {
+  // Tolerate the old single-argument shape so a stale caller fails loudly
+  // rather than silently sending everything.
+  if (row === undefined) throw new Error('toWire(table, row): falta el nombre de la tabla');
+
+  const extra = STRIP_PER_TABLE[table];
   const out = {};
   for (const [k, v] of Object.entries(row || {})) {
-    if (LOCAL_ONLY.has(k)) continue;
+    if (STRIP_ALWAYS.has(k)) continue;
+    if (extra && extra.has(k)) continue;
     if (v === undefined) continue;
     out[k] = v;
   }
@@ -79,16 +95,16 @@ async function execute(client, item) {
     // do, because that means two devices recorded the same physical event.
     const { error } = await client
       .from(item.table)
-      .upsert(toWire(item.payload), { onConflict: 'id', ignoreDuplicates: true });
+      .upsert(toWire(item.table, item.payload), { onConflict: 'id', ignoreDuplicates: true });
     if (error) throw toError(error);
     return;
   }
 
   if (item.op === 'rpc' || item.op === 'cas') {
     const payload = item.rpc === 'log_alimentacion_grupal'
-      ? { p_rows: (item.payload.p_rows || []).map(toWire) }
+      ? { p_rows: (item.payload.p_rows || []).map(r => toWire('alimentacion', r)) }
       : item.rpc === 'crear_cochada'
-        ? { p_cochada: toWire(item.payload.p_cochada), p_separacion_ids: item.payload.p_separacion_ids }
+        ? { p_cochada: toWire('cochada', item.payload.p_cochada), p_separacion_ids: item.payload.p_separacion_ids }
         : item.payload;
     const { error } = await client.rpc(item.rpc, payload);
     if (error) throw toError(error);
@@ -122,9 +138,21 @@ export async function pushOnce(db, { limit = PUSH_BATCH_SIZE } = {}) {
 
   const me = currentUserId();
 
+  // Rows whose operation failed earlier in THIS batch. Anything queued behind
+  // them is left pending rather than sent: it would fail with a foreign-key
+  // violation, which the taxonomy correctly treats as terminal, and a
+  // perfectly good row would be parked in the conflict inbox for a problem
+  // that was never its own.
+  const failedRows = new Set();
+
   for (const item of ready) {
     // Never push another operator's queued work under this token.
     if (item.created_by && me && item.created_by !== me) { result.skipped++; continue; }
+
+    const waitingOnFailure =
+      (item.depends_on || []).some(d => failedRows.has(d)) ||
+      (item.row_id && failedRows.has(item.row_id));
+    if (waitingOnFailure) { result.skipped++; continue; }
 
     await markInflight(db, item.id);
     try {
@@ -146,6 +174,8 @@ export async function pushOnce(db, { limit = PUSH_BATCH_SIZE } = {}) {
         await recordConflict(db, item, err, reason);
         result.conflicts++;
       }
+      // Either way this row did not land, so hold back anything behind it.
+      if (item.row_id) failedRows.add(item.row_id);
       // Loop continues either way. This is the line that stops one poison item
       // from silently stalling every write behind it.
     }

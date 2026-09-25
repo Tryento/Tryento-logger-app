@@ -37,6 +37,15 @@ function bad(label, why, fix) {
 
 const uuid = () => crypto.randomUUID();
 
+/** Decode a JWT payload without verifying it — just to spot a service_role key. */
+function safeJwtPayload(token) {
+  try {
+    const part = String(token).split('.')[1];
+    return Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+  } catch { return ''; }
+}
+
+
 async function loadConfig() {
   if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
     return { supabaseUrl: process.env.SUPABASE_URL, supabaseAnonKey: process.env.SUPABASE_ANON_KEY, dbSchema: 'app', storageBucket: 'fotos' };
@@ -51,9 +60,35 @@ async function main() {
   console.log('Verificando el backend...\n');
 
   const cfg = await loadConfig();
-  if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) {
-    bad('configuración', 'app-config.js no tiene supabaseUrl / supabaseAnonKey.',
-        'Supabase → Project Settings → API. O exporta SUPABASE_URL y SUPABASE_ANON_KEY.');
+
+  if (!cfg.supabaseUrl) {
+    bad('configuración', 'Falta supabaseUrl en app-config.js.',
+        'Supabase → Settings → API → "Project URL".');
+    return;
+  }
+  // The dashboard shows the REST endpoint as well, and it is the one people
+  // copy. supabase-js appends /rest/v1 itself, so pasting it gives requests to
+  // /rest/v1/rest/v1/... and a 404 that looks like the schema is missing.
+  if (/\/rest\/v1/.test(cfg.supabaseUrl)) {
+    bad('configuración', `supabaseUrl es el endpoint REST: ${cfg.supabaseUrl}`,
+        `Quita "/rest/v1/". Debe quedar: ${cfg.supabaseUrl.split('/rest/')[0]}`);
+    return;
+  }
+  if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/?$/i.test(cfg.supabaseUrl)) {
+    bad('configuración', `supabaseUrl no tiene la forma esperada: ${cfg.supabaseUrl}`,
+        'Debe ser https://xxxxxxxx.supabase.co (sin nada después).');
+    return;
+  }
+  if (!cfg.supabaseAnonKey) {
+    bad('configuración', 'Falta supabaseAnonKey en app-config.js.',
+        'Supabase → Settings → API Keys → la clave "anon" / "public".');
+    return;
+  }
+  // A service_role key here would be published to every visitor of the site.
+  if (/service_role/.test(cfg.supabaseAnonKey) ||
+      /"role"\s*:\s*"service_role"/.test(safeJwtPayload(cfg.supabaseAnonKey))) {
+    bad('configuración', 'Esa es la clave service_role, no la anon.',
+        'La service_role ignora todas las políticas y quedaría pública en el sitio. Usa la "anon"/"public".');
     return;
   }
   ok('configuración', cfg.supabaseUrl);
@@ -259,8 +294,16 @@ async function main() {
   /* 9 ── photo storage ───────────────────────────────────────────────────── */
   {
     const bucket = db.storage.from(cfg.storageBucket || 'fotos');
-    const key = `${PREFIX}check/${uuid()}.txt`;
-    const { error } = await bucket.upload(key, new Blob(['ping']), { contentType: 'text/plain', upsert: true });
+    // Must be a real image: the bucket restricts allowed_mime_types to
+    // jpeg/png/webp, and in Node a Blob built without an explicit type arrives
+    // as application/octet-stream regardless of the contentType option.
+    // A 1x1 transparent PNG is the smallest thing that satisfies both.
+    const PNG_1PX = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64');
+    const key = `${PREFIX}check/${uuid()}.png`;
+    const { error } = await bucket.upload(key, new Blob([PNG_1PX], { type: 'image/png' }),
+                                          { contentType: 'image/png', upsert: true });
     if (error) {
       bad('almacenamiento de fotos', error.message,
         'Ejecuta 0003_seed.sql (crea el bucket "fotos" y su policy).');

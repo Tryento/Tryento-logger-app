@@ -260,7 +260,8 @@ it, silently.
 ## Testing
 
 ```bash
-npm run check
+npm run check        # offline: tests, UI bindings, SQL syntax
+npm run check:all    # the above, plus both live checks against Supabase
 ```
 
 - `test/time.test.mjs` — timezone correctness, including the off-by-one regression
@@ -274,7 +275,13 @@ npm run check
 - `tools/check-ui.mjs` — the logic script parses; every `{{ binding }}` resolves;
   the offline blockers stay fixed
 - `tools/check-sql.mjs` — every migration parses against the real Postgres grammar
-- `tools/check-backend.mjs` — the live round trip against a real project
+- `tools/check-backend.mjs` — the live round trip against a real project:
+  proves the DATABASE works (schema, grants, triggers, constraints, storage)
+- `tools/check-sync.mjs` — proves the APP works: runs the real outbox, push and
+  pull against the live project, then wipes the local database and pulls from
+  scratch to confirm a second device sees the same data. This is the one that
+  catches a wrong RPC argument or an over-eager column filter — both of which it
+  has already caught
 
 What these do **not** cover: the React UI actually painting (no browser in CI).
 That needs the manual pass in [DEPLOY.md](DEPLOY.md#part-d--verify-on-a-real-phone-5-min).

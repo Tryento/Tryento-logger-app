@@ -51,19 +51,39 @@ test('REGRESSION: one poison item must not stall everything behind it', async ()
   assert.equal(stats.stuck, 1);
 });
 
-test('a child waits for its parent instead of failing against a missing FK', async () => {
+test('a parent and its child go out together, parent first', async () => {
   const db = await freshDb();
-  const parent = await add(db, { rowId: 'recoleccion-1' });
+  await add(db, { rowId: 'recoleccion-1' });
   await add(db, { rowId: 'bandeja-1', dependsOn: ['recoleccion-1'] });
 
-  let { ready } = await claimBatch(db);
-  assert.deepEqual(ready.map(i => i.row_id), ['recoleccion-1'],
-    'child is skipped while the parent is still queued');
+  const { ready } = await claimBatch(db);
+  // Both are claimed: items execute sequentially in seq order, so the parent
+  // has already landed by the time the child is sent. Holding the child back
+  // for a whole extra pass would make a five-level chain take five syncs.
+  assert.deepEqual(ready.map(i => i.row_id), ['recoleccion-1', 'bandeja-1']);
+});
 
-  await markDone(db, parent.id);
-  ({ ready } = await claimBatch(db));
-  assert.deepEqual(ready.map(i => i.row_id), ['bandeja-1'],
-    'child becomes claimable once the parent lands');
+test('REGRESSION: nothing overtakes an earlier operation on the same row', async () => {
+  const db = await freshDb();
+  // The shape that lost data: an INSERT held back waiting for its parent, and a
+  // compare-and-set on the SAME row queued behind it. Without per-row FIFO the
+  // CAS went first, updated zero rows, and reported success — the value was
+  // gone with nothing pending and nothing stuck.
+  await add(db, { rowId: 'bandeja-9' });                              // parent, not yet done
+  await add(db, { rowId: 'ayuno-1', dependsOn: ['bandeja-9-missing'] });  // insert, held
+  await add(db, { rowId: 'ayuno-1', op: 'cas', rpc: 'cerrar_ayuno' });    // CAS on same row
+
+  // Make the insert's dependency unsatisfiable within this pass.
+  await add(db, { rowId: 'bandeja-9-missing' });
+
+  const { ready } = await claimBatch(db);
+  const rows = ready.map(i => i.row_id);
+  const insertAt = ready.findIndex(i => i.row_id === 'ayuno-1' && i.op === 'upsert');
+  const casAt = ready.findIndex(i => i.row_id === 'ayuno-1' && i.op === 'cas');
+  if (casAt !== -1) {
+    assert.ok(insertAt !== -1 && insertAt < casAt,
+      `CAS must never be sent before the insert for the same row (got ${JSON.stringify(rows)})`);
+  }
 });
 
 test('a child of a permanently stuck parent is surfaced, not retried forever', async () => {

@@ -13,7 +13,9 @@
     "check:ui": "node tools/check-ui.mjs",
     "check:backend": "node tools/check-backend.mjs",
     "check": "npm run test && npm run check:ui && npm run check:sql",
-    "migration:csv": "node tools/csv-to-staging.mjs"
+    "migration:csv": "node tools/csv-to-staging.mjs",
+    "check:sync": "node tools/check-sync.mjs",
+    "check:all": "npm run check && npm run check:backend && npm run check:sync"
   },
   "devDependencies": {
     "@fontsource/ibm-plex-mono": "^5.1.1",
