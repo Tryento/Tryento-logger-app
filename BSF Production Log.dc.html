@@ -729,14 +729,15 @@ a:hover{color:#4ADE80}
               <div style="font-family:'IBM Plex Mono',monospace;font-size:27px;font-weight:600;color:{{ rendFg }};letter-spacing:-0.02em">{{ rendValue }}</div>
             </div>
             <div style="display:flex;flex-direction:column;gap:9px">
-              <div style="font-size:12px;font-weight:600;letter-spacing:.08em;color:#7FA189;white-space:nowrap">COLOR / DORADO</div>
+              <div style="font-size:12px;font-weight:600;letter-spacing:.08em;color:#7FA189;white-space:nowrap">PUNTO DEL PRODUCTO</div>
+              <div style="font-size:13.5px;color:#9FB8A6">Escala de la finca: de blando a tostado. Se guarda en qc_color_dorado.</div>
               <div style="display:flex;flex-wrap:wrap;gap:8px">
                 <sc-for list="{{ qcChips }}" as="c" hint-placeholder-count="4">
                   <button onClick="{{ c.onClick }}" style="min-height:48px;padding:0 13px;border-radius:9px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:14.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
                 </sc-for>
               </div>
             </div>
-            <textarea value="{{ f.qc_prueba_crujiente }}" onChange="{{ h.qc_prueba_crujiente }}" placeholder="Notas de la prueba crujiente (opcional)" rows="2" style="width:100%;padding:12px 14px;border:1.5px solid #26382C;border-radius:11px;background:#0A0A0A;color:#EAF7EC;font-size:15.5px;font-weight:500;resize:vertical"></textarea>
+            <textarea value="{{ f.qc_prueba_crujiente }}" onChange="{{ h.qc_prueba_crujiente }}" placeholder="Notas de la prueba crujiente: que se observo al partirla (opcional)" rows="2" style="width:100%;padding:12px 14px;border:1.5px solid #26382C;border-radius:11px;background:#0A0A0A;color:#EAF7EC;font-size:15.5px;font-weight:500;resize:vertical"></textarea>
             <label style="display:flex;align-items:center;justify-content:center;gap:9px;min-height:52px;padding:0 16px;border-radius:11px;border:1.5px solid #26382C;background:#0A0A0A;font-size:15.5px;font-weight:600;cursor:pointer">
               <span style="width:14px;height:14px;border-radius:7px;border:3px solid #EAF7EC;display:inline-block"></span>
               <span>{{ qcPhotoLabel }}</span>
@@ -893,6 +894,29 @@ a:hover{color:#4ADE80}
     </div>
   </sc-if>
 
+  <!-- In-app dialog. Replaces window.prompt(), which is BLOCKED in installed
+       PWAs on iOS — the app's whole delivery mode. There it threw and the
+       action was simply impossible: an open ayuno could never be closed and
+       the tray stayed "EN AYUNO" forever. Never use prompt/alert/confirm here. -->
+  <sc-if value="{{ hasAsk }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:70;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,0.6);padding:14px">
+      <div style="width:100%;max-width:452px;background:#141C16;border:1px solid #26382C;border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:13px;box-shadow:0 14px 40px rgba(0,0,0,0.6)">
+        <div style="font-size:19px;font-weight:700;letter-spacing:-0.01em">{{ askTitle }}</div>
+        <sc-if value="{{ askHasHint }}" hint-placeholder-val="{{ true }}">
+          <div style="font-size:14.5px;color:#9FB8A6">{{ askHint }}</div>
+        </sc-if>
+        <input inputMode="{{ askInputMode }}" value="{{ f.ask_value }}" onChange="{{ h.ask_value }}" placeholder="{{ askPlaceholder }}" style="width:100%;min-height:62px;padding:0 16px;border:1.5px solid #26382C;border-radius:12px;background:#0A0A0A;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:600" />
+        <sc-if value="{{ askHasError }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:14px;color:#F87171">{{ askError }}</div>
+        </sc-if>
+        <div style="display:flex;gap:10px">
+          <button onClick="{{ onAskCancel }}" style="flex:1;min-height:56px;border-radius:12px;border:1.5px solid #26382C;background:#111A14;color:#9FB8A6;font-size:16px;font-weight:700;cursor:pointer">Cancelar</button>
+          <button onClick="{{ onAskConfirm }}" disabled="{{ askDisabled }}" style="flex:1;min-height:56px;border-radius:12px;border:none;background:{{ askBg }};color:{{ askFg }};font-size:16px;font-weight:700;cursor:pointer">{{ askConfirmLabel }}</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
   <sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}">
     <div style="position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;padding:0 14px 84px;pointer-events:none;z-index:60">
       <div style="width:100%;max-width:452px;display:flex;align-items:center;gap:13px;background:{{ toastBg }};color:{{ toastFg }};border-radius:13px;padding:15px 16px;box-shadow:0 10px 30px rgba(0,0,0,0.5);animation:toastIn .18s ease-out">
@@ -950,7 +974,7 @@ const FIELDS = ['q', 'filterInsectario', 'bandejaSearch', 'fecha', 'bandeja_id',
   'cantidad_kg', 'peso_inicial_kg', 'peso_final_kg', 'larva_limpia_g', 'notas', 'operator_name',
   'recoleccion_id', 'no_bandeja', 'gramos_huevos', 'iniciador_g', 'tipo_iniciador',
   'nombre_insectario', 'fecha_inicio', 'generacion_moscas', 'biomasa_kg', 'proyeccion_ovipositores', 'proyeccion_cierre',
-  'huevos_g', 'tiempo_secado_horas', 'qc_prueba_crujiente', 'operator_input'];
+  'huevos_g', 'tiempo_secado_horas', 'qc_prueba_crujiente', 'operator_input', 'ask_value'];
 
 class Component extends DCLogic {
   state = {
@@ -960,7 +984,7 @@ class Component extends DCLogic {
     form: {}, estadoFilter: '', insFilter: '', range: 'any', toast: null,
     photoName: '', photoId: null, photoUrl: null,
     qcPhotoName: '', qcPhotoId: null, qcPhotoUrl: null,
-    sync: null, conflicts: [], ayunosAbiertos: []
+    sync: null, conflicts: [], ayunosAbiertos: [], ask: null
   };
 
   get handlers() {
@@ -1329,17 +1353,54 @@ class Component extends DCLogic {
     this.openLoteDetalle(id);
   };
 
-  rechazarQc = async () => {
-    const id = this.state.loteDetalle.lote.id;
-    // A rejection with no reason is not a record — the point is knowing WHY a
+  /**
+   * In-app replacement for the browser's prompt().
+   *
+   * prompt() is BLOCKED in installed PWAs on iOS - which is exactly how this
+   * app is meant to run. There the call threw, so closing an ayuno was
+   * impossible and the tray stayed "EN AYUNO" with no way out. Nothing in this
+   * file may call prompt, alert or confirm again.
+   */
+  ask = (opts, onConfirm) => {
+    this.setState(st => ({
+      ask: Object.assign({ inputMode: 'text', confirmLabel: 'Guardar', onConfirm }, opts),
+      form: Object.assign({}, st.form, { ask_value: opts.value || '' })
+    }));
+  };
+
+  closeAsk = () => this.setState(st => ({
+    ask: null, form: Object.assign({}, st.form, { ask_value: '' })
+  }));
+
+  submitAsk = async () => {
+    const a = this.state.ask;
+    if (!a) return;
+    const raw = (this.state.form.ask_value || '').trim();
+    if (!raw) return;
+    if (a.validate) {
+      const err = a.validate(raw);
+      if (err) return this.setState(st => ({ ask: Object.assign({}, st.ask, { error: err }) }));
+    }
+    this.closeAsk();
+    await a.onConfirm(raw);
+  };
+
+  rechazarQc = () => {
+    const lote = this.state.loteDetalle.lote;
+    // A rejection with no reason is not a record - the point is knowing WHY a
     // batch was lost so the process can change.
-    const motivo = window.prompt('¿Por qué se rechaza esta cochada? (moho, tostado, prueba crujiente…)');
-    if (!motivo || !motivo.trim()) return;
-    const r = await this.api.rechazarCochada(id, motivo);
-    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
-    this.toast('Cochada rechazada', r.data.codigo, 'error');
-    await this.refreshLists();
-    this.openLoteDetalle(id);
+    this.ask({
+      title: 'Rechazar cochada',
+      hint: 'Por que se rechaza? (moho, tostado, prueba crujiente...)',
+      placeholder: 'Motivo',
+      confirmLabel: 'Rechazar'
+    }, async motivo => {
+      const r = await this.api.rechazarCochada(lote.id, motivo);
+      if (!r.ok) return this.toast('No se guardo', r.error.message, 'error');
+      this.toast('Cochada rechazada', r.data.codigo, 'error');
+      await this.refreshLists();
+      this.openLoteDetalle(lote.id);
+    });
   };
 
   useTypedName = async () => {
@@ -1362,17 +1423,29 @@ class Component extends DCLogic {
 
   // The second half of a fast: weigh out ~24 h after weighing in. The prototype
   // had no way to record this at all, so merma_pct was permanently null.
-  cerrarAyuno = async ayuno => {
-    const v = window.prompt('Peso final del ayuno en ' + ayuno.bandeja_label + ' (kg)\nPeso inicial: ' + ayuno.peso_inicial_kg + ' kg');
-    if (v === null || !String(v).trim()) return;
-    const r = await this.api.logAyunoFin(ayuno.id, { peso_final_kg: v });
-    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
-    const merma = r.data.peso_inicial_kg > 0
-      ? Math.round(((r.data.peso_inicial_kg - r.data.peso_final_kg) / r.data.peso_inicial_kg) * 1000) / 10
-      : null;
-    this.toast('Ayuno cerrado', merma == null ? '' : 'Merma ' + merma + '%');
-    await this.refreshLists();
-    await this.refreshSecondary();
+  cerrarAyuno = ayuno => {
+    this.ask({
+      title: 'Cerrar ayuno - ' + ayuno.bandeja_label,
+      hint: 'Peso inicial: ' + ayuno.peso_inicial_kg + ' kg. Escribe el peso final en kg.',
+      placeholder: '0.00',
+      inputMode: 'decimal',
+      confirmLabel: 'Cerrar ayuno',
+      validate: v => {
+        const n = Number(String(v).replace(',', '.'));
+        if (!isFinite(n) || n <= 0) return 'Escribe un peso valido en kg.';
+        if (n > ayuno.peso_inicial_kg) return 'El peso final no puede superar los ' + ayuno.peso_inicial_kg + ' kg iniciales.';
+        return null;
+      }
+    }, async v => {
+      const r = await this.api.logAyunoFin(ayuno.id, { peso_final_kg: String(v).replace(',', '.') });
+      if (!r.ok) return this.toast('No se guardo', r.error.message, 'error');
+      const merma = r.data.peso_inicial_kg > 0
+        ? Math.round(((r.data.peso_inicial_kg - r.data.peso_final_kg) / r.data.peso_inicial_kg) * 1000) / 10
+        : null;
+      this.toast('Ayuno cerrado', merma == null ? '' : 'Merma ' + merma + '%');
+      await this.refreshLists();
+      await this.refreshSecondary();
+    });
   };
 
   marcarEmpacado = async () => {
@@ -1538,6 +1611,24 @@ class Component extends DCLogic {
     } else {
       vals.bd = { id_bandeja: '', estadoLabel: '', estadoBg: '#1D2A21', facts: [], notesLine: 'Cargando…', showQuickActions: false, quickActions: [], showLoteLink: false, timelineLabel: 'HISTORIAL', eventos: [] };
     }
+
+    /* dialogo en la app (reemplaza prompt(), bloqueado en PWA instalada iOS) */
+    const ask = s.ask;
+    const askVal = (f.ask_value || '').trim();
+    vals.hasAsk = !!ask;
+    vals.askTitle = ask ? ask.title : '';
+    vals.askHint = ask ? (ask.hint || '') : '';
+    vals.askHasHint = !!(ask && ask.hint);
+    vals.askPlaceholder = ask ? (ask.placeholder || '') : '';
+    vals.askInputMode = ask ? (ask.inputMode || 'text') : 'text';
+    vals.askConfirmLabel = ask ? (ask.confirmLabel || 'Guardar') : 'Guardar';
+    vals.askError = ask ? (ask.error || '') : '';
+    vals.askHasError = !!(ask && ask.error);
+    vals.askDisabled = !askVal;
+    vals.askBg = askVal ? NEON : DISABLED_BG;
+    vals.askFg = askVal ? INK : DISABLED_FG;
+    vals.onAskCancel = this.closeAsk;
+    vals.onAskConfirm = this.submitAsk;
 
     /* sincronización */
     const sync = s.sync || {};
@@ -1729,7 +1820,7 @@ class Component extends DCLogic {
           { label: 'RENDIMIENTO', value: lote.rendimiento_pct == null ? '—' : lote.rendimiento_pct + '%' },
           { label: 'SECADO', value: lote.tiempo_secado_horas == null ? '—' : lote.tiempo_secado_horas + ' h' },
           { label: 'BANDEJAS METÁLICAS', value: lote.bandejas_metalicas_usadas + '/' + ovenCap },
-          { label: 'COLOR / DORADO', value: lote.qc_color_dorado || '—' },
+          { label: 'PUNTO', value: lote.qc_color_dorado || '—' },
           { label: 'VENCIMIENTO', value: lote.fecha_vencimiento || '—' }
         ],
         notesLine: lote.qc_prueba_crujiente || lote.notas || 'Sin notas',

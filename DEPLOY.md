@@ -12,6 +12,19 @@ About 20 minutes. Two services, both free tier:
 
 ---
 
+> ### ⚠ Si ya tienes la base creada: corre `0004` ANTES de desplegar
+>
+> `supabase/migrations/0004_atribucion_acciones.sql` agrega quién hizo cada
+> acción de un toque (atractante, cierre, QC, empacado, despacho, rechazo).
+>
+> **El orden importa.** La app nueva llama a esas funciones con un parámetro
+> más. Si despliegas primero, Atractante y Cierre dejan de funcionar hasta que
+> corras el SQL. Corre el SQL primero y todo sigue andando, incluso desde
+> teléfonos con la versión vieja.
+>
+> SQL Editor → pega `0004_atribucion_acciones.sql` → Run. Es seguro correrlo
+> dos veces.
+
 ## Step 0 — be in the right folder
 
 The repo sits one level down from the GitHub folder. Every `npm` command below

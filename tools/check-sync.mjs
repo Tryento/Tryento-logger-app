@@ -176,6 +176,26 @@ try {
   else bad('todo queda atribuido', 'sin autor: ' + anon.join(', '),
            'provenance() debe caer de vuelta al operador seleccionado.');
 
+  // QA: atractante and cierre recorded only the date, never who pressed them.
+  // That is a different person from whoever created the colony weeks earlier.
+  const rAcc = await db.from('insectario')
+    .select('fecha_ovipositores_por, cierre_real_por').eq('id', ins.data.id).single();
+  if (rAcc.data && rAcc.data.fecha_ovipositores_por === OP) {
+    ok('accion de un toque atribuida', 'atractante por ' + rAcc.data.fecha_ovipositores_por);
+  } else {
+    bad('accion de un toque atribuida',
+        'fecha_ovipositores_por = ' + JSON.stringify(rAcc.data || rAcc.error),
+        'Corre supabase/migrations/0004_atribucion_acciones.sql.');
+  }
+
+  const rQc = await db.from('cochada')
+    .select('qc_por, empacado_por').eq('id', lote.data.id).single();
+  if (rQc.data && rQc.data.qc_por === OP && rQc.data.empacado_por === OP) {
+    ok('QC y empacado atribuidos', OP);
+  } else {
+    bad('QC y empacado atribuidos', JSON.stringify(rQc.data || rQc.error));
+  }
+
   const r3 = await db.from('bandeja').select('estado, id_bandeja').eq('id', b1.data.id).single();
   if (r3.data && r3.data.estado === 'cosechada') {
     ok('estado calculado por el servidor', r3.data.id_bandeja + ' -> cosechada');

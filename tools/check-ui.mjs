@@ -117,6 +117,23 @@ if (!/vendor\/react\.production\.min\.js/.test(head)) problems.push('React is no
 if (/estado\s*===\s*'activa'|ESTADO_BANDEJA\.activa\b/.test(logic)) {
   problems.push("still uses the old two-state tray model ('activa')");
 }
+// prompt/alert/confirm are BLOCKED in installed PWAs on iOS, which is the app's
+// delivery mode. Closing an ayuno was impossible there and the tray stayed
+// "EN AYUNO" with no way out. Use this.ask() instead.
+{
+  // Work line by line and skip comment lines, so the comment explaining the
+  // ban does not trip the ban.
+  const codeLines = logic.split('\n')
+    .filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l));
+  for (const fn of ['prompt', 'alert', 'confirm']) {
+    const re = new RegExp(`(?<![\\w.])(?:window\\.)?${fn}\\s*\\(`);
+    const hit = codeLines.find(l => re.test(l));
+    if (hit) {
+      problems.push(`llama a ${fn}(), que no funciona en una PWA instalada en iOS — usa this.ask()  [${hit.trim().slice(0, 60)}]`);
+    }
+  }
+}
+
 if (/photoName:\s*file\.name|qcPhotoName:\s*file\.name/.test(logic)) {
   problems.push('photo capture still stores only the filename and discards the image');
 }

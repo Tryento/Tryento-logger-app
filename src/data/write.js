@@ -191,14 +191,18 @@ async function stampInsectario(id, field, value) {
     return d.ok ? ok(d.data.insectario) : d;
   }
 
-  const next = { ...row, [field]: value, updated_at: nowIso() };
+  // Who pressed the button, which is often NOT who created the colony weeks
+  // earlier. `registrado_por` on the row answers "who started this"; these
+  // answer "who marked it".
+  const por = await getCurrentOperator();
+  const next = { ...row, [field]: value, [field + '_por']: por, updated_at: nowIso() };
   await commitWrite(db, {
     writes: [{ store: 'insectario', row: next }],
     outbox: {
       op: 'cas',
       rpc: field === 'fecha_ovipositores' ? 'marcar_atractante' : 'marcar_cierre',
       rowId: id,
-      payload: { p_id: id, p_fecha: value },
+      payload: { p_id: id, p_fecha: value, p_por: por },
       createdBy: currentUserId(), dispositivoId: deviceId()
     }
   });
@@ -595,6 +599,7 @@ export async function updateLoteQC(id, data) {
   if (data.qc_prueba_crujiente !== undefined) patch.qc_prueba_crujiente = str(data.qc_prueba_crujiente);
   // Explicit decision rather than a side effect of typing a weight.
   if (data.qc_aprobado !== undefined) patch.qc_aprobado = data.qc_aprobado;
+  patch.qc_por = await getCurrentOperator();
 
   // Preserve the prototype's foto -> qc_foto mapping (dataClient.js:345); the
   // differing field name is easy to lose in a rewrite.
@@ -614,7 +619,8 @@ export async function updateLoteQC(id, data) {
       p_color: patch.qc_color_dorado ?? null,
       p_prueba: patch.qc_prueba_crujiente ?? null,
       p_aprobado: patch.qc_aprobado ?? null,
-      p_foto_key: patch.qc_foto_key ?? null
+      p_foto_key: patch.qc_foto_key ?? null,
+      p_por: await getCurrentOperator()
     },
     createdBy: currentUserId(), dispositivoId: deviceId()
   });
@@ -629,12 +635,14 @@ export async function marcarEmpacado(id, data) {
   }
   if (row.empacado_at) return ok(row);
 
+  const porEmp = await getCurrentOperator();
   return patchCochada(id, {
     empacado_at: nowIso(),
+    empacado_por: porEmp,
     fecha_vencimiento: data?.fecha_vencimiento || addDays(farmDay(), 180)
   }, {
     op: 'cas', rpc: 'marcar_empacado', rowId: id,
-    payload: { p_id: id, p_vencimiento: data?.fecha_vencimiento || null },
+    payload: { p_id: id, p_vencimiento: data?.fecha_vencimiento || null, p_por: porEmp },
     createdBy: currentUserId(), dispositivoId: deviceId()
   });
 }
@@ -647,8 +655,9 @@ export async function marcarDespachado(id) {
   if (!row.empacado_at) return fail(CODES.VALIDATION, 'Primero marca la cochada como empacada.');
   if (row.despachado_at) return ok(row);
 
-  return patchCochada(id, { despachado_at: nowIso() }, {
-    op: 'cas', rpc: 'marcar_despachado', rowId: id, payload: { p_id: id },
+  const porDesp = await getCurrentOperator();
+  return patchCochada(id, { despachado_at: nowIso(), despachado_por: porDesp }, {
+    op: 'cas', rpc: 'marcar_despachado', rowId: id, payload: { p_id: id, p_por: porDesp },
     createdBy: currentUserId(), dispositivoId: deviceId()
   });
 }
@@ -664,9 +673,12 @@ export async function rechazarCochada(id, motivo) {
   if (row.despachado_at) return fail(CODES.CONFLICT, 'Esta cochada ya fue despachada.');
   if (row.rechazado_at) return ok(row);
 
-  return patchCochada(id, { rechazado_at: nowIso(), rechazo_motivo: reason, qc_aprobado: false }, {
+  const porRech = await getCurrentOperator();
+  return patchCochada(id, {
+    rechazado_at: nowIso(), rechazo_motivo: reason, rechazado_por: porRech, qc_aprobado: false
+  }, {
     op: 'cas', rpc: 'rechazar_cochada', rowId: id,
-    payload: { p_id: id, p_motivo: reason },
+    payload: { p_id: id, p_motivo: reason, p_por: porRech },
     createdBy: currentUserId(), dispositivoId: deviceId()
   });
 }

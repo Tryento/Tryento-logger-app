@@ -30,7 +30,9 @@ cat > "$OUT" <<'HEADER'
 
 HEADER
 
-for f in supabase/migrations/0001_schema.sql supabase/migrations/0002_views.sql supabase/migrations/0003_seed.sql; do
+# Globbed, not listed: a hardcoded list means a new migration silently never
+# reaches the one-paste setup file.
+for f in $(ls supabase/migrations/*.sql | sort); do
   printf '\n\n-- ############################################################################\n' >> "$OUT"
   printf -- '-- %s\n' "$(basename "$f")" >> "$OUT"
   printf -- '-- ############################################################################\n\n' >> "$OUT"
