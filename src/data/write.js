@@ -35,16 +35,39 @@ import { metaGet, metaSet } from './idb/tx.js';
 import { attachPhoto } from './photo.js';
 import { OVEN_CAPACITY } from './config.js';
 
+/** Who is registering right now, remembered in the local `meta` store. */
+const OPERADOR_KEY = 'operador_actual';
+
+export async function setCurrentOperator(nombre) {
+  const n = str(nombre);
+  if (!n) return null;
+  await metaSet(await openDb(), OPERADOR_KEY, n);
+  return n;
+}
+
+export async function getCurrentOperator() {
+  return (await metaGet(await openDb(), OPERADOR_KEY, null)) || null;
+}
+
 /**
  * Fields stamped on every row we originate.
  *
  * `registrado_por` is the name as typed — plain text, no lookup, no foreign
  * key. Nothing here can fail because a device has not synced a roster yet.
+ *
+ * IT FALLS BACK to the operator selected on the name screen, rather than
+ * trusting each form to pass one. QA found every insectario, recolección and
+ * bandeja saving `registrado_por: null`: the header said "registrando como
+ * Ricardo" the whole time, but three of the six forms simply never seeded
+ * `operator_name`, so the name was displayed and never written. Requiring six
+ * separate places to remember the same thing is a guarantee that one of them
+ * will not — so the default lives here, where a new form cannot skip it.
  */
 async function provenance(operatorName) {
+  const nombre = str(operatorName) || (await getCurrentOperator()) || null;
   return {
-    registrado_por: str(operatorName) || null,
-    created_by: currentUserId(),      // null until real logins exist
+    registrado_por: nombre,
+    created_by: currentUserId(),      // null until real logins exist — by design
     dispositivo_id: deviceId(),
     created_at: nowIso(),
     updated_at: nowIso()
@@ -80,6 +103,9 @@ export async function rememberOperator(nombre) {
   if (n.length > 60) return fail(CODES.VALIDATION, 'El nombre es demasiado largo.');
 
   const db = await openDb();
+
+  // This is the selection the whole app registers under from now on.
+  await metaSet(db, OPERADOR_KEY, n);
 
   // Local recency, so this device puts the person who just used it on top.
   const list = (await metaGet(db, 'nombres_usados', [])) || [];

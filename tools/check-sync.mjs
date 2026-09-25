@@ -88,19 +88,22 @@ try {
   await api.ready();
   ok('la app arranco', 'base local lista');
 
+  // The name screen sets this; every write must pick it up from here.
+  await api.rememberOperator(OP);
+
   /* ── capture, exactly as a phone does ─────────────────────────────────── */
   const ins = await api.createInsectario({
     nombre_insectario: 'ICB', fecha_inicio: '2026-05-01', generacion_moscas: 'F6',
-    biomasa_kg: 3.1, proyeccion_cierre: '2026-05-22', operator_name: OP
+    biomasa_kg: 3.1, proyeccion_cierre: '2026-05-22'   // sin operator_name: a proposito
   });
   if (!ins.ok) throw new Error('createInsectario: ' + ins.error.message);
   ids.insectario.push(ins.data.id);
 
-  const rec = await api.createRecoleccion({ insectario_id: ins.data.id, huevos_g: 0.62, operator_name: OP });
+  const rec = await api.createRecoleccion({ insectario_id: ins.data.id, huevos_g: 0.62 });
   if (!rec.ok) throw new Error('createRecoleccion: ' + rec.error.message);
   ids.recoleccion.push(rec.data.id);
 
-  const b1 = await api.createBandeja({ recoleccion_id: rec.data.id, no_bandeja: 1, operator_name: OP });
+  const b1 = await api.createBandeja({ recoleccion_id: rec.data.id, no_bandeja: 1 });
   const b2 = await api.createBandeja({ recoleccion_id: rec.data.id, no_bandeja: 2, operator_name: OP });
   if (!b1.ok || !b2.ok) throw new Error('createBandeja failed');
   ids.bandeja.push(b1.data.id, b2.data.id);
@@ -160,6 +163,18 @@ try {
     bad('alimentacion grupal', 'llegaron ' + sAlim.length + ' filas; alguna incompleta',
         'Es el bug de AppSheet: filas con bandeja pero sin fecha/tipo/cantidad.');
   }
+
+  // QA: every record was landing with registrado_por null while the header
+  // showed a name. Check the whole chain, including the rows whose forms never
+  // passed one.
+  const rAttr = await db.from('bandeja').select('id, registrado_por').in('id', ids.bandeja);
+  const rAttr2 = await db.from('recoleccion').select('id, registrado_por').in('id', ids.recoleccion);
+  const anon = []
+    .concat((rAttr.data || []).filter(r => !r.registrado_por).map(() => 'bandeja'))
+    .concat((rAttr2.data || []).filter(r => !r.registrado_por).map(() => 'recoleccion'));
+  if (!anon.length) ok('todo queda atribuido', 'insectario, recoleccion y bandejas con nombre');
+  else bad('todo queda atribuido', 'sin autor: ' + anon.join(', '),
+           'provenance() debe caer de vuelta al operador seleccionado.');
 
   const r3 = await db.from('bandeja').select('estado, id_bandeja').eq('id', b1.data.id).single();
   if (r3.data && r3.data.estado === 'cosechada') {

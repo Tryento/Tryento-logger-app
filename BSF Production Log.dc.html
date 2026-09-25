@@ -1143,20 +1143,20 @@ class Component extends DCLogic {
       // tray first, so the operator types the number that is already written
       // there. Pre-filling a guess invites a mismatch between the tray in the
       // rack and the record in the app, which nothing downstream could detect.
-      form: { recoleccion_id: rc, no_bandeja: '', fecha: this.now(), gramos_huevos: 0.5, iniciador_g: 300, tipo_iniciador: 'Bagazo', notas: '' }
+      form: { recoleccion_id: rc, no_bandeja: '', fecha: this.now(), gramos_huevos: 0.5, iniciador_g: 300, tipo_iniciador: 'Bagazo', notas: '', operator_name: this.state.operator || '' }
     });
   };
 
   openNuevoInsectario = () => {
     this.setState({
       prev: this.state.screen, screen: 'nuevoInsectario',
-      form: { nombre_insectario: 'ICA', fecha_inicio: this.today(), generacion_moscas: '', biomasa_kg: '', proyeccion_ovipositores: '', proyeccion_cierre: '', notas: '' }
+      form: { nombre_insectario: 'ICA', fecha_inicio: this.today(), generacion_moscas: '', biomasa_kg: '', proyeccion_ovipositores: '', proyeccion_cierre: '', notas: '', operator_name: this.state.operator || '' }
     });
   };
 
   openNuevaRecoleccion = () => {
     const ins = this.state.insectarioDetalle ? this.state.insectarioDetalle.insectario : null;
-    this.setState({ prev: this.state.screen, screen: 'nuevaRecoleccion', form: { insectario_id: ins ? ins.id : '', fecha: this.now(), huevos_g: '' } });
+    this.setState({ prev: this.state.screen, screen: 'nuevaRecoleccion', form: { insectario_id: ins ? ins.id : '', fecha: this.now(), huevos_g: '', operator_name: this.state.operator || '' } });
   };
 
   openNuevaCochada = async () => {

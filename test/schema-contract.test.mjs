@@ -241,12 +241,59 @@ test('generated and derived values are stripped before sending', async () => {
   assert.deepEqual(Object.keys(wire).sort(), ['biomasa_kg', 'codigo', 'created_at', 'id']);
 });
 
+test('REGRESSION: every record carries who registered it', async () => {
+  // QA found every insectario, recoleccion and bandeja saving
+  // registrado_por: null while the header displayed "registrando como
+  // Ricardo". Three of the six forms never seeded operator_name, so the name
+  // was shown and never written. provenance() now falls back to the selected
+  // operator, so this holds even for a form that forgets.
+  const queued = await listOpen(await openDb());
+  const CARRIES_NAME = new Set(['insectario', 'recoleccion', 'bandeja',
+                                'alimentacion', 'ayuno', 'revision',
+                                'separacion', 'cochada']);
+  const anonymous = [];
+
+  for (const item of queued) {
+    if (item.op === 'upsert' && CARRIES_NAME.has(item.table)) {
+      if (!item.payload?.registrado_por) anonymous.push(item.table);
+    }
+    if (item.rpc === 'log_alimentacion_grupal') {
+      for (const r of item.payload.p_rows || []) {
+        if (!r.registrado_por) anonymous.push('alimentacion (grupal)');
+      }
+    }
+    if (item.rpc === 'crear_cochada' && !item.payload.p_cochada?.registrado_por) {
+      anonymous.push('cochada (rpc)');
+    }
+  }
+
+  assert.deepEqual(anonymous, [],
+    'estos registros se guardarian sin autor: ' + anonymous.join(', '));
+});
+
+test('a form that forgets operator_name still records the operator', async () => {
+  const { setCurrentOperator } = await import('../src/data/write.js');
+  await setCurrentOperator('Ricardo');
+
+  // Deliberately omit operator_name, the way the three broken forms did.
+  const res = await api.createInsectario({
+    nombre_insectario: 'ICC', fecha_inicio: '2026-06-01'
+  });
+  assert.ok(res.ok, JSON.stringify(res.error));
+
+  const queued = await listOpen(await openDb());
+  const item = queued.find(i => i.table === 'insectario' && i.row_id === res.data.id);
+  assert.equal(item.payload.registrado_por, 'Ricardo',
+    'debe caer de vuelta al operador seleccionado');
+});
+
 test('the name is sent as plain text, never as an id', async () => {
   const queued = await listOpen(await openDb());
   const withName = queued.filter(i => i.op === 'upsert' && i.payload?.registrado_por);
   assert.ok(withName.length > 0, 'something should carry a name');
   for (const item of withName) {
-    assert.equal(item.payload.registrado_por, OP);
+    assert.ok(['Maria', 'Ricardo'].includes(item.payload.registrado_por),
+      'got ' + item.payload.registrado_por);
     assert.ok(!/^[0-9a-f]{8}-[0-9a-f]{4}-/.test(item.payload.registrado_por),
       'must be the typed name, not a foreign key to a roster that may not exist');
   }
