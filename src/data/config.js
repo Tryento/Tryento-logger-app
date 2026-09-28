@@ -10,7 +10,10 @@
  * misconfiguration must not cost an operator their day's capture.
  */
 
-const cfg = (typeof window !== 'undefined' && window.__TRYENTO_CONFIG__) || {};
+// globalThis is `window` in the page. Reading it this way also lets a Node test
+// configure a backend without faking `window`, which would make fake-indexeddb
+// and PGlite believe they are in a browser.
+const cfg = globalThis.__TRYENTO_CONFIG__ || {};
 
 export const SUPABASE_URL = cfg.supabaseUrl || '';
 export const SUPABASE_ANON_KEY = cfg.supabaseAnonKey || '';

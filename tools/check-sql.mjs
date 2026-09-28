@@ -52,7 +52,7 @@ for (const f of files) {
 
 /* The one-paste setup file must parse AND match the migrations it is built
  * from. Without the staleness check, editing a migration and forgetting to run
- * tools/build-setup-sql.sh would deploy yesterday's schema — and it would look
+ * `npm run setup:sql` would deploy yesterday's schema — and it would look
  * like it had worked. */
 const COMBINED = path.join(ROOT, 'supabase', 'SETUP_COMPLETO.sql');
 try {
@@ -68,14 +68,14 @@ try {
     if (!combined.includes(body.trim())) {
       failed++;
       console.log(`  FAIL  SETUP_COMPLETO.sql está desactualizado: ${f} cambió`);
-      console.log('        corre: bash tools/build-setup-sql.sh');
+      console.log('        corre: npm run setup:sql');
       break;
     }
   }
 } catch (e) {
   failed++;
   console.log(`  FAIL  SETUP_COMPLETO.sql: ${e.message}`);
-  console.log('        corre: bash tools/build-setup-sql.sh');
+  console.log('        corre: npm run setup:sql');
 }
 
 if (failed) {

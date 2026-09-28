@@ -12,22 +12,34 @@ About 20 minutes. Two services, both free tier:
 
 ---
 
-> ### ⚠ Si ya tienes la base creada: corre `0004` y `0005` ANTES de desplegar
+> ### ⚠ Base que ya existe: corre el SQL que falte ANTES de hacer push
 >
-> **`0004_atribucion_acciones.sql`** agrega quién hizo cada acción de un toque
-> (atractante, cierre, QC, empacado, despacho, rechazo).
+> Averigua qué falta (sólo lee, no cambia nada):
 >
-> **`0005_renombrar_lote.sql`** devuelve `cochada` a `lote`, el nombre que usa
-> el equipo en AppSheet. Renombra en el lugar, sin tocar los datos. Después de
-> correrlo, vuelve a pegar `SETUP_COMPLETO.sql` para recrear las funciones y
-> vistas con los nombres nuevos.
+> ```powershell
+> npm run check:sql-applied
+> ```
 >
-> **El orden importa.** La app nueva llama a las funciones con un parámetro más
-> y con los nombres nuevos. Si despliegas primero, Atractante, Cierre y todo lo
-> de Lotes dejan de funcionar hasta correr el SQL.
+> Corre en Supabase → SQL Editor → New query, **uno por uno y en este orden**,
+> sólo los que salgan como `FALTA`. Copia el CONTENIDO del archivo, no su nombre.
 >
-> En una base NUEVA no hace falta ninguno de los dos: `SETUP_COMPLETO.sql` ya
-> viene con todo.
+> 1. **`0004_atribucion_acciones.sql`** — quién hizo cada acción de un toque.
+>    (Ya está aplicado en la base de producción.)
+> 2. **`0005_renombrar_lote.sql`** — `cochada` vuelve a llamarse `lote`, como en
+>    AppSheet. Renombra en el lugar: no borra ni copia datos. Recrea las
+>    funciones y vistas él mismo.
+> 3. **`0006_sobrecargas.sql`** — quita funciones duplicadas que dejó 0004.
+>
+> Después vuelve a correr `npm run check:sql-applied`: todo debe decir `ok`.
+> Recién entonces haz push.
+>
+> **El orden importa.** La app llama a las funciones de la base por su nombre.
+> Si haces push antes del SQL, crear lotes, QC, empacado, despacho y rechazo
+> fallan y quedan en *Conflictos* hasta correr el SQL.
+>
+> **Nunca pegues `SETUP_COMPLETO.sql` en una base que ya tiene datos.** Es sólo
+> para una base nueva y vacía; en una existente falla en la primera línea.
+> `0005` y `0006` se pueden correr dos veces sin daño.
 
 ## Step 0 — be in the right folder
 

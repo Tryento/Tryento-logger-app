@@ -1,22 +1,18 @@
 -- ============================================================================
 -- TryEnto — INSTALACIÓN COMPLETA DE LA BASE DE DATOS
 --
--- Este archivo junta las tres migraciones en una sola. Cópialo ENTERO y
--- pégalo en Supabase → SQL Editor → New query → Run.
+-- SÓLO PARA UNA BASE NUEVA Y VACÍA. En una base que ya existe falla en su
+-- primera línea (a propósito: no es idempotente). Para actualizar una base
+-- existente se corren los archivos numerados que falten, uno por uno.
 --
--- Copia el CONTENIDO del archivo, no su nombre. En VS Code: abre este archivo,
--- Ctrl+A, Ctrl+C. O desde PowerShell, para copiarlo directo al portapapeles:
+-- Cópialo ENTERO y pégalo en Supabase → SQL Editor → New query → Run.
+-- Copia el CONTENIDO del archivo, no su nombre.
 --
---   [System.IO.File]::ReadAllText("$PWD\supabase\SETUP_COMPLETO.sql") | Set-Clipboard
+-- Después: Settings → API → "Exposed schemas" → agrega  app
 --
--- Después de correrlo:
---   Settings → API → "Exposed schemas" → agrega  app   ← imprescindible
---
--- GENERADO por tools/build-setup-sql.sh — no lo edites a mano.
--- Las fuentes son supabase/migrations/000*.sql
+-- GENERADO por tools/build-setup-sql.mjs (npm run setup:sql). No lo edites a
+-- mano: las fuentes son supabase/migrations/000*.sql
 -- ============================================================================
-
-
 
 
 -- ############################################################################
@@ -1297,3 +1293,40 @@ begin
   if r.id is null then select * into r from app.lote where id = p_id; end if;
   return r;
 end $$;
+
+
+-- ############################################################################
+-- 0006_sobrecargas.sql
+-- ############################################################################
+
+-- ============================================================================
+-- 0006 — Quitar las sobrecargas duplicadas que dejó 0004.
+--
+-- 0004 quiso agregar un parámetro p_por "sin romper a las apps viejas" usando
+-- `create or replace function ... (..., p_por text default null)`. En Postgres
+-- una lista de parámetros distinta NO reemplaza la función: crea una SEGUNDA.
+-- Quedaron dos versiones de cada una, y cualquier llamada sin p_por falla con:
+--
+--     function app.marcar_despachado(uuid) is not unique
+--
+-- Es decir, justo lo contrario de lo que 0004 quería: los teléfonos con la app
+-- vieja dejaron de poder despachar, empacar o marcar atractante.
+--
+-- Al borrar las versiones viejas queda sólo la que tiene p_por con valor por
+-- defecto, que acepta las dos formas de llamarla. Reproducido y verificado en
+-- Postgres real en test/sql-migrations.test.mjs.
+--
+-- Va en la instalación nueva (SETUP_COMPLETO) y en producción, porque las dos
+-- tienen el problema. Es seguro correrlo dos veces.
+--
+-- EN PRODUCCIÓN: correr después de 0005.
+-- ============================================================================
+
+set search_path = app, public;
+
+drop function if exists app.marcar_atractante(uuid, date);
+drop function if exists app.marcar_cierre(uuid, date);
+drop function if exists app.marcar_empacado(uuid, date);
+drop function if exists app.marcar_despachado(uuid);
+drop function if exists app.rechazar_lote(uuid, text);
+drop function if exists app.actualizar_qc_lote(uuid, numeric, numeric, text, text, boolean, text);

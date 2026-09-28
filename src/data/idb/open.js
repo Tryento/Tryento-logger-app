@@ -13,16 +13,26 @@ export function openDb() {
     if (!idb) return reject(new Error('IndexedDB no disponible en este navegador'));
 
     const req = idb.open(DB_NAME, DB_VERSION);
+    let upgradeError = null;
 
     req.onupgradeneeded = ev => {
       const db = req.result;
+      const tx = req.transaction;
       const from = ev.oldVersion || 0;
-      // Apply only the steps this device has not seen. A phone carrying queued
-      // outbox rows upgrades in place; nothing is dropped and nothing is
-      // recreated.
-      for (let v = from; v < DB_VERSION; v++) {
-        MIGRATIONS[v](db, req.transaction, ev);
-      }
+      // Apply only the steps this device has not seen, one after another. A
+      // step may be async (copying rows), and the next must not start until it
+      // has finished. If any step fails, abort: IndexedDB then rolls the whole
+      // upgrade back and the phone keeps its old database, rows and queue
+      // intact, instead of a half-migrated one.
+      (async () => {
+        for (let v = from; v < DB_VERSION; v++) {
+          await MIGRATIONS[v](db, tx);
+        }
+      })().catch(err => {
+        upgradeError = err;
+        console.error(`[tryento] actualización de base local falló (v${from} -> v${DB_VERSION})`, err);
+        try { tx.abort(); } catch { /* already finished */ }
+      });
     };
 
     req.onsuccess = () => {
@@ -39,7 +49,11 @@ export function openDb() {
       resolve(db);
     };
 
-    req.onerror = () => reject(req.error || new Error('no se pudo abrir la base local'));
+    req.onerror = () => {
+      // Forget the failed attempt so a later call (or a reload) tries again.
+      _dbPromise = null;
+      reject(upgradeError || req.error || new Error('no se pudo abrir la base local'));
+    };
     req.onblocked = () => {
       // Resolution still happens once the other tab closes; surfacing it beats
       // an unexplained hang.

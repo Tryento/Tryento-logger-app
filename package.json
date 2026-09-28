@@ -8,7 +8,7 @@
     "build": "node tools/build.mjs",
     "vendor": "node tools/vendor.mjs",
     "serve": "node tools/serve.mjs",
-    "test": "node --test",
+    "test": "node --test \"test/*.test.mjs\"",
     "check:sql": "node tools/check-sql.mjs",
     "check:ui": "node tools/check-ui.mjs",
     "check:backend": "node tools/check-backend.mjs",
@@ -16,9 +16,13 @@
     "migration:csv": "node tools/csv-to-staging.mjs",
     "check:sync": "node tools/check-sync.mjs",
     "check:all": "npm run check && npm run check:backend && npm run check:sync",
-    "cleanup:qa": "node tools/cleanup-qa.mjs"
+    "cleanup:qa": "node tools/cleanup-qa.mjs",
+    "setup:sql": "node tools/build-setup-sql.mjs",
+    "check:sql-applied": "node tools/check-sql-applied.mjs",
+    "check:idb-browser": "node tools/check-idb-browser.mjs"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@fontsource/ibm-plex-mono": "^5.1.1",
     "@fontsource/inter": "^5.1.1",
     "@supabase/supabase-js": "^2.47.10",

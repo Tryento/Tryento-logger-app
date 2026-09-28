@@ -81,6 +81,17 @@ a:hover{color:#4ADE80}
 
   <div style="flex:1;padding:16px 14px 26px">
 
+    <!-- The phone's own data could not be opened. Shown on every screen, so a
+         broken start-up is never mistaken for a missing server again. -->
+    <sc-if value="{{ hasFatal }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-bottom:18px;display:flex;flex-direction:column;gap:10px;font-size:14.5px;color:#FCA5A5;background:#2A1212;border:1px solid #EF4444;border-radius:10px;padding:13px">
+        <div style="font-size:16px;font-weight:700">No se pudieron abrir los datos de este teléfono</div>
+        <div style="color:#EAF7EC">Lo que registraste sigue guardado aquí. No borres los datos del navegador. Cierra las otras pestañas de la app y toca Reintentar.</div>
+        <div style="font-size:12.5px;color:#9FB8A6;font-family:'IBM Plex Mono',monospace;word-break:break-word">{{ fatalDetail }}</div>
+        <button onClick="{{ onFatalRetry }}" style="min-height:48px;border:1px solid #EF4444;background:#1A0C0C;color:#FCA5A5;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">Reintentar</button>
+      </div>
+    </sc-if>
+
     <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
       <div style="display:flex;flex-direction:column;gap:24px">
         <div style="font-size:14.5px;color:#9FB8A6;font-weight:500">{{ homeStatus }}</div>
@@ -1000,15 +1011,20 @@ class Component extends DCLogic {
     this.api = api;
     let saved = null;
     try { saved = window.localStorage.getItem('tryento.operator'); } catch (e) { saved = null; }
-    const [ins, band, rec, lot, ops] = await Promise.all([
-      api.listInsectarios({}), api.listBandejas({}), api.listRecolecciones({}), api.listLotes({}), api.listOperators()
-    ]);
-    this.setState({
-      ready: true,
-      insectarios: ins.ok ? ins.data : [], bandejas: band.ok ? band.data : [], recolecciones: rec.ok ? rec.data : [],
-      lotes: lot.ok ? lot.data : [], operators: ops.ok ? ops.data : [],
-      operator: saved || null, screen: saved ? 'home' : 'operator'
-    });
+
+    // If the phone's own database cannot open, say so. Before, this rejected
+    // silently: nothing loaded, and the header read "no hay servidor", which
+    // sent everyone looking at the backend.
+    if (!api) { this.setState({ ready: true, fatal: 'No se pudo cargar el módulo de datos.', operator: saved || null, screen: 'home' }); return; }
+    try { await api.ready(); } catch (e) {
+      console.error('[tryento] la base local no abrió', e);
+      this.setState({ ready: true, fatal: (e && e.message) || String(e), operator: saved || null, screen: 'home' });
+      return;
+    }
+
+    // Each list on its own: one that fails must not blank the other four.
+    const lists = await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'operators']);
+    this.setState(Object.assign({ ready: true, operator: saved || null, screen: saved ? 'home' : 'operator' }, lists));
 
     // A background pull brings other people's work down; without this the
     // screen would keep showing whatever was true when it was opened.
@@ -1022,16 +1038,42 @@ class Component extends DCLogic {
   }
 
   refreshSecondary = async () => {
-    if (!this.api) return;
-    const [cf, ay] = await Promise.all([
+    if (!this.api || this.state.fatal) return;
+    const [cf, ay] = await Promise.allSettled([
       this.api.listConflicts ? this.api.listConflicts({}) : { ok: true, data: [] },
       this.api.listAyunosAbiertos ? this.api.listAyunosAbiertos() : { ok: true, data: [] }
     ]);
-    this.setState({
-      conflicts: cf.ok ? cf.data : [],
-      ayunosAbiertos: ay.ok ? ay.data : []
-    });
+    const val = r => (r.status === 'fulfilled' && r.value && r.value.ok ? r.value.data : null);
+    this.setState(s => ({
+      conflicts: val(cf) || s.conflicts,
+      ayunosAbiertos: val(ay) || s.ayunosAbiertos
+    }));
   };
+
+  /**
+   * Load the named lists independently. A list that fails keeps what the
+   * screen already had, and the failure is shown instead of swallowed.
+   */
+  async loadLists(names) {
+    const calls = {
+      insectarios: () => this.api.listInsectarios({}),
+      bandejas: () => this.api.listBandejas({}),
+      recolecciones: () => this.api.listRecolecciones({}),
+      lotes: () => this.api.listLotes({}),
+      operators: () => this.api.listOperators()
+    };
+    const results = await Promise.allSettled(names.map(n => calls[n]()));
+    const out = {}, failed = [];
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled' && r.value && r.value.ok) out[names[i]] = r.value.data;
+      else {
+        failed.push(names[i]);
+        console.error('[tryento] no cargó la lista ' + names[i], r.status === 'rejected' ? r.reason : r.value);
+      }
+    });
+    if (failed.length) this.toast('No se pudieron cargar: ' + failed.join(', '), 'Lo guardado sigue en el teléfono. Recarga la app.', 'error');
+    return out;
+  }
 
   componentWillUnmount() {
     clearTimeout(this._toastTimer);
@@ -1066,8 +1108,8 @@ class Component extends DCLogic {
   ddmm(dateStr) { const d = new Date((dateStr || this.now())); const p = n => String(n).padStart(2, '0'); return p(d.getDate()) + p(d.getMonth() + 1); }
 
   async refreshLists() {
-    const [ins, band, rec, lot] = await Promise.all([this.api.listInsectarios({}), this.api.listBandejas({}), this.api.listRecolecciones({}), this.api.listLotes({})]);
-    this.setState({ insectarios: ins.ok ? ins.data : this.state.insectarios, bandejas: band.ok ? band.data : this.state.bandejas, recolecciones: rec.ok ? rec.data : this.state.recolecciones, lotes: lot.ok ? lot.data : this.state.lotes });
+    if (!this.api || this.state.fatal) return;
+    this.setState(await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes']));
   }
 
   fmt(dt) {
@@ -1529,6 +1571,9 @@ class Component extends DCLogic {
     /* home */
     vals.isTiles = layout === 'tiles';
     vals.isRows = layout === 'rows';
+    vals.hasFatal = !!s.fatal;
+    vals.fatalDetail = s.fatal ? 'Detalle: ' + s.fatal : '';
+    vals.onFatalRetry = () => { try { window.location.reload(); } catch (e) { /* noop */ } };
     vals.homeStatus = s.ready ? bandejasActivas + ' bandejas activas · ' + (s.operator ? 'registrando como ' + s.operator : 'sin nombre elegido') : 'Cargando datos de producción…';
     vals.homeActions = [
       { label: 'Alimentar', bg: '#111A14', fg: TEXT, mark: NEON, onClick: this.openAlimentarGrupal },
