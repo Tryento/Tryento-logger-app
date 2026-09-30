@@ -47,7 +47,11 @@ export function deepCopy(v) {
  *  Returns null for anything non-numeric so a typo never becomes a silent 0. */
 export function num(v) {
   if (v === '' || v === null || v === undefined) return null;
-  const n = Number(v);
+  // A phone set to Spanish types a decimal COMMA ("1,5"). Number() reads that
+  // as NaN, and the form answered that the field was missing.
+  const s = typeof v === 'string' ? v.trim() : v;
+  if (s === '') return null;
+  const n = Number(typeof s === 'string' && /^-?\d+,\d+$/.test(s) ? s.replace(',', '.') : s);
   return Number.isFinite(n) ? n : null;
 }
 

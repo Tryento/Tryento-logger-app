@@ -5,7 +5,7 @@ import { withTx } from '../src/data/idb/tx.js';
 import {
   enqueue, claimBatch, markDone, markRetry, markConflict, markInflight,
   requeue, discard, outboxStats, listStuck, pruneDone,
-  classifyError, backoffMs, STATUS
+  classifyError, backoffMs, STATUS, INFLIGHT_STALE_MS
 } from '../src/data/outbox.js';
 import { MAX_ATTEMPTS } from '../src/data/config.js';
 
@@ -183,6 +183,53 @@ test('pruneDone clears completed history but never open or stuck work', async ()
   assert.equal(stats.pending, 1);
   assert.equal(stats.conflict, 1);
   assert.ok(pending.id && conflicted.id);
+});
+
+test('REGRESSION: an item abandoned in flight (tab killed mid-request) is sent again', async () => {
+  const db = await freshDb();
+  const a = await add(db, { rowId: 'ayuno-5' });
+  const b = await add(db, { rowId: 'ayuno-5', op: 'cas', rpc: 'cerrar_ayuno' });
+  await markInflight(db, a.id);                    // ...and the phone kills the tab here
+
+  const now = Date.now();
+  const soon = await claimBatch(db, { now });
+  assert.deepEqual(soon.ready, [], 'it may still be on its way: nothing on its row goes yet');
+
+  const later = await claimBatch(db, { now: now + INFLIGHT_STALE_MS + 1000 });
+  assert.deepEqual(later.ready.map(i => i.id), [a.id, b.id],
+    'before this fix it stayed "in flight" forever: never retried, and the close behind it never left');
+
+  // Marked in flight by the build before inflight_at existed.
+  const c = await add(db, { rowId: 'row-c' });
+  await withTx(db, 'outbox', 'readwrite', async s => {
+    s.outbox.put({ ...c, status: STATUS.INFLIGHT });
+  });
+  assert.ok((await claimBatch(db)).ready.some(i => i.id === c.id));
+});
+
+test('REGRESSION: a close never overtakes the insert of its row while that insert backs off', async () => {
+  const db = await freshDb();
+  const insert = await add(db, { rowId: 'ayuno-7' });
+  const close = await add(db, { rowId: 'ayuno-7', op: 'cas', rpc: 'cerrar_ayuno' });
+  await markRetry(db, insert, httpError(503), 'servidor');
+
+  const { ready } = await claimBatch(db, { now: Date.now() });
+  assert.deepEqual(ready, [], 'sent first, the close would update nothing and report success');
+
+  const later = await claimBatch(db, { now: Date.now() + 10 * 60 * 1000 });
+  assert.deepEqual(later.ready.map(i => i.id), [insert.id, close.id]);
+});
+
+test('an operation behind a row that will never land is surfaced, not sent', async () => {
+  const db = await freshDb();
+  const insert = await add(db, { rowId: 'ayuno-8' });
+  await add(db, { rowId: 'ayuno-8', op: 'cas', rpc: 'cerrar_ayuno' });
+  await markConflict(db, insert, pgError('23503'), 'restriccion');
+
+  const { ready, blocked } = await claimBatch(db);
+  assert.deepEqual(ready, []);
+  assert.equal(blocked.length, 1);
+  assert.equal(blocked[0].parent.id, insert.id);
 });
 
 test('markInflight is visible to stats (a crashed drain is not invisible)', async () => {

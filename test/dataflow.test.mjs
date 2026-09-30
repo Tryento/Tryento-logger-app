@@ -379,6 +379,30 @@ test('cierre closes the colony', async () => {
   assert.equal(typeof res.data.desviacion_cierre_dias, 'number');
 });
 
+test('a phone set to Spanish types a decimal comma, and it is read as one', async () => {
+  // "3,1" was read as missing: Number('3,1') is NaN.
+  const res = await api.createInsectario({ nombre_insectario: 'ICB', fecha_inicio: '2026-09-01', biomasa_kg: '3,1' });
+  assert.ok(res.ok, JSON.stringify(res.error));
+  assert.equal(res.data.biomasa_kg, 3.1);
+  const { num } = await import('../src/data/envelope.js');
+  assert.equal(num('2,25'), 2.25);
+  assert.equal(num('  '), null, 'blank is missing, not zero');
+  assert.equal(num('1.500,5'), null, 'ambiguous: refused rather than guessed');
+});
+
+test('a pull that only re-reads rows the phone already has is not news for the screens', async () => {
+  const { applyServerRows } = await import('../src/data/store.js');
+  const db = await openDb();
+  const T1 = '2026-09-29T12:00:00.000Z', T2 = '2026-09-29T12:05:00.000Z';
+  const row = { id: '6f1d0b1e-8c55-4c2f-9a57-2f7f3c6d9e01', tipo: 'qc_color_dorado', valor: 'Dorado claro',
+                orden: 9, activo: true, created_at: T1, updated_at: T1 };
+  assert.equal((await applyServerRows(db, 'catalogo', [row])).changed, 1, 'new to this phone');
+  assert.equal((await applyServerRows(db, 'catalogo', [row])).changed, 0,
+    'the same row again, as every pull re-reads its overlap window');
+  assert.equal((await applyServerRows(db, 'catalogo', [{ ...row, valor: 'Dorado', updated_at: T2 }])).changed, 1,
+    'changed on the server');
+});
+
 test('missing records report not_found rather than throwing', async () => {
   for (const call of [
     api.getBandejaDetail('00000000-0000-4000-8000-000000000000'),

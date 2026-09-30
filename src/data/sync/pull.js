@@ -90,7 +90,7 @@ async function pullTable(db, client, table) {
 
   let since = from;
   let groupAfterId = null;       // set while finishing a group of equal updated_at
-  let total = 0, skipped = 0;
+  let total = 0, changed = 0, skipped = 0;
   let maxSeen = cursor;
   const trays = new Set();
 
@@ -108,6 +108,7 @@ async function pullTable(db, client, table) {
     if (data?.length) {
       const res = await applyServerRows(db, table, data.map(normalizeRow));
       total += res.applied;
+      changed += res.changed;
       skipped += res.skipped;
       for (const t of res.trays) trays.add(t);
     }
@@ -136,7 +137,7 @@ async function pullTable(db, client, table) {
   // Only ever advance to a timestamp the SERVER produced.
   if (tsMicros(maxSeen) > tsMicros(cursor)) await metaSet(db, cursorKey(table), maxSeen);
 
-  return { table, applied: total, skipped, trays: [...trays] };
+  return { table, applied: total, changed, skipped, trays: [...trays] };
 }
 
 /**
@@ -163,7 +164,7 @@ export async function refetchRows(db, refs) {
 }
 
 export async function pullOnce(db, { tables = SYNCED_STORES } = {}) {
-  const summary = { tables: [], applied: 0, skipped: 0, errors: [] };
+  const summary = { tables: [], applied: 0, changed: 0, skipped: 0, errors: [] };
   const client = getClient();
   if (!client || !canSync()) return summary;
 
@@ -173,6 +174,7 @@ export async function pullOnce(db, { tables = SYNCED_STORES } = {}) {
       const r = await pullTable(db, client, table);
       summary.tables.push(r);
       summary.applied += r.applied;
+      summary.changed += r.changed;
       summary.skipped += r.skipped;
     } catch (err) {
       summary.errors.push({ table, message: err.message, code: err.code || null });

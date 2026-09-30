@@ -163,6 +163,21 @@ export function backoffMs(attempts) {
 
 /* ── draining ───────────────────────────────────────────────────────────── */
 
+/** How long an item may stay marked in flight before it counts as abandoned. */
+export const INFLIGHT_STALE_MS = 60 * 1000;
+
+/**
+ * An item still "in flight" long after it was sent was abandoned: its tab was
+ * closed or killed mid-request. Only the sync leader sends (loop.js), and it
+ * settles every item of a pass before claiming the next, so nothing else is
+ * sending it. Left alone it would stay in flight forever — never retried, and
+ * holding back everything queued behind its rows. Every operation is safe to
+ * replay (inserts ignore duplicates, the RPCs return on replay, CAS stamps only
+ * fill blanks), so sending it again is harmless even if it did land.
+ */
+const abandoned = (it, now) =>
+  it.status === STATUS.INFLIGHT && now - (it.inflight_at || 0) > INFLIGHT_STALE_MS;
+
 /**
  * Items ready to attempt now, oldest first.
  *
@@ -177,7 +192,8 @@ export async function claimBatch(db, { limit = 50, now = Date.now() } = {}) {
   // not worth relying on across engines for a queue this small.
   const all = await getAllByIndex(db, 'outbox', 'by_status');
   const pending = all
-    .filter(it => it.status === STATUS.PENDING && (it.next_attempt_at || 0) <= now)
+    .filter(it => (it.status === STATUS.PENDING && (it.next_attempt_at || 0) <= now) ||
+                  abandoned(it, now))
     .sort((a, b) => a.seq - b.seq);
 
   // Rows that still owe the server something, and rows that will never land —
@@ -186,29 +202,33 @@ export async function claimBatch(db, { limit = 50, now = Date.now() } = {}) {
   // rule an item that both creates a row and lists it as a dependency (the
   // distribución creates bandejas and depends on its incubadora, which is also
   // its own row) would wait on itself forever.
-  const owing = new Map();        // row -> seqs of open items that owe it
+  const owing = new Map();        // row -> open items that owe it
   const stuckByRow = new Map();   // row -> stuck items that owe it
   const add = (map, k, v) => { if (!map.has(k)) map.set(k, []); map.get(k).push(v); };
   for (const it of all) {
     for (const r of rowsOf(it)) {
-      if (OPEN_STATUSES.includes(it.status)) add(owing, r, it.seq);
+      if (OPEN_STATUSES.includes(it.status)) add(owing, r, it);
       if (STUCK_STATUSES.includes(it.status)) add(stuckByRow, r, it);
     }
   }
-  const owedBefore = (row, seq) => (owing.get(row) || []).some(s => s < seq);
+  const owedBefore = (row, seq) => (owing.get(row) || []).some(it => it.seq < seq);
   const stuckBefore = (row, seq) => (stuckByRow.get(row) || []).find(it => it.seq < seq) || null;
 
   const ready = [];
   const blocked = [];
-  // Rows whose earlier operation is going out in THIS batch. Items are executed
-  // in seq order, so a later item may rely on one already queued ahead of it.
+  // Items going out in THIS batch, and the rows they stand for. Items are
+  // executed in seq order, so a later item may rely on one already queued
+  // ahead of it.
+  const goingOut = new Set();
   const satisfied = new Set();
   // Rows whose earlier operation was held back. Nothing for that row may
   // overtake it.
   const held = new Set();
 
   for (const item of pending) {
-    let skip = false;
+    const mine = rowsOf(item);
+    let wait = mine.some(r => held.has(r));
+    let parent = null;
 
     // ── per-row FIFO ────────────────────────────────────────────────────────
     // An operation must never overtake an earlier one on the SAME row.
@@ -218,29 +238,32 @@ export async function claimBatch(db, { limit = 50, now = Date.now() } = {}) {
     // the row they update was held back waiting for its parent, the CAS ran
     // first, updated zero rows, reported success, and the weight was lost with
     // nothing queued, nothing stuck and nothing to see.
-    const mine = rowsOf(item);
-    if (mine.some(r => held.has(r))) skip = true;
-
-    // ── declared dependencies ───────────────────────────────────────────────
-    if (!skip) {
-      for (const dep of item.depends_on || []) {
-        if (satisfied.has(dep)) continue;              // goes out earlier in this batch
-        const parent = stuckBefore(dep, item.seq);
-        if (parent) {                                  // will never land
-          blocked.push({ item, parent });
-          skip = true;
-          break;
-        }
-        if (owedBefore(dep, item.seq)) { skip = true; break; }  // still queued: try next pass
-      }
+    //
+    // "Earlier" includes operations that are not in this pass at all: one
+    // backing off after a network error must land first, and behind one parked
+    // for a human nothing can land, so it is surfaced like any other orphan.
+    for (const r of mine) {
+      if (wait || parent) break;
+      parent = stuckBefore(r, item.seq);
+      wait = !parent && (owing.get(r) || []).some(it => it.seq < item.seq && !goingOut.has(it.id));
     }
 
-    if (skip) {
+    // ── declared dependencies ───────────────────────────────────────────────
+    for (const dep of item.depends_on || []) {
+      if (wait || parent) break;
+      if (satisfied.has(dep)) continue;              // goes out earlier in this batch
+      parent = stuckBefore(dep, item.seq);           // will never land
+      wait = !parent && owedBefore(dep, item.seq);   // still queued: try next pass
+    }
+
+    if (parent) blocked.push({ item, parent });
+    if (wait || parent) {
       for (const r of mine) held.add(r);
       continue;
     }
 
     ready.push(item);
+    goingOut.add(item.id);
     for (const r of mine) satisfied.add(r);
     if (ready.length >= limit) break;
   }
@@ -258,7 +281,8 @@ async function patch(db, id, changes) {
   });
 }
 
-export const markInflight = (db, id) => patch(db, id, { status: STATUS.INFLIGHT });
+export const markInflight = (db, id) =>
+  patch(db, id, { status: STATUS.INFLIGHT, inflight_at: Date.now() });
 
 export const markDone = (db, id) =>
   patch(db, id, { status: STATUS.DONE, last_error: null, completed_at: new Date().toISOString() });

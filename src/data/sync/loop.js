@@ -16,7 +16,7 @@ import { pushAll } from './push.js';
 import { pullOnce, initialPull, hasInitialPull } from './pull.js';
 import { uploadPending } from './blobs.js';
 import { pruneDone } from '../outbox.js';
-import { setSyncing, markSynced, markSyncError, refreshStatus } from '../status.js';
+import { setSyncing, markSynced, markSyncError, markDataChanged, refreshStatus } from '../status.js';
 import { SYNC_INTERVAL_MS } from '../config.js';
 
 const LOCK = 'tryento-sync';
@@ -139,6 +139,7 @@ async function runSyncPass({ force }) {
       const pulled = (await hasInitialPull(db))
         ? await pullOnce(db)
         : await initialPull(db);
+      if (pulled?.changed) markDataChanged();
 
       const photos = await uploadPending(db, { force });
 

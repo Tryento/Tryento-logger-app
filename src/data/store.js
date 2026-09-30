@@ -91,14 +91,16 @@ export async function commitWrite(db, { writes = [], outbox = null, refreshTrays
  * leaves it alone and the next push reconciles it.
  */
 export async function applyServerRows(db, store, rows) {
-  if (!rows?.length) return { applied: 0, skipped: 0, trays: [] };
+  if (!rows?.length) return { applied: 0, changed: 0, skipped: 0, trays: [] };
 
   const open = (await getAllByIndex(db, 'outbox', 'by_status'))
     .filter(it => OPEN_STATUSES.includes(it.status) || STUCK_STATUSES.includes(it.status));
   const guarded = new Set(open.flatMap(rowsOf));
 
   const trays = new Set();
-  let applied = 0, skipped = 0;
+  // `changed` leaves out rows this phone already had exactly as they are: every
+  // pull re-reads its overlap window, and that is not news for the screens.
+  let applied = 0, changed = 0, skipped = 0;
 
   const names = new Set([store]);
   const isEvent = EVENT_STORES.includes(store) || store === 'lote_separacion';
@@ -110,6 +112,9 @@ export async function applyServerRows(db, store, rows) {
         ? `${row.lote_id}:${row.separacion_id}`
         : row.id;
       if (guarded.has(key) || guarded.has(row.id)) { skipped++; continue; }
+      const cur = await reqToPromise(s[store].get(
+        store === 'lote_separacion' ? [row.lote_id, row.separacion_id] : row.id));
+      if (!cur || cur.updated_at !== row.updated_at || (cur.deleted_at || null) !== (row.deleted_at || null)) changed++;
       await reqToPromise(s[store].put(withIndexMirrors(store, row)));
       applied++;
       if (row.bandeja_id) trays.add(row.bandeja_id);
@@ -133,7 +138,7 @@ export async function applyServerRows(db, store, rows) {
     }
   });
 
-  return { applied, skipped, trays: [...trays] };
+  return { applied, changed, skipped, trays: [...trays] };
 }
 
 /** Straight local upsert with no outbox entry — seeding and tests only. */

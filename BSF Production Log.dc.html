@@ -1330,6 +1330,13 @@ class Component extends DCLogic {
     if (api.onChange) {
       this._unsubSync = api.onChange(async sync => {
         this.setState({ sync });
+        // Another phone's work arrived: read the lists (and the page on screen)
+        // again. Before, it only appeared after the next save on this phone.
+        if (sync && sync.dataGen !== undefined && sync.dataGen !== this._dataGen) {
+          const first = this._dataGen === undefined;
+          this._dataGen = sync.dataGen;
+          if (!first) { await this.refreshLists(); await this.refreshDetalle(); }
+        }
         if (sync && (sync.pending === 0 || sync.conflicts)) await this.refreshSecondary();
       });
     }
@@ -1425,6 +1432,22 @@ class Component extends DCLogic {
   async refreshLists() {
     if (!this.api || this.state.fatal) return;
     this.setState(await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'incubadoras', 'protocolo']));
+  }
+
+  /** Read the detail page on screen again, in place (no navigation). */
+  async refreshDetalle() {
+    if (!this.api || this.state.fatal) return;
+    const screen = this.state.screen;
+    const calls = {
+      bandejaDetalle: ['getBandejaDetail', d => d.bandeja.id],
+      insectarioDetalle: ['getInsectarioDetail', d => d.insectario.id],
+      loteDetalle: ['getLoteDetail', d => d.lote.id],
+      incubadoraDetalle: ['getIncubadoraDetail', d => d.incubadora.id]
+    };
+    const c = calls[screen], d = this.state[screen];
+    if (!c || !d || !this.api[c[0]]) return;
+    const r = await this.api[c[0]](c[1](d));
+    if (r && r.ok && this.state.screen === screen) this.setState({ [screen]: r.data });
   }
 
   fmt(dt) {

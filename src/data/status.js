@@ -36,8 +36,14 @@ function notify(status) {
   }
 }
 
+let _dataGen = 0;
+
 export const setSyncing = v => { _syncing = v; };
 export const markSynced = () => { _lastSyncAt = Date.now(); _lastError = null; };
+/** A pull brought rows this phone did not have. The screens read their lists
+ *  again when this number moves; before, another phone's work only appeared
+ *  after the next save here. */
+export const markDataChanged = () => { _dataGen++; };
 export const markSyncError = e => { _lastError = e?.message || String(e || ''); };
 
 export async function getSyncStatus() {
@@ -76,6 +82,7 @@ export async function getSyncStatus() {
     pendingWarning: pendingAgeMs > PENDING_WARN_MS,
     lastSyncAt: _lastSyncAt,
     lastError: _lastError,
+    dataGen: _dataGen,
     clockSkewed: isClockSkewed(),
     clockSkewMs: getClockSkewMs(),
     storage: storage ? { ...storage, low: storage.ratio > 0.8 } : null

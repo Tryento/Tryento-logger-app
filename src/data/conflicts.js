@@ -242,13 +242,14 @@ async function discardCascade(db, item, seen = new Set()) {
   return { trays, refetch, n };
 }
 
-/** Items parked only because this one had not landed ("dependencia"). */
+/** Items parked only because this one had not landed ("dependencia"): work
+ *  that needed its rows, and later operations on those same rows. */
 async function blockedBy(db, item) {
   const mine = new Set(rowsOf(item));
   const all = await getAllByIndex(db, 'outbox', 'by_status');
   return all.filter(it => it.seq > item.seq && it.status === STATUS.CONFLICT &&
     it.last_error?.reason === 'dependencia' &&
-    (it.depends_on || []).some(d => mine.has(d)));
+    ((it.depends_on || []).some(d => mine.has(d)) || rowsOf(it).some(r => mine.has(r))));
 }
 
 /**
