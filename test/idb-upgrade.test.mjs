@@ -27,6 +27,7 @@ import { openDb, __closeDb } from '../src/data/idb/open.js';
 import * as SHIPPED_BEFORE_RENAME from './fixtures/idb/schema-v1-antes-del-renombrado.mjs';
 import * as SHIPPED_AFTER_RENAME from './fixtures/idb/schema-v1-despues-del-renombrado.mjs';
 import * as SHIPPED_RELEASE_1 from './fixtures/idb/schema-v3.mjs';
+import * as SHIPPED_LIVE from './fixtures/idb/schema-v2.mjs';
 import { liveReplica, readSql } from './helpers/pg.mjs';
 import { pgClient } from './helpers/pg-client.mjs';
 
@@ -119,8 +120,8 @@ function schemaOf(db) {
   return out;
 }
 
-const expectedSchema = () => Object.fromEntries(
-  Object.entries(STORE_DEFS).sort(([a], [b]) => a.localeCompare(b)).map(([n, d]) => [n, {
+const expectedSchema = (defs = STORE_DEFS) => Object.fromEntries(
+  Object.entries(defs).sort(([a], [b]) => a.localeCompare(b)).map(([n, d]) => [n, {
     keyPath: d.keyPath,
     indexes: [...d.indexes].sort(([a], [b]) => a.localeCompare(b)).map(([i, kp]) => [i, kp, false])
   }]));
@@ -415,6 +416,96 @@ test('post-rename phone: keeps its lotes and its lote cursor, same final schema'
   assert.ok(item.payload.p_lote);
   assert.equal((await getOne(db, 'meta', 'pull_cursor:lote')).value, T0,
     'el almacén ya existía y estaba al día: no hace falta descargarlo otra vez');
+  await reset();
+});
+
+/* ── a phone on the live build (v2, 3eb549a): lotes, no protocolo v2 yet ──── */
+
+const L = {
+  ins: randomUUID(), rec: randomUUID(), b1: randomUUID(), s1: randomUUID(), lote: randomUUID(), dev: randomUUID()
+};
+const T2 = '2026-09-28T19:00:00.000Z';
+const provL = synced => ({ registrado_por: 'Ricardo', created_by: null, dispositivo_id: L.dev,
+                           created_at: T2, updated_at: T2, synced_at: synced ? T2 : null, deleted_at: null });
+const LIVE_LOTE = { ...loteRow(L.lote, 'CO-2809-L', false), ...provL(false) };
+const LIVE_PHONE = {
+  insectario: [{ id: L.ins, codigo: 'ICC-0109', nombre_insectario: 'ICC', fecha_inicio: '2026-09-01', ...provL(true) }],
+  recoleccion: [{ id: L.rec, insectario_id: L.ins, recolecta: '4', fecha: T2, huevos_g: 0.6, ...provL(true) }],
+  bandeja: [{ id: L.b1, recoleccion_id: L.rec, no_bandeja: 1, id_bandeja: '2809.4.1', fecha: T2, estado: 'cosechada', ...provL(true) }],
+  separacion: [{ id: L.s1, bandeja_id: L.b1, fecha: T2, larva_limpia_g: 420, ...provL(true) }],
+  lote: [LIVE_LOTE],
+  lote_separacion: [{ lote_id: L.lote, separacion_id: L.s1, created_at: T2, updated_at: T2 }],
+  bandeja_cache: [{ bandeja_id: L.b1, estado: 'cosechada', last_evento_tipo: 'separacion', last_evento_fecha: T2,
+                    separacion_id: L.s1, larva_limpia_g: 420, lote_id: L.lote, updated_at: T2 }],
+  // Queued by the live build: no row_ids and no undo log (they came later).
+  outbox: [queued(1, { op: 'rpc', rpc: 'crear_lote', row_id: L.lote, dispositivo_id: L.dev,
+                       payload: { p_lote: LIVE_LOTE, p_separacion_ids: [L.s1] }, depends_on: [L.s1] })],
+  meta: [{ key: 'pull_cursor:lote', value: T2 }, { key: 'outbox_seq', value: 1 }, { key: 'operador_actual', value: 'Ricardo' }]
+};
+
+test('live-build phone (v2): upgrades through v3 and v4; its lote and queued work stay as they were', async () => {
+  await reset();
+  await buildShipped(SHIPPED_LIVE, LIVE_PHONE);
+
+  const db = await openDb();
+  assert.equal(db.version, DB_VERSION);
+  assert.deepEqual(schemaOf(db), expectedSchema());
+  for (const [store, rows] of Object.entries(LIVE_PHONE)) {
+    if (store === 'meta') continue;
+    assert.deepEqual(asSet(await getAll(db, store)), asSet(rows), `${store} queda idéntico`);
+  }
+  for (const m of LIVE_PHONE.meta) assert.deepEqual(await getOne(db, 'meta', m.key), m);
+  for (const s of ['parametro', 'incubadora', 'recepcion_alimento', 'ensilaje', 'ensilaje_insumo', 'ensilaje_lectura']) {
+    assert.deepEqual(await getAll(db, s), [], `${s} empieza vacío`);
+    assert.equal(await getOne(db, 'meta', `pull_cursor:${s}`), undefined, `${s} se descarga completo`);
+  }
+  const { listLotes } = await import('../src/data/read.js');
+  assert.deepEqual((await listLotes()).data.map(l => l.codigo), ['CO-2809-L']);
+});
+
+test('live-build phone → Release 1 exactly as it ships (frozen v3 code): nothing moves', async () => {
+  await reset();
+  await buildShipped(SHIPPED_LIVE, LIVE_PHONE);
+  await buildShipped(SHIPPED_RELEASE_1);      // Release 1 opening it: runs only its v3 step
+  const db = await new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  try {
+    assert.equal(db.version, 3);
+    assert.deepEqual(schemaOf(db), expectedSchema(SHIPPED_RELEASE_1.STORE_DEFS));
+    for (const [store, rows] of Object.entries(LIVE_PHONE)) {
+      if (store === 'meta') continue;
+      assert.deepEqual(asSet(await getAll(db, store)), asSet(rows), `${store} queda idéntico`);
+    }
+  } finally {
+    db.close();
+  }
+  await reset();
+});
+
+test('live-build phone: its queued lote lands on the server after 0007 and 0008', async () => {
+  await reset();
+  await buildShipped(SHIPPED_LIVE, LIVE_PHONE);
+  const pg = await liveReplica();
+  await pg.exec(await readSql('supabase/migrations/0005_renombrar_lote.sql'));
+  await pg.exec(await readSql('supabase/migrations/0006_sobrecargas.sql'));
+  await pg.query(`insert into app.insectario (id, codigo, nombre_insectario, fecha_inicio) values ($1, 'ICC-0109', 'ICC', '2026-09-01')`, [L.ins]);
+  await pg.query(`insert into app.recoleccion (id, insectario_id, recolecta, fecha) values ($1, $2, '4', $3)`, [L.rec, L.ins, T2]);
+  await pg.query(`insert into app.bandeja (id, recoleccion_id, no_bandeja, id_bandeja, fecha) values ($1, $2, 1, '2809.4.1', $3)`, [L.b1, L.rec, T2]);
+  await pg.query(`insert into app.separacion (id, bandeja_id, fecha, larva_limpia_g) values ($1, $2, $3, 420)`, [L.s1, L.b1, T2]);
+  await pg.exec(await readSql('supabase/migrations/0007_protocolo_v2.sql'));
+  await pg.exec(await readSql('supabase/migrations/0008_alimento.sql'));
+
+  useBackend(pgClient(pg));
+  const { pushAll } = await import('../src/data/sync/push.js');
+  const r = await pushAll(await openDb());
+  assert.deepEqual({ pushed: r.pushed, conflicts: r.conflicts, blocked: r.blocked }, { pushed: 1, conflicts: 0, blocked: 0 });
+  const lote = (await pg.query(`select codigo, registrado_por from app.lote where id = $1`, [L.lote])).rows[0];
+  assert.deepEqual([lote?.codigo, lote?.registrado_por], ['CO-2809-L', 'Ricardo']);
+  const link = (await pg.query(`select lote_id from app.lote_separacion where separacion_id = $1`, [L.s1])).rows[0];
+  assert.equal(link?.lote_id, L.lote);
   await reset();
 });
 

@@ -20,6 +20,7 @@ import {
   mergeProtocolo, v2Vigente, diaCiclo, siguientePaso, pasoIncubadora, pasoLabel, cuandoLabel,
   ensilajeEstado, kgCargasProximas
 } from './protocolo.js';
+import { monitor } from './monitor.js';
 
 /** The protocol settings this device has, over the built-in defaults. */
 export async function loadProtocolo(db) {
@@ -403,6 +404,36 @@ export async function getStockAlimento({ dias = 3 } = {}) {
     dias_prevision: dias,
     alcanza: disponible >= proximas
   });
+}
+
+/**
+ * What is due: the home screen's list (monitor.js), from this phone's rows.
+ * Everything the plan tracks is local, so it works the same with no signal.
+ */
+export async function getMonitor({ horizonte = 2 } = {}) {
+  const db = await openDb();
+  const [idx, cache, trays, ensilajes, revisiones] = await Promise.all([
+    buildIndex(db), allCache(db), allRows(db, 'bandeja'), allRows(db, 'ensilaje'), allRows(db, 'revision')
+  ]);
+  const bandejas = trays.filter(b => b.protocolo === 'v2').map(b => {
+    const c = cache.get(b.id);
+    const estado = c?.estado ?? b.estado;
+    return {
+      id: b.id, id_bandeja: b.id_bandeja, protocolo: b.protocolo, estado,
+      cerrada_admin_at: b.cerrada_admin_at ?? null,
+      fecha_inicio: idx.incubadoraById.get(b.incubadora_id)?.fecha_inicio ?? null,
+      cargas_dadas: c?.cargas_dadas || [],
+      tiene_ayuno: Boolean(c?.tiene_ayuno) || estado === 'en_ayuno'
+    };
+  });
+  const incubadoras = [...idx.incubadoraById.values()].map(i => decorateIncubadora(i, idx));
+  const stock = await getStockAlimento({ dias: idx.cfg.dias_stock_alerta });
+  return ok(monitor({
+    bandejas, incubadoras, ensilajes,
+    revisiones: revisiones.filter(r => r.temperatura_c !== null && r.temperatura_c !== undefined),
+    stock: stock.ok ? stock.data : null,
+    cfg: idx.cfg, hoy: idx.hoy, horizonte
+  }));
 }
 
 export async function getIncubadoraDetail(id) {

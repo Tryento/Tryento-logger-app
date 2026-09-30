@@ -64,6 +64,15 @@ agotado, with temperature readings. Each load names the batch in use
 consumption come from the loads themselves: nothing is typed twice. Migration
 `0008_alimento.sql`.
 
+**What is due (home screen)** — [`src/data/monitor.js`](src/data/monitor.js)
+turns the phone's own rows into one list: late, today, the next two days.
+Trays that need the same step on the same day are one line and one tap (the
+form opens with them chosen): incubadoras to distribute, cargas, the bed
+temperature on días 11–12 (a bed over 36 °C goes to the top), ayuno, cosecha,
+an ensilaje due to be ready, and whether the ensilaje ready covers the next
+3 days of loads. Pure and clock-free, so it is tested on pinned days,
+including 20:00–24:00 in Caracas. Migration `0009_monitor.sql`.
+
 To connect it to Supabase, fill in [`app-config.js`](app-config.js) and apply
 the migrations in [`supabase/migrations/`](supabase/migrations/) in order.
 

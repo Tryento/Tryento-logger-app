@@ -16,6 +16,7 @@ const R0005 = '0005_renombrar_lote.sql';
 const R0006 = '0006_sobrecargas.sql';
 const R0007 = '0007_protocolo_v2.sql';
 const R0008 = '0008_alimento.sql';
+const R0009 = '0009_monitor.sql';
 
 /** Functions the app calls; each must exist exactly once. */
 const APP_FUNCTIONS = [
@@ -34,9 +35,11 @@ const VIEWS = [
   'v_productividad_insectario', 'v_rendimiento_lote', 'v_actividad_operario',
   'v_consumo_alimento', 'v_calidad_datos', 'v_bandejas_activas',
   'v_insectarios_activos', 'v_lotes_activos', 'v_estado_drift', 'v_nombres_registrados',
-  'v_incubadoras_activas', 'v_stock_material', 'v_stock_ensilaje', 'v_consumo_ensilaje_diario'
+  'v_incubadoras_activas', 'v_stock_material', 'v_stock_ensilaje', 'v_consumo_ensilaje_diario',
+  'v_temperatura_cama'
 ];
 const VIEWS_0008 = ['v_stock_material', 'v_stock_ensilaje', 'v_consumo_ensilaje_diario'];
+const VIEWS_0009 = ['v_temperatura_cama'];
 
 /**
  * Production as it will be once the user runs the pending files, in order.
@@ -54,6 +57,12 @@ async function productionAfterRelease1() {
 async function productionAfterRelease2() {
   const db = await productionAfterRelease1();
   await db.exec(await MIG(R0008));
+  return db;
+}
+
+async function productionAfterRelease3() {
+  const db = await productionAfterRelease2();
+  await db.exec(await MIG(R0009));
   return db;
 }
 
@@ -193,7 +202,8 @@ test('0005 + 0006 on the live replica: data kept, names changed, functions work'
   const fresh = await runLoteLifecycle(db, sep2, 'CO-NEW');
   assert.equal(fresh.estado, 'despachado');
 
-  await assertViewsQueryable(db, VIEWS.filter(v => v !== 'v_incubadoras_activas' && !VIEWS_0008.includes(v)));
+  await assertViewsQueryable(db, VIEWS.filter(v => v !== 'v_incubadoras_activas' &&
+                                                   !VIEWS_0008.includes(v) && !VIEWS_0009.includes(v)));
   const cols = await db.query(`select column_name from information_schema.columns
                                 where table_schema = 'app' and table_name = 'v_tiempos_ciclo'`);
   assert.ok(cols.rows.some(r => r.column_name === 'dias_separacion_a_lote'));
@@ -209,13 +219,14 @@ test('after 0006, calls WITHOUT p_por work again (older phones)', async () => {
   await db.query(`select app.marcar_empacado($1::uuid, null::date)`, [NOBODY]);
 });
 
-test('0005, 0006, 0007 and 0008 are safe to run twice', async () => {
+test('0005 to 0009 are safe to run twice', async () => {
   const db = await liveReplica();
   for (let i = 0; i < 2; i++) {
     await db.exec(await MIG(R0005));
     await db.exec(await MIG(R0006));
     await db.exec(await MIG(R0007));
     await db.exec(await MIG(R0008));
+    await db.exec(await MIG(R0009));
   }
   await assertOneOverloadEach(db);
   await assertViewsQueryable(db);
@@ -271,25 +282,28 @@ async function v2Chain(db, { codigo = 'F7AR9', recolecta = '9', nombre = 'ICA' }
   return { ins, rec, inc, bandejas, distribucion, carga1 };
 }
 
-test('0007 and 0008 on production: existing rows become v1 without being re-downloaded', async () => {
+test('0007, 0008 and 0009 on production: existing rows become v1 without being re-downloaded', async () => {
   const db = await liveReplica();
   const { ins, rec, ban, sep } = await seedChain(db, 'OLD');
-  const alim = uid(), ay = uid();
+  const alim = uid(), ay = uid(), rev = uid();
   await db.query(`insert into app.alimentacion (id, bandeja_id, fecha, tipo_alimento, cantidad_kg)
                   values ($1, $2, now(), 'Bagazo', 1.2)`, [alim, ban]);
   await db.query(`insert into app.ayuno (id, bandeja_id, fecha, peso_inicial_kg) values ($1, $2, now(), 3.1)`, [ay, ban]);
+  await db.query(`insert into app.revision (id, bandeja_id, fecha) values ($1, $2, now())`, [rev, ban]);
   const stamp = async () => (await db.query(`
     select 'r' k, updated_at from app.recoleccion where id = $1 union all
     select 'b', updated_at from app.bandeja      where id = $2 union all
     select 'a', updated_at from app.alimentacion where id = $3 union all
     select 'y', updated_at from app.ayuno        where id = $4 union all
-    select 's', updated_at from app.separacion   where id = $5 order by 1`, [rec, ban, alim, ay, sep])).rows;
+    select 's', updated_at from app.separacion   where id = $5 union all
+    select 'v', updated_at from app.revision     where id = $6 order by 1`, [rec, ban, alim, ay, sep, rev])).rows;
   const before = await stamp();
 
   await db.exec(await MIG(R0005));
   await db.exec(await MIG(R0006));
   await db.exec(await MIG(R0007));
   await db.exec(await MIG(R0008));
+  await db.exec(await MIG(R0009));
 
   assert.deepEqual(await stamp(), before, 'agregar columnas no debe tocar updated_at: los teléfonos bajarían todo otra vez');
   for (const [t, id] of [['recoleccion', rec], ['bandeja', ban], ['alimentacion', alim], ['ayuno', ay], ['separacion', sep]]) {
@@ -372,9 +386,9 @@ test('0007: the full v2 cycle, with attribution, on production after Release 1',
 
   const ciclo = await one(db, `select dia_ciclo_cosecha, protocolo from app.v_tiempos_ciclo where bandeja_id = $1`, [tray]);
   assert.equal(ciclo.dia_ciclo_cosecha, 16, 'la cosecha cae en el día 16 del ciclo');
-  // Release 1 must stand on its own, without 0008.
+  // Release 1 must stand on its own, without 0008 or 0009.
   await assertOneOverloadEach(db, V2_FUNCTIONS);
-  await assertViewsQueryable(db, VIEWS.filter(v => !VIEWS_0008.includes(v)));
+  await assertViewsQueryable(db, VIEWS.filter(v => !VIEWS_0008.includes(v) && !VIEWS_0009.includes(v)));
 });
 
 test('0007: a v1 fast still needs its weights', async () => {
@@ -509,6 +523,9 @@ test('fresh install: SETUP_COMPLETO runs the v2 cycle and seeds the protocol set
   const cargas = (await one(db, `select valor from app.parametro where clave = 'cargas'`)).valor;
   assert.deepEqual(cargas.map(x => [x.dia, x.kg]), [[7, 1.5], [10, 2], [13, 2]]);
   assert.ok(keys.includes('dias_fermentacion'), '0008 también va en la instalación nueva');
+  for (const k of ['temperatura_cama_max_c', 'dias_control_temperatura', 'dias_stock_alerta']) {
+    assert.ok(keys.includes(k), `0009 también va en la instalación nueva: falta ${k}`);
+  }
   await assertOneOverloadEach(db);
 });
 
@@ -582,7 +599,7 @@ test('0008: each carga is taken from the ensilaje in use; stock and consumption 
   const d = (await db.query(`select sum(kg) kg, sum(n_sin_ensilaje) sin from app.v_consumo_ensilaje_diario`)).rows[0];
   assert.equal(Number(d.kg), 4.5 + 6 + 6, 'las tres cargas de las tres bandejas');
   assert.equal(Number(d.sin), 6, 'las cargas 1 y 2 se dieron antes de haber ensilaje en uso');
-  await assertViewsQueryable(db);
+  await assertViewsQueryable(db, VIEWS.filter(v => !VIEWS_0009.includes(v)));
 });
 
 test('0008: the day-7 distribución records which ensilaje carga 1 came from', async () => {
@@ -612,7 +629,7 @@ test('views count days on the farm\'s calendar, never the server\'s (UTC) date',
   // current_date is the server's day: in Caracas it is already "tomorrow" from
   // 20:00 to midnight, so day counts and the "10 days" flag were one day off
   // every evening. Checked on the definitions, so it fails at any hour.
-  for (const db of [await productionAfterRelease1(), await productionAfterRelease2()]) {
+  for (const db of [await productionAfterRelease1(), await productionAfterRelease2(), await productionAfterRelease3()]) {
     const bad = (await db.query(`select viewname from pg_views
                                   where schemaname = 'app' and definition ilike '%current_date%'`)).rows;
     assert.deepEqual(bad.map(v => v.viewname), [], 'usa app.dia_local(now())');
@@ -631,4 +648,50 @@ test('0008: new functions validate before writing (safe to probe)', async () => 
   assert.equal(Number((await one(db, `select count(*) n from app.ensilaje`)).n), 0);
   const nobody = '00000000-0000-4000-8000-000000000000';
   await db.query(`select app.avanzar_ensilaje($1::uuid, 'sellado', null, null)`, [nobody]);
+});
+
+/* ── 0009: lo que toca hoy ─────────────────────────────────────────────── */
+
+test('0009: the bed temperature rides on a revisión; over the maximum is flagged', async () => {
+  const db = await productionAfterRelease3();
+  const c = await v2Chain(db);
+  const [b1, b2] = c.bandejas;
+  const hoy = '2026-09-12T15:00:00.000Z';   // día 11 of an incubadora started 2026-09-01
+  for (const [b, t] of [[b1.id, 34.5], [b2.id, 37.2]]) {
+    await db.query(`insert into app.revision (id, bandeja_id, fecha, temperatura_c, registrado_por)
+                    values ($1, $2, $3, $4, 'Maria')`, [uid(), b, hoy, t]);
+  }
+  const rows = (await db.query(`select id_bandeja, dia_ciclo, temperatura_c, sobre_maximo, protocolo
+                                  from app.v_temperatura_cama order by id_bandeja`)).rows;
+  assert.deepEqual(rows.map(r => [r.id_bandeja, r.dia_ciclo, Number(r.temperatura_c), r.sobre_maximo, r.protocolo]),
+                   [['F7AR9-01', 11, 34.5, false, 'v2'], ['F7AR9-02', 11, 37.2, true, 'v2']]);
+
+  // The maximum is a setting: lowering it flags more.
+  await db.query(`update app.parametro set valor = '34' where clave = 'temperatura_cama_max_c'`);
+  assert.equal(Number((await one(db, `select count(*) n from app.v_temperatura_cama where sobre_maximo`)).n), 2);
+
+  await assert.rejects(db.query(`insert into app.revision (id, bandeja_id, fecha, temperatura_c) values ($1, $2, now(), 150)`,
+                                [uid(), b1.id]), err => err.code === '23514');
+  // A revisión without a temperature is what every earlier build sends.
+  await db.query(`insert into app.revision (id, bandeja_id, fecha) values ($1, $2, now())`, [uid(), b1.id]);
+
+  const keys = (await db.query(`select clave, valor from app.parametro where clave in
+                                  ('temperatura_cama_max_c', 'dias_control_temperatura', 'dias_stock_alerta')`)).rows;
+  assert.deepEqual(Object.fromEntries(keys.map(k => [k.clave, k.valor])),
+                   { temperatura_cama_max_c: 34, dias_control_temperatura: [11, 12], dias_stock_alerta: 3 });
+  await assertViewsQueryable(db);
+  await assertOneOverloadEach(db);
+});
+
+test('0009: the data-quality view counts beds over the maximum this week', async () => {
+  const db = await productionAfterRelease3();
+  const c = await v2Chain(db);
+  await db.query(`insert into app.revision (id, bandeja_id, fecha, temperatura_c) values ($1, $2, now(), 38)`,
+                 [uid(), c.bandejas[0].id]);
+  const q = await one(db, `select n from app.v_calidad_datos where problema = 'cama_sobre_maximo_7d'`);
+  assert.equal(Number(q.n), 1);
+  const all = (await db.query(`select problema from app.v_calidad_datos`)).rows.map(r => r.problema);
+  for (const p of ['carga_repetida', 'incubadora_sin_distribuir_10d', 'ayuno_abierto_mas_48h']) {
+    assert.ok(all.includes(p), `las filas de 0007 siguen: ${p}`);
+  }
 });

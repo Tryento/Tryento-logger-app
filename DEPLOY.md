@@ -37,6 +37,9 @@ About 20 minutes. Two services, both free tier:
 > 5. **`0008_alimento.sql`** — recepción de material, ensilajes (armado →
 >    sellado → listo → en uso → agotado, con lecturas de temperatura), de qué
 >    ensilaje sale cada carga, y las vistas de stock y consumo. Sólo agrega.
+> 6. **`0009_monitor.sql`** — la temperatura de la cama en la revisión (días
+>    11–12, máximo 36 °C), los parámetros de la lista "para hoy" del inicio y
+>    la vista `v_temperatura_cama`. Sólo agrega.
 >
 > Después vuelve a correr `npm run check:sql-applied`: cada línea del SQL que
 > corriste debe decir `ok`. Recién entonces haz push.
@@ -47,21 +50,23 @@ About 20 minutes. Two services, both free tier:
 > |---|---|---|
 > | 1 | arreglo del arranque + protocolo v2 (recolecta, incubadora, cargas, ayuno, cosecha) | `0005`, `0006`, `0007` |
 > | 2 | módulo de alimento (recepción, ensilaje, stock) | además `0008` |
+> | 3 | lista "para hoy" en el inicio, temperatura de la cama | además `0009` |
 >
-> Correr `0008` antes de tiempo no rompe la publicación 1: las funciones que
-> cambia conservan su firma y los teléfonos de la publicación 1 siguen igual.
+> Correr `0008` o `0009` antes de tiempo no rompe una publicación anterior: sólo
+> agregan, y las funciones que `0008` cambia conservan su firma.
 >
 > **El orden importa.** La app llama a las funciones de la base por su nombre.
 > Si haces push antes del SQL, lo nuevo (recolecta con incubadora, distribución,
-> cierre de ayuno con quién lo hizo, ensilajes) falla y queda en *Conflictos*
-> hasta correr el SQL. Lo que ya existía sigue funcionando.
+> cierre de ayuno con quién lo hizo, ensilajes, temperatura de cama) falla y
+> queda en *Conflictos* hasta correr el SQL. Lo que ya existía sigue funcionando.
 >
 > **Nunca pegues `SETUP_COMPLETO.sql` en una base que ya tiene datos.** Es sólo
 > para una base nueva y vacía; en una existente falla en la primera línea.
-> `0005` a `0008` se pueden correr dos veces sin daño.
+> `0005` a `0009` se pueden correr dos veces sin daño.
 >
 > **Cambiar el plan** (días, kilos por carga, larvas por bandeja, días de
-> fermentación del ensilaje, fecha de inicio del protocolo nuevo): Supabase →
+> fermentación del ensilaje, temperatura máxima de la cama y sus días de
+> control, fecha de inicio del protocolo nuevo): Supabase →
 > Table Editor → esquema `app` → tabla `parametro`. Cada fila tiene una
 > descripción. Los teléfonos lo toman en la siguiente sincronización; no hace
 > falta publicar la app. `dias_fermentacion` (14) es provisional: confírmalo
@@ -190,8 +195,9 @@ npm run check:backend
 
 This writes a real colony, tray, feeding, fast, harvest and oven run to your
 Supabase (plus the new-protocol recolecta, incubadora and distribution once
-0007 is applied, and a reception, an ensilaje and a load taken from it once
-0008 is), checks the triggers fired and the computed values are right,
+0007 is applied, a reception, an ensilaje and a load taken from it once 0008
+is, and a bed temperature over the maximum once 0009 is), checks the triggers
+fired and the computed values are right,
 then marks everything it created as deleted (`deleted_at`). It never
 hard-deletes: phones cannot see a hard delete, and a phone that had synced
 those rows would keep them. To erase old test rows for good, a week later:

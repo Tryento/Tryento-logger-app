@@ -96,6 +96,30 @@ a:hover{color:#4ADE80}
       <div style="display:flex;flex-direction:column;gap:24px">
         <div style="font-size:14.5px;color:#9FB8A6;font-weight:500">{{ homeStatus }}</div>
 
+        <!-- What the plan says is due: late, today, the next two days. One tap
+             opens the form that does it, with the trays already chosen. -->
+        <sc-if value="{{ hasMonitor }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">{{ monitorLabel }}</div>
+            <sc-for list="{{ monitorItems }}" as="m" hint-placeholder-count="3">
+              <button onClick="{{ m.onClick }}" style="display:flex;align-items:stretch;gap:12px;width:100%;text-align:left;background:{{ m.bg }};border:1px solid {{ m.bd }};border-radius:12px;padding:11px 12px;min-height:64px;cursor:pointer;color:#EAF7EC">
+                <div style="width:6px;flex:none;border-radius:3px;background:{{ m.fg }}"></div>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;justify-content:center">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="flex:1;min-width:0;font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.titulo }}</span>
+                    <span style="flex:none;font-size:12.5px;font-weight:700;white-space:nowrap;color:{{ m.fg }}">{{ m.cuando }}</span>
+                  </div>
+                  <div style="font-size:13.5px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.detalle }}</div>
+                </div>
+                <div style="display:flex;align-items:center;color:#4E6B58;font-size:22px">&#8250;</div>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{ monitorAlDia }}" hint-placeholder-val="{{ false }}">
+          <div style="background:#0E2415;border:1px solid #1E4A2F;border-radius:12px;padding:13px 15px;font-size:15px;font-weight:600;color:#4ADE80">Todo al día con el plan.</div>
+        </sc-if>
+
         <sc-if value="{{ isTiles }}" hint-placeholder-val="{{ true }}">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <sc-for list="{{ homeActions }}" as="a" hint-placeholder-count="4">
@@ -397,6 +421,18 @@ a:hover{color:#4ADE80}
                 <div style="font-size:14px;color:{{ reservaHintFg }}">{{ reservaHint }}</div>
               </div>
             </sc-if>
+          </div>
+        </sc-if>
+
+        <!-- The bed temperature, taken on an inspection (días 11–12 in the plan). -->
+        <sc-if value="{{ showTemperaturaField }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">TEMPERATURA DE LA CAMA (OPCIONAL)</div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <input inputMode="decimal" value="{{ f.temperatura_c }}" onChange="{{ h.temperatura_c }}" placeholder="—" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid {{ temperaturaBd }};border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+              <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">°C</div>
+            </div>
+            <div style="font-size:14px;color:{{ temperaturaHintFg }}">{{ temperaturaHint }}</div>
           </div>
         </sc-if>
 
@@ -863,6 +899,46 @@ a:hover{color:#4ADE80}
 
         <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
           <button onClick="{{ onSaveAyunoV2 }}" disabled="{{ ayunoV2Disabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ ayunoV2Bg }};color:{{ ayunoV2Fg }};font-size:19px;font-weight:700;cursor:pointer">{{ ayunoV2Label }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- Días 11–12: one round through the trays, a reading each. -->
+    <sc-if value="{{ isTemperaturaCama }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="font-size:14.5px;color:#9FB8A6">{{ tempIntro }}</div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <sc-for list="{{ tempRows }}" as="t" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:10px;background:#141C16;border:1.5px solid {{ t.bd }};border-radius:12px;padding:8px 8px 8px 14px">
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:16px;font-weight:600">{{ t.id_bandeja }}</span>
+                <span style="font-size:12.5px;font-weight:600;color:{{ t.subFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.sub }}</span>
+              </div>
+              <input inputMode="decimal" value="{{ t.valor }}" onChange="{{ t.onChange }}" placeholder="°C" style="width:104px;flex:none;min-height:54px;padding:0 12px;border:1.5px solid #26382C;border-radius:10px;background:#0A0A0A;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:600;text-align:right" />
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">FECHA Y HORA</div>
+          <div style="display:flex;gap:8px">
+            <input type="datetime-local" value="{{ f.fecha }}" onChange="{{ h.fecha }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+            <button onClick="{{ onSetNow }}" style="flex:none;min-height:56px;padding:0 18px;border-radius:11px;border:1.5px solid #22C55E;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Ahora</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">REGISTRADO POR</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ operatorChips }}" as="c" hint-placeholder-count="6">
+              <button onClick="{{ c.onClick }}" style="min-height:50px;padding:0 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
+          <button onClick="{{ onSaveTemperaturas }}" disabled="{{ tempDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ tempBg }};color:{{ tempFg }};font-size:19px;font-weight:700;cursor:pointer">{{ tempLabel }}</button>
         </div>
       </div>
     </sc-if>
@@ -1534,12 +1610,20 @@ const ESTADO_ENSILAJE = {
 };
 // How urgent a step is, as a colour: late, due today, coming up.
 const PASO_FG = { atrasado: '#F87171', hoy: '#22C55E', proximo: '#9FB8A6' };
+// The home list: something wrong now, late, due today, coming up.
+const MONITOR_TONO = {
+  alerta: { fg: '#F87171', bg: '#1A1112', bd: '#7A2E2E' },
+  atrasado: { fg: '#F87171', bg: '#141C16', bd: '#5A2A2A' },
+  hoy: { fg: '#22C55E', bg: '#141C16', bd: '#1E4A2F' },
+  proximo: { fg: '#9FB8A6', bg: '#141C16', bd: '#1D2A21' }
+};
 // Used only until the settings arrive from the data layer; the same values as
 // src/data/protocolo.js and 0007_protocolo_v2.sql.
 const PROTOCOLO_FALLBACK = {
   cargas: [{ n: 1, dia: 7, kg: 1.5 }, { n: 2, dia: 10, kg: 2, tamizado: true }, { n: 3, dia: 13, kg: 2 }],
   dias_incubacion: 7, dia_inicio_ayuno: 14, horas_ayuno: 48, dia_cosecha: 16,
   individuos_por_bandeja: 25000, reserva_cria_pct: 2, dias_fermentacion: 14,
+  temperatura_cama_max_c: 36, dias_control_temperatura: [11, 12], dias_stock_alerta: 3,
   letras_insectario: { ICA: 'A', ICB: 'B', ICC: 'C', JN3A: 'J' }, v2_vigente: true
 };
 const kgTxt = n => String(Math.round(Number(n) * 100) / 100).replace('.', ',');
@@ -1559,13 +1643,13 @@ const FIELDS = ['q', 'filterInsectario', 'bandejaSearch', 'fecha', 'bandeja_id',
   'nombre_insectario', 'fecha_inicio', 'generacion_moscas', 'biomasa_kg', 'proyeccion_ovipositores', 'proyeccion_cierre',
   'huevos_g', 'tiempo_secado_horas', 'qc_prueba_crujiente', 'operator_input', 'ask_value',
   'reserva_cria_g', 'peso_ovipositores_g', 'starter_kg', 'n_bandejas', 'individuos_por_bandeja',
-  'kg', 'proveedor', 'silo'];
+  'kg', 'proveedor', 'silo', 'temperatura_c'];
 
 class Component extends DCLogic {
   state = {
     screen: 'operator', prev: 'home', tab: 'home', ready: false, saving: false,
     insectarios: [], bandejas: [], recolecciones: [], lotes: [], operators: [], operator: null,
-    incubadoras: [], protocolo: null, incubadoraDetalle: null, alimento: null, ensilajeDetalle: null,
+    incubadoras: [], protocolo: null, incubadoraDetalle: null, alimento: null, ensilajeDetalle: null, monitor: null,
     bandejaDetalle: null, insectarioDetalle: null, loteDetalle: null, separacionesDisponibles: [],
     form: {}, estadoFilter: '', insFilter: '', range: 'any', toast: null,
     photoName: '', photoId: null, photoUrl: null,
@@ -1604,7 +1688,7 @@ class Component extends DCLogic {
     if (saved && api.setOperator) { try { await api.setOperator(saved); } catch (e) { /* the name still shows */ } }
 
     // Each list on its own: one that fails must not blank the other four.
-    const lists = await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'operators', 'incubadoras', 'protocolo', 'alimento']);
+    const lists = await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'operators', 'incubadoras', 'protocolo', 'alimento', 'monitor']);
     this.setState(Object.assign({ ready: true, operator: saved || null, screen: saved ? 'home' : 'operator' }, lists));
 
     // A background pull brings other people's work down; without this the
@@ -1659,7 +1743,8 @@ class Component extends DCLogic {
         ]);
         const bad = [st, en, re].find(r => !r || !r.ok);
         return bad || { ok: true, data: { stock: st.data, ensilajes: en.data, recepciones: re.data } };
-      }
+      },
+      monitor: () => (this.api.getMonitor ? this.api.getMonitor() : { ok: true, data: null })
     };
     const results = await Promise.allSettled(names.map(n => calls[n]()));
     const out = {}, failed = [];
@@ -1722,7 +1807,7 @@ class Component extends DCLogic {
 
   async refreshLists() {
     if (!this.api || this.state.fatal) return;
-    this.setState(await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'incubadoras', 'protocolo', 'alimento']));
+    this.setState(await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'incubadoras', 'protocolo', 'alimento', 'monitor']));
   }
 
   /** Read the detail page on screen again, in place (no navigation). */
@@ -1894,10 +1979,33 @@ class Component extends DCLogic {
         tipo_alimento: tipoEvento === 'alimentacion' ? (this.props.defaultTipoAlimento || 'Bagazo') : '',
         // Empty = the protocol's default (24 h old protocol, 48 h new one).
         cantidad_kg: '', peso_inicial_kg: '', horas_ayuno: '', peso_final_kg: '', larva_limpia_g: '',
-        reserva_cria_g: '', notas: '', operator_name: this.state.operator || ''
+        reserva_cria_g: '', temperatura_c: '', notas: '', operator_name: this.state.operator || ''
       }
     });
   };
+
+  /** Días 11–12: a round through the trays, one bed temperature each. */
+  openTemperaturaCama = ids => {
+    this.setState({
+      prev: this.state.screen, screen: 'temperaturaCama',
+      form: { temp_ids: (ids || []).slice(), temps: {}, fecha: this.now(), operator_name: this.state.operator || '' }
+    });
+  };
+
+  setTemp = (id, v) => this.setState(s => ({
+    form: Object.assign({}, s.form, { temps: Object.assign({}, s.form.temps, { [id]: v }) })
+  }));
+
+  /** Where a line of the home list leads: the form that does it, prefilled. */
+  monitorAccion(it) {
+    if (it.tipo === 'carga') return this.openCargas(it.carga, it.bandeja_ids);
+    if (it.tipo === 'ayuno') return this.openAyunoV2(it.bandeja_ids);
+    if (it.tipo === 'cosecha') return this.openRegistrarEvento('separacion', it.bandeja_ids[0]);
+    if (it.tipo === 'distribucion') return this.openIncubadoraDetalle(it.incubadora_id);
+    if (it.tipo === 'temperatura' || it.tipo === 'temperatura_alta') return this.openTemperaturaCama(it.bandeja_ids);
+    if (it.tipo === 'ensilaje') return this.openEnsilajeDetalle(it.ensilaje_id);
+    return this.openAlimento();
+  }
 
   /* protocolo v2 screens */
 
@@ -2130,7 +2238,7 @@ class Component extends DCLogic {
     const common = { bandeja_id: f.bandeja_id, fecha: f.fecha, operator_name: f.operator_name, notas: f.notas, blob_id: this.state.photoId || null };
     if (f.tipo_evento === 'alimentacion') r = await this.api.logAlimentacion(Object.assign({}, common, { tipo_alimento: f.tipo_alimento, cantidad_kg: f.cantidad_kg }));
     else if (f.tipo_evento === 'ayuno') r = await this.api.logAyuno(Object.assign({}, common, { peso_inicial_kg: f.peso_inicial_kg, horas_ayuno: f.horas_ayuno || undefined, peso_final_kg: f.peso_final_kg }));
-    else if (f.tipo_evento === 'revision') r = await this.api.logRevision(common);
+    else if (f.tipo_evento === 'revision') r = await this.api.logRevision(Object.assign({}, common, { temperatura_c: f.temperatura_c }));
     else if (f.tipo_evento === 'separacion') r = await this.api.logSeparacion(Object.assign({}, common, { larva_limpia_g: f.larva_limpia_g, reserva_cria_g: f.reserva_cria_g }));
     else r = { ok: false, error: { message: 'Selecciona un tipo de evento.' } };
     this.setState({ saving: false });
@@ -2240,6 +2348,24 @@ class Component extends DCLogic {
       b[0].id_bandeja + (b.length > 1 ? ' a ' + b[b.length - 1].id_bandeja : '') + (r.data.cargas ? ' · carga 1 dada' : ''));
     await this.refreshLists();
     this.openIncubadoraDetalle(d.incubadora.id);
+  };
+
+  saveTemperaturas = async () => {
+    const f = this.state.form;
+    const lecturas = (f.temp_ids || []).map(id => ({ bandeja_id: id, temperatura_c: (f.temps || {})[id] }))
+      .filter(l => String(l.temperatura_c == null ? '' : l.temperatura_c).trim() !== '');
+    this.setState({ saving: true });
+    const r = await this.api.logTemperaturaCama({ lecturas, fecha: f.fecha, operator_name: f.operator_name });
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    if (r.data.altas.length) {
+      this.toast('Cama sobre ' + kgTxt(r.data.max) + ' °C',
+        r.data.altas.map(a => a.id_bandeja + ' ' + kgTxt(a.temperatura_c) + ' °C').join(', '), 'error');
+    } else {
+      this.toast('Temperaturas guardadas', r.data.created + ' bandeja' + (r.data.created === 1 ? '' : 's') + ' · todas bajo ' + kgTxt(r.data.max) + ' °C');
+    }
+    await this.refreshLists();
+    this.setState({ screen: 'home', tab: 'home' });
   };
 
   saveRecepcion = async () => {
@@ -2540,6 +2666,7 @@ class Component extends DCLogic {
       cargas: 'Alimentar', ayunoV2: 'Iniciar ayuno', incubadoras: 'Incubadoras',
       incubadoraDetalle: s.incubadoraDetalle ? s.incubadoraDetalle.incubadora.codigo : 'Incubadora',
       alimento: 'Alimento', nuevaRecepcion: 'Recepción', nuevoEnsilaje: 'Nuevo ensilaje',
+      temperaturaCama: 'Temperatura',
       ensilajeDetalle: s.ensilajeDetalle ? s.ensilajeDetalle.ensilaje.codigo : 'Ensilaje'
     };
     const bandejasActivas = s.bandejas.filter(b => BANDEJA_ACTIVA(b.estado)).length;
@@ -2559,6 +2686,7 @@ class Component extends DCLogic {
       isIncubadoraDetalle: screen === 'incubadoraDetalle',
       isAlimento: screen === 'alimento', isNuevaRecepcion: screen === 'nuevaRecepcion',
       isNuevoEnsilaje: screen === 'nuevoEnsilaje', isEnsilajeDetalle: screen === 'ensilajeDetalle',
+      isTemperaturaCama: screen === 'temperaturaCama',
       showTabs: screen === 'home' || screen === 'bandejas' || screen === 'insectarios' || screen === 'lotes',
       f, h: this.handlers, ovenCapacidad: ovenCap,
       hasToast: !!s.toast, toastMsg: s.toast ? s.toast.msg : '', toastSub: s.toast ? s.toast.sub : '',
@@ -2579,14 +2707,27 @@ class Component extends DCLogic {
     vals.onFatalRetry = () => { try { window.location.reload(); } catch (e) { /* noop */ } };
     const cfg = this.cfg();
     const v2On = cfg.v2_vigente !== false;
-    // What the protocol says is due today or late: v2 trays plus incubadoras
-    // waiting to be distributed.
-    const pendientes = s.bandejas.filter(b => b.protocolo === 'v2' && b.siguiente_paso && b.siguiente_paso.estado !== 'proximo').length
-      + (s.incubadoras || []).filter(i => i.siguiente_paso && i.siguiente_paso.estado !== 'proximo').length;
+    // What the plan says is due: the monitor's list (late, today, next days).
+    // Before it loads, the trays and incubadoras that are due stand in.
+    const mon = s.monitor;
+    const pendientes = mon ? mon.resumen.pendientes
+      : s.bandejas.filter(b => b.protocolo === 'v2' && b.siguiente_paso && b.siguiente_paso.estado !== 'proximo').length
+        + (s.incubadoras || []).filter(i => i.siguiente_paso && i.siguiente_paso.estado !== 'proximo').length;
     vals.homeStatus = s.ready
-      ? [bandejasActivas + ' bandejas activas', v2On && pendientes ? pendientes + ' para hoy' : null,
+      ? [bandejasActivas + ' bandejas activas', pendientes ? pendientes + ' para hoy' : null,
          s.operator ? 'registrando como ' + s.operator : 'sin nombre elegido'].filter(Boolean).join(' · ')
       : 'Cargando datos de producción…';
+    const monItems = mon ? mon.items : [];
+    vals.hasMonitor = monItems.length > 0;
+    vals.monitorAlDia = !!mon && !monItems.length && (s.incubadoras || []).length > 0;
+    vals.monitorLabel = mon && mon.resumen.pendientes
+      ? 'PARA HOY · ' + mon.resumen.pendientes + (mon.resumen.proximo ? ' · Y ' + mon.resumen.proximo + ' PRÓXIMO' + (mon.resumen.proximo === 1 ? '' : 'S') : '')
+      : 'PRÓXIMOS DÍAS';
+    vals.monitorItems = monItems.map(it => {
+      const t = MONITOR_TONO[it.estado] || MONITOR_TONO.proximo;
+      return { titulo: it.titulo, detalle: it.detalle, cuando: it.cuando, fg: t.fg, bg: t.bg, bd: t.bd,
+               onClick: () => this.monitorAccion(it) };
+    });
     const v1Activas = s.bandejas.some(b => b.protocolo !== 'v2' && BANDEJA_ACTIVA(b.estado));
     vals.homeActions = v2On ? [
       { label: 'Alimentar', bg: '#111A14', fg: TEXT, mark: NEON, onClick: () => this.openCargas() },
@@ -2667,8 +2808,11 @@ class Component extends DCLogic {
         // Only what the protocol says comes next, plus an inspection. Offering
         // "ayuno" or "cosecha" on día 0 only invites mistakes; an off-plan
         // harvest is still possible from the Cosecha tile on the home screen.
+        // Días 11–12: the bed must not pass the maximum; measuring is one tap.
+        const control = (cfg.dias_control_temperatura || []).indexOf(t.dia_ciclo) >= 0 && t.estado === 'en_crecimiento';
         quick = [
           ...(next ? [next] : []),
+          ...(control ? [btn('Temperatura', () => this.openTemperaturaCama([t.id]), !next)] : []),
           btn('Revisión', () => this.openRegistrarEvento('revision', t.id))
         ];
       } else if (BANDEJA_ACTIVA(t.estado)) {
@@ -2826,6 +2970,17 @@ class Component extends DCLogic {
     vals.showSeparacionFields = f.tipo_evento === 'separacion';
     vals.larvaLabel = trayEvV2 ? 'LARVA PARA HORNEADO' : 'LARVA LIMPIA';
     vals.showReservaField = f.tipo_evento === 'separacion' && trayEvV2;
+    // Bed temperature on an inspection: flagged the moment it is typed.
+    const maxCama = cfg.temperatura_cama_max_c || 36;
+    const tCama = numero(f.temperatura_c);
+    const diaControl = !!trayEv && trayEvV2 && (cfg.dias_control_temperatura || []).indexOf(trayEv.dia_ciclo) >= 0;
+    vals.showTemperaturaField = f.tipo_evento === 'revision';
+    vals.temperaturaHint = tCama != null && tCama > maxCama
+      ? 'Sobre ' + kgTxt(maxCama) + ' °C: la cama está demasiado caliente.'
+      : diaControl ? 'Día ' + trayEv.dia_ciclo + ' del ciclo: la cama no debe pasar de ' + kgTxt(maxCama) + ' °C.'
+      : 'Si la mediste, anótala.';
+    vals.temperaturaHintFg = tCama != null && tCama > maxCama ? '#F87171' : '#7FA189';
+    vals.temperaturaBd = tCama != null && tCama > maxCama ? '#F87171' : BORDER;
     const gHorno = parseFloat(f.larva_limpia_g), gLab = parseFloat(f.reserva_cria_g);
     const pctLab = gHorno >= 0 && gLab >= 0 && (gHorno + gLab) > 0 ? Math.round((gLab / (gHorno + gLab)) * 1000) / 10 : null;
     const objetivo = cfg.reserva_cria_pct || 2;
@@ -3033,6 +3188,32 @@ class Component extends DCLogic {
     vals.ensNoticeBg = avisoC ? '#1F1710' : '#141C16';
     vals.ensNoticeBd = avisoC ? '#5A3A18' : '#1D2A21';
     vals.onOpenAlimento = this.openAlimento;
+
+    /* temperatura de cama (días de control) */
+    const maxT = cfg.temperatura_cama_max_c || 36;
+    const tempIds = f.temp_ids || [];
+    const temps = f.temps || {};
+    vals.tempIntro = 'Días ' + (cfg.dias_control_temperatura || [11, 12]).join(' y ') + ': la cama no debe pasar de ' +
+      kgTxt(maxT) + ' °C. Mide cada bandeja y anota los grados; las que no midas quedan sin anotar.';
+    vals.tempRows = tempIds.map(id => {
+      const b = s.bandejas.find(x => x.id === id) || {};
+      const v = numero(temps[id]);
+      const alta = v != null && v > maxT;
+      return {
+        id_bandeja: b.id_bandeja || '—',
+        sub: alta ? 'Sobre ' + kgTxt(maxT) + ' °C' : (b.dia_ciclo == null ? '' : 'Día ' + b.dia_ciclo),
+        subFg: alta ? '#F87171' : '#7FA189',
+        bd: alta ? '#F87171' : '#1D2A21',
+        valor: temps[id] == null ? '' : temps[id],
+        onChange: e => this.setTemp(id, e && e.target ? e.target.value : e)
+      };
+    });
+    const nTemps = tempIds.filter(id => numero(temps[id]) != null).length;
+    vals.tempDisabled = s.saving || !nTemps;
+    vals.tempBg = vals.tempDisabled ? DISABLED_BG : NEON; vals.tempFg = vals.tempDisabled ? DISABLED_FG : INK;
+    vals.tempLabel = s.saving ? 'Guardando…' : !nTemps ? 'Anota al menos una temperatura'
+      : 'Guardar ' + nTemps + ' temperatura' + (nTemps === 1 ? '' : 's');
+    vals.onSaveTemperaturas = this.saveTemperaturas;
 
     /* iniciar ayuno (v2) */
     const candAyuno = this.ayunoCandidatas();
@@ -3341,6 +3522,11 @@ class Component extends DCLogic {
     if (l.tipo === 'separacion') {
       if (l.reserva_cria_g != null) return (l.larva_limpia_g == null ? '—' : l.larva_limpia_g + ' g al horno') + ' · ' + l.reserva_cria_g + ' g al laboratorio';
       return (l.larva_limpia_g == null ? '—' : l.larva_limpia_g + ' g larva limpia');
+    }
+    if (l.temperatura_c != null) {
+      const max = this.cfg().temperatura_cama_max_c || 36;
+      return 'Cama ' + kgTxt(l.temperatura_c) + ' °C' + (Number(l.temperatura_c) > max ? ' · sobre ' + kgTxt(max) + ' °C' : '') +
+             (l.notas && l.notas !== 'Temperatura de cama' ? ' · ' + l.notas : '');
     }
     return l.notas || 'Revisión registrada';
   }

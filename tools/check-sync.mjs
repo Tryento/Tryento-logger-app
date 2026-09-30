@@ -132,6 +132,7 @@ try {
   const tieneAlimento = !(await db.from('ensilaje').select('id').limit(0)).error;
   let v2 = null;
   let food = null;
+  let v2Temps = null;
   if (tieneV2) {
     const r = await api.createRecoleccionV2({ insectario_id: ins.data.id, peso_ovipositores_g: 320,
                                              atrayente_cambiado: true, starter_kg: 2, operator_name: OP });
@@ -168,6 +169,13 @@ try {
     // A real batch in use since before this run is older, so the load names it.
     // That is right for the app; the cleanup below takes the load back out.
     if (food) food.cargaEns = c2.data.ensilaje ? c2.data.ensilaje.id : null;
+    // Bed temperature (0009), before the fast; typed with a decimal comma.
+    if (!(await db.from('v_temperatura_cama').select('id').limit(0)).error) {
+      const tc = await api.logTemperaturaCama({ operator_name: OP, lecturas: [
+        { bandeja_id: trays[0], temperatura_c: '34,5' }, { bandeja_id: trays[1], temperatura_c: '37' }] });
+      if (!tc.ok) throw new Error('logTemperaturaCama: ' + tc.error.message);
+      v2Temps = tc.data.rows.map(x => x.id);
+    }
     const ay2 = await api.logAyunoGrupal({ bandeja_ids: trays, operator_name: OP });
     if (!ay2.ok) throw new Error('logAyunoGrupal: ' + ay2.error.message);
     ids.ayuno.push(...ay2.data.rows.map(a => a.id));
@@ -295,6 +303,15 @@ try {
     else bad('protocolo v2: la cosecha cierra el ayuno', JSON.stringify(fasts));
     if (sep && sep.protocolo === 'v2' && Number(sep.reserva_cria_g) === 100) ok('protocolo v2: 2 % al laboratorio', '100 g');
     else bad('protocolo v2: 2 % al laboratorio', JSON.stringify(sep));
+  }
+
+  if (v2Temps) {
+    const t = (await db.from('v_temperatura_cama').select('temperatura_c, sobre_maximo').in('id', v2Temps)).data || [];
+    const got = t.map(x => `${Number(x.temperatura_c)}:${x.sobre_maximo}`).sort().join(',');
+    if (got === '34.5:false,37:true') ok('temperatura de cama', '"34,5" y 37 °C; la de 37 marcada sobre el máximo');
+    else bad('temperatura de cama', got || JSON.stringify(t));
+  } else if (v2) {
+    console.log('  --    temperatura de cama (0009): todavía no aplicado; se revisa cuando corras 0009_monitor.sql');
   }
 
   if (food) {

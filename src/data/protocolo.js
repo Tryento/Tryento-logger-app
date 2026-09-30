@@ -37,7 +37,12 @@ export const PROTOCOLO_DEFAULTS = Object.freeze({
   letras_insectario: { ICA: 'A', ICB: 'B', ICC: 'C', JN3A: 'J' },
   fecha_corte: null,
   // PROVISIONAL until the lab says how long a sealed ensilaje takes (0008).
-  dias_fermentacion: 14
+  dias_fermentacion: 14,
+  // What the home screen watches (0009): the bed must stay at or below 36 °C
+  // on días 11–12, and the ensilaje ready must cover the next 3 days of loads.
+  temperatura_cama_max_c: 36,
+  dias_control_temperatura: [11, 12],
+  dias_stock_alerta: 3
 });
 
 /** What v2 feeding records as the food, so NOT NULL and existing views hold. */
@@ -59,7 +64,10 @@ const VALIDATORS = {
   reserva_cria_pct: v => isNum(v) && v >= 0 && v <= 100,
   letras_insectario: v => v && typeof v === 'object' && !Array.isArray(v),
   fecha_corte: v => v === null || isDay(v),
-  dias_fermentacion: v => isNum(v) && v >= 0 && v <= 365
+  dias_fermentacion: v => isNum(v) && v >= 0 && v <= 365,
+  temperatura_cama_max_c: v => isNum(v) && v > 0 && v < 90,
+  dias_control_temperatura: v => Array.isArray(v) && v.every(d => isNum(d) && d >= 0),
+  dias_stock_alerta: v => isNum(v) && v >= 0 && v <= 30
 };
 
 /**

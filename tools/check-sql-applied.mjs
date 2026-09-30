@@ -92,6 +92,14 @@ const checks = [
   ['0008', 'parámetro dias_fermentacion',                async () => {
       const { data, error } = await db.from('parametro').select('clave').eq('clave', 'dias_fermentacion');
       return !error && data.length === 1;
+    }],
+  // Lo que toca hoy: sólo agrega una columna, una vista y tres parámetros.
+  ['0009', 'columna revision.temperatura_c',             () => column('revision', 'temperatura_c')],
+  ['0009', 'vista v_temperatura_cama',                   () => table('v_temperatura_cama')],
+  ['0009', 'parámetros del monitor',                     async () => {
+      const { data, error } = await db.from('parametro').select('clave')
+        .in('clave', ['temperatura_cama_max_c', 'dias_control_temperatura', 'dias_stock_alerta']);
+      return !error && data.length === 3;
     }]
 ];
 

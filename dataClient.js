@@ -218,6 +218,11 @@ export const createEnsilaje = guard(writes.createEnsilaje, { isWrite: true });
 export const avanzarEnsilaje = guard(writes.avanzarEnsilaje, { isWrite: true });
 export const logLecturaEnsilaje = guard(writes.logLecturaEnsilaje, { isWrite: true });
 
+/* ── lo que toca hoy ───────────────────────────────────────────────────── */
+
+export const getMonitor = guard(reads.getMonitor);
+export const logTemperaturaCama = guard(writes.logTemperaturaCama, { isWrite: true });
+
 /** Farm-calendar helpers for the screens, so a preview never disagrees with
  *  what is saved (the UI's own date math read date-only strings as UTC). */
 export const fechas = { farmDay, ddmm, toNaiveLocal, addDays };
@@ -266,6 +271,7 @@ const api = {
   distribuirIncubadora, logCarga, logAyunoGrupal, fechas,
   MATERIALES_ALIMENTO, listRecepciones, listEnsilajes, getEnsilajeDetail, getStockAlimento,
   createRecepcion, createEnsilaje, avanzarEnsilaje, logLecturaEnsilaje,
+  getMonitor, logTemperaturaCama,
   getSyncStatus, onChange, statusLabel, sync,
   listConflicts, resolveConflict,
   capturePhoto, localPhotoUrl, attachPhotoToRow,

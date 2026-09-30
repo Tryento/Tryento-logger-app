@@ -24,6 +24,8 @@
  *      this build: the food stores arrive, nothing it had moves
  *   5. the food screens: a reception, an ensilaje of two materials, a
  *      temperature reading, ready → in use, a carga taken from it, agotado
+ *   6. the home list of what is due: a late carga, the bed temperatures of
+ *      día 11 (one too hot), a distribución — each done from its line
  */
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -703,6 +705,82 @@ console.log('\nEscenario 5 — pantallas de alimento');
     check(errs.length === 0, 'sin errores en la consola', errs.slice(0, 3).join(' | '));
   } catch (e) {
     bad('escenario 5', e.message);
+  } finally {
+    await b.close();
+  }
+}
+
+/* ── scenario 6: what is due, on the home screen ──────────────────────────── */
+
+console.log('\nEscenario 6 — lo que toca hoy, en el inicio');
+{
+  const b = await launch();
+  try {
+    await b.navigate(`${ORIGIN}/index.html`);
+    const api = `window.__BSF_DATA_CLIENT__`;
+    const booted = await waitFor(b, `(async () => { const a = ${api}; if (!a) return null; await a.ready(); return 'ok'; })()`);
+    check(booted === 'ok', 'la app arranca en una base nueva', booted || 'no respondió');
+    await waitFor(b, bodyHas('Maria'));
+    await b.evaluate(click('Maria'));
+
+    // Two trays on día 11 (carga 2 one day late, bed temperature due) and an
+    // incubadora on día 7 still to distribute.
+    const setup = await b.evaluate(`(async () => {
+      const a = ${api}; const F = a.fechas;
+      const ins = await a.createInsectario({ nombre_insectario: 'ICB', fecha_inicio: F.addDays(F.farmDay(), -40), generacion_moscas: 'F9' });
+      const r1 = await a.createRecoleccionV2({ insectario_id: ins.data.id, peso_ovipositores_g: 300, atrayente_cambiado: true,
+                                               fecha_inicio: F.addDays(F.farmDay(), -11) });
+      const d1 = await a.distribuirIncubadora(r1.data.incubadora.id, { n_bandejas: 2 });
+      const r2 = await a.createRecoleccionV2({ insectario_id: ins.data.id, peso_ovipositores_g: 280, atrayente_cambiado: true,
+                                               fecha_inicio: F.addDays(F.farmDay(), -7) });
+      return { ok: ins.ok && r1.ok && d1.ok && r2.ok, trays: d1.data.bandejas.map(x => x.id_bandeja), inc2: r2.data.incubadora.codigo };
+    })()`);
+    check(setup.ok, 'preparación: 2 bandejas en el día 11 y una incubadora en el día 7', setup.trays.join(', ') + ' · ' + setup.inc2);
+
+    await b.navigate(`${ORIGIN}/index.html`);
+    const home = await waitFor(b, bodyHas('PARA HOY'));
+    check(Boolean(home) && home.includes('Carga 2 · 2 bandejas') && /atrasado 1 d[ií]a/.test(home),
+          'inicio: la carga 2 atrasada, en una sola línea');
+    check(Boolean(home) && home.includes('Temperatura de cama · 2 bandejas'), 'inicio: medir la temperatura de la cama');
+    check(Boolean(home) && home.includes('Distribuir ' + setup.inc2 + ' en bandejas'), 'inicio: la distribución del día 7');
+    await b.shot('14-inicio-lo-que-toca');
+
+    // The temperature round, from its line.
+    check(await b.evaluate(click('Temperatura de cama')), 'tocar la línea de la temperatura');
+    await waitFor(b, bodyHas('la cama no debe pasar de 36'));
+    await b.evaluate(type('input[inputmode=decimal]', '34,5', 0));
+    await b.evaluate(type('input[inputmode=decimal]', '37', 1));
+    const aviso = await waitFor(b, bodyHas('Sobre 36 °C'), 3000);
+    check(Boolean(aviso), 'la bandeja de 37 °C se marca al escribir');
+    await b.shot('15-temperatura-cama');
+    check(await b.evaluate(click('Guardar 2 temperaturas')), 'guardar las dos');
+    check(Boolean(await waitFor(b, bodyHas('Cama sobre 36 °C'))), 'aviso: cama sobre 36 °C');
+    const trasTemp = await waitFor(b, `(() => { const t = document.body.innerText; return t.includes('PARA HOY') && !t.includes('Temperatura de cama ·') && t; })()`);
+    check(Boolean(trasTemp) && /Cama sobre 36 °C · 1 bandeja/.test(trasTemp),
+          'inicio: la cama caliente queda arriba, y la medición sale de la lista');
+
+    // The late carga, from its line: carga 2 and both trays already chosen.
+    check(await b.evaluate(click('Carga 2 · 2 bandejas')), 'tocar la línea de la carga');
+    const cargas = await waitFor(b, bodyHas('Dar carga 2 a 2 bandejas'));
+    check(Boolean(cargas), 'Alimentar abre con la carga 2 y las dos bandejas elegidas');
+    await b.evaluate(click('Dar carga 2'));
+    await waitFor(b, bodyHas('Carga 2 registrada'));
+    const trasCarga = await waitFor(b, `(() => { const t = document.body.innerText; return t.includes('PARA HOY') && !t.includes('Carga 2 · 2 bandejas') && t; })()`);
+    check(Boolean(trasCarga), 'la carga dada sale de la lista');
+
+    const d = await b.evaluate(`(async () => {
+      const db = await new Promise((res, rej) => { const r = indexedDB.open('tryento'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+      const all = s => new Promise(res => { const q = db.transaction(s, 'readonly').objectStore(s).getAll(); q.onsuccess = () => res(q.result); });
+      const revs = await all('revision');
+      db.close();
+      return revs.map(r => r.temperatura_c + ':' + r.registrado_por).sort().join(',');
+    })()`);
+    check(d === '34.5:Maria,37:Maria', 'IndexedDB: una revisión con °C por bandeja, con quién', d);
+
+    const errs = b.logs.filter(l => !/service worker|sin conexión|backend/i.test(l));
+    check(errs.length === 0, 'sin errores en la consola', errs.slice(0, 3).join(' | '));
+  } catch (e) {
+    bad('escenario 6', e.message);
   } finally {
     await b.close();
   }

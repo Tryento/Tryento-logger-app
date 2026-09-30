@@ -417,7 +417,30 @@ async function main() {
     }
   }
 
-  /* 12 ── clean up ───────────────────────────────────────────────────────── */
+  /* 12 ── lo que toca hoy (0009) ─────────────────────────────────────────── */
+  {
+    const probe = await db.from('v_temperatura_cama').select('id').limit(0);
+    if (probe.error) {
+      console.log('  --    temperatura de cama (0009): todavía no aplicado; se revisa cuando corras 0009_monitor.sql');
+    } else if (!v2Tray) {
+      bad('temperatura de cama', 'no hay bandeja v2 de prueba (falló la distribución más arriba)');
+    } else {
+      const rev = uuid();
+      const r = await db.from('revision').insert({ id: rev, bandeja_id: v2Tray, fecha: new Date().toISOString(),
+                                                   temperatura_c: 37.5, notas: 'Temperatura de cama',
+                                                   registrado_por: 'check-backend' });
+      if (r.error) bad('temperatura de cama', r.error.message, 'Ejecuta 0009_monitor.sql.');
+      else {
+        created.revision.push(rev);
+        const v = await db.from('v_temperatura_cama').select('temperatura_c, sobre_maximo').eq('id', rev).single();
+        if (v.data && Number(v.data.temperatura_c) === 37.5 && v.data.sobre_maximo === true) {
+          ok('temperatura de cama', '37,5 °C marcada sobre el máximo');
+        } else bad('temperatura de cama', JSON.stringify(v.data || v.error));
+      }
+    }
+  }
+
+  /* 13 ── clean up ───────────────────────────────────────────────────────── */
   {
     // Children first. Soft delete: see the note at the top of this file.
     const order = ['lote', 'separacion', 'ayuno', 'revision', 'alimentacion', 'bandeja', 'incubadora', 'recoleccion', 'insectario',

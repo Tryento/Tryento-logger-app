@@ -576,12 +576,56 @@ export async function logAyunoFin(id, data) {
   return ok(deepCopy(next));
 }
 
+/** A bed temperature as typed, or null when none; `false` when it is not one. */
+function temperaturaCama(v) {
+  const t = num(v);
+  if (t === null) return null;
+  return t >= -10 && t <= 90 ? t : false;
+}
+
 export async function logRevision(data) {
   if (!data?.bandeja_id) return fail(CODES.VALIDATION, 'Bandeja es obligatoria.');
+  const t = temperaturaCama(data.temperatura_c);
+  if (t === false) return fail(CODES.VALIDATION, 'Escribe la temperatura de la cama en °C.');
   const db = await openDb();
-  const { error, row } = await eventBase(db, data);
+  // Only sent when measured: a revisión without it is exactly what every
+  // earlier build sends, and works before 0009 is applied.
+  const { error, row } = await eventBase(db, data, t === null ? {} : { temperatura_c: t });
   if (error) return error;
   return commitEvent(db, 'revision', row, { blobId: data.blob_id });
+}
+
+/**
+ * Días 11–12: the bed temperature of several trays, measured in one round.
+ * Each reading is a revisión of its tray. Returns the ones above the maximum,
+ * so the screen can say which beds need attention.
+ */
+export async function logTemperaturaCama(data = {}) {
+  const lecturas = (Array.isArray(data.lecturas) ? data.lecturas : [])
+    .map(l => ({ bandeja_id: l?.bandeja_id, t: temperaturaCama(l?.temperatura_c) }))
+    .filter(l => l.bandeja_id && l.t !== null);
+  if (!lecturas.length) return fail(CODES.VALIDATION, 'Escribe la temperatura de al menos una bandeja.');
+  if (lecturas.some(l => l.t === false)) return fail(CODES.VALIDATION, 'Cada temperatura en °C, entre −10 y 90.');
+
+  const db = await openDb();
+  const cfg = await protocolo(db);
+  const trays = new Map((await allRows(db, 'bandeja')).map(t => [t.id, t]));
+  const faltan = lecturas.filter(l => !trays.has(l.bandeja_id));
+  if (faltan.length) return fail(CODES.NOT_FOUND, `${faltan.length} bandeja(s) ya no existen en este teléfono.`);
+
+  const fecha = isoOrNow(data.fecha);
+  const rows = [];
+  for (const l of lecturas) {
+    const { error, row } = await eventBase(db, { bandeja_id: l.bandeja_id, fecha, operator_name: data.operator_name,
+                                                 notas: 'Temperatura de cama' }, { temperatura_c: l.t });
+    if (error) return error;
+    const res = await commitEvent(db, 'revision', row);
+    if (!res.ok) return res;
+    rows.push(res.data);
+  }
+  const altas = rows.filter(r => r.temperatura_c > cfg.temperatura_cama_max_c)
+    .map(r => ({ bandeja_id: r.bandeja_id, id_bandeja: trays.get(r.bandeja_id)?.id_bandeja, temperatura_c: r.temperatura_c }));
+  return ok({ created: rows.length, max: cfg.temperatura_cama_max_c, altas, rows: deepCopy(rows) });
 }
 
 /**
