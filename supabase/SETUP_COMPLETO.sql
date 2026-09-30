@@ -1883,12 +1883,14 @@ select
   i.poblacion_estimada,
   i.desviacion_ovipositores_dias,
   i.desviacion_cierre_dias,
-  coalesce(i.cierre_real, current_date) - i.fecha_inicio as dias_operacion,
+  -- "Hoy" es el día de la granja, no el del servidor (UTC), que va un día
+  -- adelantado de 20:00 a 24:00 en Caracas.
+  coalesce(i.cierre_real, app.dia_local(now())) - i.fecha_inicio as dias_operacion,
   rc.n_recolecciones,
   rc.huevos_g_total,
   rc.huevos_g_total / nullif(i.biomasa_kg, 0)            as g_huevos_por_kg_biomasa,
   rc.huevos_g_total
-    / nullif(coalesce(i.cierre_real, current_date) - i.fecha_inicio, 0) as g_huevos_por_dia,
+    / nullif(coalesce(i.cierre_real, app.dia_local(now())) - i.fecha_inicio, 0) as g_huevos_por_dia,
   bs.n_bandejas,
   bs.kg_larva_total,
   (bs.kg_larva_v1 * 1000.0) / nullif(rc.huevos_g_total, 0) as g_larva_por_g_huevo,
@@ -1985,7 +1987,7 @@ union all
 select 'incubadora_sin_distribuir_10d', count(*)
   from app.incubadora
   where estado = 'incubando'
-    and fecha_inicio < current_date - 10
+    and fecha_inicio < app.dia_local(now()) - 10
     and deleted_at is null;
 
 -- Las vistas "select *" se expanden al crearlas: se recrean para que incluyan
