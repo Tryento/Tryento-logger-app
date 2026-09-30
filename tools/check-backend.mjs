@@ -11,10 +11,18 @@
  *
  * So this writes a real colony, tray, feeding, fast, harvest and oven run
  * through the same SQL the app uses, checks the computed values and the state
- * machine came out right, and then DELETES EVERYTHING IT CREATED.
+ * machine came out right, and then REMOVES EVERYTHING IT CREATED — by marking
+ * it deleted (deleted_at), never with a hard DELETE.
  *
- * Test rows are prefixed ZZTEST- so that if cleanup ever fails they are trivial
- * to find and remove by hand.
+ * Why soft: phones pull changes by `updated_at`, and a hard DELETE is invisible
+ * to that. A phone that had pulled these rows kept them forever, and anything
+ * recorded under them was rejected by the server with a foreign-key error
+ * (409 bandeja_recoleccion_id_fkey). Marking them deleted bumps updated_at, so
+ * every phone drops them on its next sync. `node tools/cleanup-qa.mjs --purge`
+ * hard-deletes them later, once every phone has had time to see that.
+ *
+ * Test rows are prefixed ZZTEST- (codes) and registered by "check-backend", so
+ * they are trivial to find.
  */
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -25,7 +33,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PREFIX = 'ZZTEST-';
 
 let pass = 0, fail = 0;
-const created = { lote: [], separacion: [], ayuno: [], revision: [], alimentacion: [], bandeja: [], recoleccion: [], insectario: [] };
+const created = { lote: [], separacion: [], ayuno: [], revision: [], alimentacion: [], bandeja: [], incubadora: [], recoleccion: [], insectario: [] };
 
 function ok(label, extra = '') { pass++; console.log(`  ok    ${label}${extra ? '   ' + extra : ''}`); }
 function bad(label, why, fix) {
@@ -313,19 +321,63 @@ async function main() {
     }
   }
 
-  /* 10 ── clean up ───────────────────────────────────────────────────────── */
+  /* 10 ── protocolo v2 (0007) ────────────────────────────────────────────── */
   {
-    const order = ['lote', 'separacion', 'ayuno', 'revision', 'alimentacion', 'bandeja', 'recoleccion', 'insectario'];
+    const par = await db.from('parametro').select('clave, valor');
+    if (par.error) {
+      bad('protocolo v2: parámetros', par.error.message, 'Ejecuta 0007_protocolo_v2.sql.');
+    } else {
+      const cargas = (par.data.find(p => p.clave === 'cargas') || {}).valor;
+      if (Array.isArray(cargas) && cargas.length) ok('protocolo v2: parámetros', `${cargas.length} cargas en el plan`);
+      else bad('protocolo v2: parámetros', 'no está la clave "cargas"', 'Ejecuta 0007_protocolo_v2.sql.');
+
+      const rec2 = uuid(), inc2 = uuid();
+      const c = await db.rpc('crear_recoleccion_v2', {
+        p_recoleccion: { id: rec2, insectario_id: insId, recolecta: '2', fecha: new Date().toISOString(),
+                         peso_ovipositores_g: 300, atrayente_cambiado: true, registrado_por: 'check-backend' },
+        p_incubadora: { id: inc2, codigo: PREFIX + 'INC' + Date.now(), fecha_inicio: new Date().toISOString().slice(0, 10),
+                        registrado_por: 'check-backend' }
+      });
+      if (c.error) { bad('protocolo v2: recolecta + incubadora', c.error.message); }
+      else {
+        created.recoleccion.push(rec2); created.incubadora.push(inc2);
+        ok('protocolo v2: recolecta + incubadora', 'juntas, en una operación');
+        const b2 = uuid(), f1 = uuid();
+        const d = await db.rpc('distribuir_incubadora', {
+          p_distribucion: { incubadora_id: inc2, registrado_por: 'check-backend' },
+          p_bandejas: [{ id: b2, no_bandeja: 1, id_bandeja: PREFIX + 'V2-01', individuos: 25000 }],
+          p_cargas: [{ id: f1, bandeja_id: b2, cantidad_kg: 1.5, carga: 1, tipo_alimento: 'Ensilaje' }]
+        });
+        if (d.error) bad('protocolo v2: distribución', d.error.message);
+        else {
+          created.bandeja.push(b2); created.alimentacion.push(f1);
+          const { data: t } = await db.from('bandeja').select('protocolo, incubadora_id').eq('id', b2).single();
+          const { data: a } = await db.from('alimentacion').select('protocolo, carga').eq('id', f1).single();
+          if (t?.protocolo === 'v2' && a?.protocolo === 'v2' && a?.carga === 1) {
+            ok('protocolo v2: distribución', 'bandeja v2 con su carga 1');
+          } else {
+            bad('protocolo v2: distribución', `bandeja ${t?.protocolo}, carga ${a?.protocolo}/${a?.carga}`);
+          }
+        }
+      }
+    }
+  }
+
+  /* 11 ── clean up ───────────────────────────────────────────────────────── */
+  {
+    // Children first. Soft delete: see the note at the top of this file.
+    const order = ['lote', 'separacion', 'ayuno', 'revision', 'alimentacion', 'bandeja', 'incubadora', 'recoleccion', 'insectario'];
+    const now = new Date().toISOString();
     let left = 0;
     for (const table of order) {
       const ids = created[table];
       if (!ids?.length) continue;
-      const { error } = await db.from(table).delete().in('id', ids);
+      const { error } = await db.from(table).update({ deleted_at: now }).in('id', ids);
       if (error) { left += ids.length; console.log(`        no se pudo limpiar ${table}: ${error.message}`); }
     }
-    if (!left) ok('limpieza', 'no queda nada de prueba en la base');
+    if (!left) ok('limpieza', 'filas de prueba marcadas como borradas; los teléfonos las quitan al sincronizar');
     else bad('limpieza', `${left} filas de prueba quedaron`,
-             `Bórralas a mano: las de prueba tienen código que empieza con ${PREFIX}`);
+             `Márcalas como borradas a mano: las de prueba tienen código que empieza con ${PREFIX}`);
   }
 }
 

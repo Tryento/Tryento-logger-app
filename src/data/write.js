@@ -27,13 +27,29 @@
  */
 import { ok, fail, CODES, num, str, deepCopy } from './envelope.js';
 import { openDb } from './idb/open.js';
+import { ayunoAbierto } from './idb/schema.js';
 import { commitWrite, rowById, allRows, rowsByIndex } from './store.js';
-import { uuid, uuidFromString, deviceId, insectarioCodigo, bandejaLabel, loteCodigo, nextRecolectaOrdinal } from './ids.js';
+import {
+  uuid, uuidFromString, deviceId, insectarioCodigo, bandejaLabel, loteCodigo,
+  nextRecolectaOrdinal, incubadoraCodigo, bandejaV2Codigo
+} from './ids.js';
 import { nowIso, utcIso, farmDay, addDays } from './time.js';
 import { currentUserId } from './session.js';
 import { metaGet, metaSet } from './idb/tx.js';
 import { attachPhoto } from './photo.js';
 import { OVEN_CAPACITY } from './config.js';
+import { mergeProtocolo, cargaDef, ALIMENTO_V2 } from './protocolo.js';
+
+/** The protocol settings this device has, over the built-in defaults. */
+async function protocolo(db) {
+  return mergeProtocolo(await allRows(db, 'parametro'));
+}
+
+const esV2 = row => (row?.protocolo || 'v1') === 'v2';
+
+/** Tray labels for a message, never raw ids. */
+const etiquetas = (trays, ids) =>
+  ids.map(id => trays.get(id)?.id_bandeja || '(sin etiqueta)').join(', ');
 
 /** Who is registering right now, remembered in the local `meta` store. */
 const OPERADOR_KEY = 'operador_actual';
@@ -311,7 +327,7 @@ export async function createBandeja(data) {
 
 async function eventBase(db, data, extra = {}) {
   const tray = await rowById(db, 'bandeja', data.bandeja_id);
-  if (!tray) return { error: fail(CODES.NOT_FOUND, 'Bandeja no encontrada.') };
+  if (!tray || tray.deleted_at) return { error: fail(CODES.NOT_FOUND, 'Bandeja no encontrada.') };
   const prov = await provenance(data.operator_name);
   return {
     tray,
@@ -322,6 +338,9 @@ async function eventBase(db, data, extra = {}) {
       notas: str(data.notas),
       foto_key: null,
       deleted_at: null,
+      // Local only (push never sends it): the server gives an event its tray's
+      // protocol by trigger. Kept here so this phone shows the right one now.
+      protocolo: tray.protocolo || 'v1',
       ...prov,
       ...extra
     }
@@ -350,17 +369,22 @@ async function commitEvent(db, store, row, { blobId = null } = {}) {
   return ok(deepCopy(row));
 }
 
+/** v1 trays keep the old feeding form. A v2 tray is fed with logCarga: its
+ *  diet and quantities are fixed by the protocol, so there is nothing to type. */
+const SOLO_V1 = 'Esta bandeja es del protocolo nuevo: se alimenta con «Alimentar» (carga del plan).';
+
 export async function logAlimentacion(data) {
   if (!data?.bandeja_id) return fail(CODES.VALIDATION, 'Bandeja es obligatoria.');
   if (!data.tipo_alimento) return fail(CODES.VALIDATION, 'Tipo de alimento es obligatorio.');
   const db = await openDb();
-  const { error, row } = await eventBase(db, data, {
+  const { error, row, tray } = await eventBase(db, data, {
     tipo_alimento: data.tipo_alimento,
     cantidad_kg: num(data.cantidad_kg) ?? 0,
     origen: 'individual',
     grupal_id: null
   });
   if (error) return error;
+  if (esV2(tray)) return fail(CODES.VALIDATION, SOLO_V1);
   return commitEvent(db, 'alimentacion', row, { blobId: data.blob_id });
 }
 
@@ -380,10 +404,13 @@ export async function logAlimentacionGrupal(data) {
   if (!data.tipo_alimento) return fail(CODES.VALIDATION, 'Tipo de alimento es obligatorio.');
 
   const db = await openDb();
-  const trays = await allRows(db, 'bandeja');
-  const known = new Set(trays.map(t => t.id));
-  const unknown = ids.filter(id => !known.has(id));
-  if (unknown.length) return fail(CODES.NOT_FOUND, `Bandeja no encontrada: ${unknown.join(', ')}`);
+  const trays = new Map((await allRows(db, 'bandeja')).map(t => [t.id, t]));
+  const unknown = ids.filter(id => !trays.has(id));
+  if (unknown.length) {
+    return fail(CODES.NOT_FOUND, `${unknown.length} bandeja(s) ya no existen en este teléfono. Vuelve a elegirlas.`);
+  }
+  const v2 = ids.filter(id => esV2(trays.get(id)));
+  if (v2.length) return fail(CODES.VALIDATION, `${SOLO_V1} (${etiquetas(trays, v2)})`);
 
   const grupalId = uuid();
   const fecha = isoOrNow(data.fecha);
@@ -417,20 +444,82 @@ export async function logAlimentacionGrupal(data) {
   return ok({ grupal_id: grupalId, created: rows.length, rows: deepCopy(rows) });
 }
 
+/**
+ * Start a fast.
+ *
+ *   v1 (old protocol): weighed in, as always. The weight is required.
+ *   v2 (días 14–15):   one tap. Weighing is optional; the cosecha closes it.
+ */
 export async function logAyuno(data) {
   if (!data?.bandeja_id) return fail(CODES.VALIDATION, 'Bandeja es obligatoria.');
   const pi = num(data.peso_inicial_kg);
-  if (pi === null || pi <= 0) return fail(CODES.VALIDATION, 'Peso inicial es obligatorio.');
+  const pf = num(data.peso_final_kg);
 
   const db = await openDb();
+  const tray = await rowById(db, 'bandeja', data.bandeja_id);
+  if (!tray || tray.deleted_at) return fail(CODES.NOT_FOUND, 'Bandeja no encontrada.');
+
+  if (esV2(tray)) {
+    if (pi !== null && pi <= 0) return fail(CODES.VALIDATION, 'El peso inicial debe ser mayor que cero.');
+    const previos = await rowsByIndex(db, 'ayuno', 'by_bandeja', tray.id);
+    if (previos.length) return fail(CODES.CONFLICT, `La bandeja ${tray.id_bandeja} ya está en ayuno.`);
+    if (tray.estado === 'cosechada') return fail(CODES.CONFLICT, `La bandeja ${tray.id_bandeja} ya fue cosechada.`);
+    const cfg = await protocolo(db);
+    const { error, row } = await eventBase(db, data, {
+      peso_inicial_kg: pi,
+      horas_ayuno: num(data.horas_ayuno) ?? cfg.horas_ayuno,
+      peso_final_kg: null,
+      cerrado_at: null
+    });
+    if (error) return error;
+    return commitEvent(db, 'ayuno', row, { blobId: data.blob_id });
+  }
+
+  if (pi === null || pi <= 0) return fail(CODES.VALIDATION, 'Peso inicial es obligatorio.');
   const { error, row } = await eventBase(db, data, {
     peso_inicial_kg: pi,
     horas_ayuno: num(data.horas_ayuno) ?? 24,
-    peso_final_kg: num(data.peso_final_kg),
-    cerrado_at: num(data.peso_final_kg) !== null ? nowIso() : null
+    peso_final_kg: pf,
+    cerrado_at: pf !== null ? nowIso() : null
   });
   if (error) return error;
   return commitEvent(db, 'ayuno', row, { blobId: data.blob_id });
+}
+
+/**
+ * Start the fast of several v2 trays at once (día 14 is the same day for a
+ * whole distribución). Every tray is checked BEFORE anything is saved, so the
+ * operator never ends up with half the trays in ayuno and a vague error.
+ * Each fast is its own record, exactly as if it had been tapped one by one.
+ */
+export async function logAyunoGrupal(data) {
+  const ids = [...new Set(Array.isArray(data?.bandeja_ids) ? data.bandeja_ids.filter(Boolean) : [])];
+  if (!ids.length) return fail(CODES.VALIDATION, 'Selecciona al menos una bandeja.');
+
+  const db = await openDb();
+  const trays = new Map((await allRows(db, 'bandeja')).map(t => [t.id, t]));
+  const unknown = ids.filter(id => !trays.has(id));
+  if (unknown.length) {
+    return fail(CODES.NOT_FOUND, `${unknown.length} bandeja(s) ya no existen en este teléfono. Vuelve a elegirlas.`);
+  }
+  const v1 = ids.filter(id => !esV2(trays.get(id)));
+  if (v1.length) {
+    return fail(CODES.VALIDATION, `Estas bandejas son del protocolo anterior y se pesan al ayunar: ${etiquetas(trays, v1)}.`);
+  }
+  const conAyuno = new Set((await allRows(db, 'ayuno')).map(a => a.bandeja_id));
+  const yaEn = ids.filter(id => conAyuno.has(id));
+  if (yaEn.length) return fail(CODES.CONFLICT, `Ya están en ayuno: ${etiquetas(trays, yaEn)}.`);
+  const cosechadas = ids.filter(id => trays.get(id).estado === 'cosechada');
+  if (cosechadas.length) return fail(CODES.CONFLICT, `Ya fueron cosechadas: ${etiquetas(trays, cosechadas)}.`);
+
+  const fecha = isoOrNow(data.fecha);
+  const creados = [];
+  for (const id of ids) {
+    const r = await logAyuno({ bandeja_id: id, fecha, operator_name: data.operator_name, notas: data.notas });
+    if (!r.ok) return fail(r.error.code, `${r.error.message} (se guardaron ${creados.length} de ${ids.length})`);
+    creados.push(r.data);
+  }
+  return ok({ created: creados.length, rows: creados });
 }
 
 /**
@@ -444,26 +533,29 @@ export async function logAyuno(data) {
  */
 export async function logAyunoFin(id, data) {
   const pf = num(data?.peso_final_kg);
-  if (pf === null || pf < 0) return fail(CODES.VALIDATION, 'Peso final es obligatorio.');
+  if (pf !== null && pf < 0) return fail(CODES.VALIDATION, 'El peso final no puede ser negativo.');
 
   const db = await openDb();
   const row = await rowById(db, 'ayuno', id);
-  if (!row) return fail(CODES.NOT_FOUND, 'Ayuno no encontrado.');
-  if (row.peso_final_kg !== null && row.peso_final_kg !== undefined) {
-    return fail(CODES.CONFLICT, 'Este ayuno ya fue cerrado.');
-  }
-  if (pf > row.peso_inicial_kg) {
+  if (!row || row.deleted_at) return fail(CODES.NOT_FOUND, 'Ayuno no encontrado.');
+  if (!ayunoAbierto(row)) return fail(CODES.CONFLICT, 'Este ayuno ya fue cerrado.');
+
+  const tray = await rowById(db, 'bandeja', row.bandeja_id);
+  // v1 closes with a weight, as always. v2 may close without one.
+  if (!esV2(tray) && pf === null) return fail(CODES.VALIDATION, 'Peso final es obligatorio.');
+  if (pf !== null && row.peso_inicial_kg != null && pf > row.peso_inicial_kg) {
     return fail(CODES.VALIDATION, 'El peso final no puede superar el peso inicial.');
   }
 
-  const cerrado = nowIso();
-  const next = { ...row, peso_final_kg: pf, cerrado_at: cerrado, updated_at: cerrado };
+  const cerrado = data?.at ? isoOrNow(data.at) : nowIso();
+  const por = str(data?.operator_name) || (await getCurrentOperator());
+  const next = { ...row, peso_final_kg: pf, cerrado_at: cerrado, cerrado_por: por, updated_at: nowIso() };
 
   await commitWrite(db, {
     writes: [{ store: 'ayuno', row: next }],
     outbox: {
       op: 'cas', rpc: 'cerrar_ayuno', rowId: id,
-      payload: { p_id: id, p_peso: pf, p_at: cerrado },
+      payload: { p_id: id, p_peso: pf, p_at: cerrado, p_por: por },
       createdBy: currentUserId(), dispositivoId: deviceId()
     },
     refreshTrays: [row.bandeja_id]
@@ -480,10 +572,19 @@ export async function logRevision(data) {
   return commitEvent(db, 'revision', row, { blobId: data.blob_id });
 }
 
+/**
+ * Separación / cosecha.
+ *
+ * `larva_limpia_g` is what goes on to the oven (it is what a Lote adds up). In
+ * v2 the ≈2 % that goes to the lab to become flies is weighed separately into
+ * `reserva_cria_g`, and the cosecha closes the tray's fast.
+ */
 export async function logSeparacion(data) {
   if (!data?.bandeja_id) return fail(CODES.VALIDATION, 'Bandeja es obligatoria.');
   const g = num(data.larva_limpia_g);
   if (g === null || g < 0) return fail(CODES.VALIDATION, 'Larva limpia (g) es obligatoria.');
+  const reserva = num(data.reserva_cria_g);
+  if (reserva !== null && reserva < 0) return fail(CODES.VALIDATION, 'Los gramos para el laboratorio no pueden ser negativos.');
 
   const db = await openDb();
   // Advisory: catches the common case where THIS device already knows. Offline,
@@ -494,9 +595,22 @@ export async function logSeparacion(data) {
     return fail(CODES.CONFLICT, 'Esta bandeja ya tiene una separación registrada.');
   }
 
-  const { error, row } = await eventBase(db, data, { larva_limpia_g: g });
+  const tray = await rowById(db, 'bandeja', data.bandeja_id);
+  const v2 = esV2(tray);
+  // v2-only fields are only put on v2 rows, so an old-protocol separación sends
+  // exactly what it always did.
+  const { error, row } = await eventBase(db, data,
+    v2 ? { larva_limpia_g: g, reserva_cria_g: reserva } : { larva_limpia_g: g });
   if (error) return error;
-  return commitEvent(db, 'separacion', row, { blobId: data.blob_id });
+  const res = await commitEvent(db, 'separacion', row, { blobId: data.blob_id });
+
+  if (res.ok && v2) {
+    const abiertos = (await rowsByIndex(db, 'ayuno', 'by_bandeja', data.bandeja_id)).filter(ayunoAbierto);
+    for (const a of abiertos) {
+      await logAyunoFin(a.id, { at: row.fecha, operator_name: data.operator_name });
+    }
+  }
+  return res;
 }
 
 /* ── lote ────────────────────────────────────────────────────────────── */
@@ -512,12 +626,19 @@ export async function createLote(data) {
   const seps = await allRows(db, 'separacion');
   const known = new Set(seps.map(s => s.id));
   const unknown = sepIds.filter(id => !known.has(id));
-  if (unknown.length) return fail(CODES.NOT_FOUND, `Separación no encontrada: ${unknown.join(', ')}`);
+  if (unknown.length) {
+    return fail(CODES.NOT_FOUND, `${unknown.length} separación(es) ya no existen en este teléfono. Vuelve a elegirlas.`);
+  }
 
   const links = await allRows(db, 'lote_separacion');
   const pooled = new Set(links.map(l => l.separacion_id));
   const already = sepIds.filter(id => pooled.has(id));
-  if (already.length) return fail(CODES.CONFLICT, `Ya está en otro lote: ${already.join(', ')}`);
+  if (already.length) {
+    const trays = new Map((await allRows(db, 'bandeja')).map(t => [t.id, t]));
+    const sepById = new Map(seps.map(s => [s.id, s]));
+    return fail(CODES.CONFLICT,
+      `Ya está en otro lote: ${etiquetas(trays, already.map(id => sepById.get(id)?.bandeja_id))}`);
+  }
 
   const fecha = isoOrNow(data.fecha);
   const prov = await provenance(data.operator_name);
@@ -589,7 +710,7 @@ export async function updateLoteQC(id, data) {
   const row = await rowById(db, 'lote', id);
   if (!row) return fail(CODES.NOT_FOUND, 'Lote no encontrado.');
   if (row.despachado_at || row.rechazado_at) {
-    return fail(CODES.CONFLICT, 'Este lote ya está cerrada.');
+    return fail(CODES.CONFLICT, 'Este lote ya está cerrado.');
   }
 
   const patch = {};
@@ -652,7 +773,7 @@ export async function marcarDespachado(id) {
   const row = await rowById(db, 'lote', id);
   if (!row) return fail(CODES.NOT_FOUND, 'Lote no encontrado.');
   // The prototype could dispatch before packing (dataClient.js:359).
-  if (!row.empacado_at) return fail(CODES.VALIDATION, 'Primero marca el lote como empacada.');
+  if (!row.empacado_at) return fail(CODES.VALIDATION, 'Primero marca el lote como empacado.');
   if (row.despachado_at) return ok(row);
 
   const porDesp = await getCurrentOperator();
@@ -670,7 +791,7 @@ export async function rechazarLote(id, motivo) {
   const db = await openDb();
   const row = await rowById(db, 'lote', id);
   if (!row) return fail(CODES.NOT_FOUND, 'Lote no encontrado.');
-  if (row.despachado_at) return fail(CODES.CONFLICT, 'Este lote ya fue despachada.');
+  if (row.despachado_at) return fail(CODES.CONFLICT, 'Este lote ya fue despachado.');
   if (row.rechazado_at) return ok(row);
 
   const porRech = await getCurrentOperator();
@@ -681,4 +802,268 @@ export async function rechazarLote(id, motivo) {
     payload: { p_id: id, p_motivo: reason, p_por: porRech },
     createdBy: currentUserId(), dispositivoId: deviceId()
   });
+}
+
+/* ── protocolo v2: recolecta → incubadora → bandejas → cargas ──────────── */
+
+const DIA_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * v2 recolecta. Creates its incubadora in the same save: one recolecta is one
+ * incubadora, always, so there is no second form for anyone to forget.
+ *
+ * The atrayente is changed at every recolecta (fixed formula), so it is a
+ * required confirmation here rather than a separate record. The ovipositors
+ * are weighed as a set, per insectario — a reference value.
+ */
+export async function createRecoleccionV2(data) {
+  if (!data?.insectario_id) return fail(CODES.VALIDATION, 'Insectario es obligatorio.');
+  if (data.atrayente_cambiado !== true) {
+    return fail(CODES.VALIDATION, 'Confirma que se cambió el atrayente.');
+  }
+  const peso = num(data.peso_ovipositores_g);
+  if (peso === null || peso <= 0) {
+    return fail(CODES.VALIDATION, 'El peso de los ovipositores (g) es obligatorio.');
+  }
+  const starter = num(data.starter_kg);
+  if (starter !== null && starter < 0) return fail(CODES.VALIDATION, 'Los kg de starter no pueden ser negativos.');
+  if (data.fecha_inicio && !DIA_RE.test(String(data.fecha_inicio))) {
+    return fail(CODES.VALIDATION, 'El día 0 debe ser una fecha (AAAA-MM-DD).');
+  }
+
+  const db = await openDb();
+  const ins = await rowById(db, 'insectario', data.insectario_id);
+  if (!ins || ins.deleted_at) return fail(CODES.NOT_FOUND, 'Insectario no encontrado.');
+
+  const cfg = await protocolo(db);
+  const existing = await rowsByIndex(db, 'recoleccion', 'by_insectario', ins.id);
+  const recolecta = nextRecolectaOrdinal(existing);
+  const codigo = incubadoraCodigo({
+    generacion: ins.generacion_moscas, nombreInsectario: ins.nombre_insectario,
+    recolecta, letras: cfg.letras_insectario
+  });
+  // Early warning only: the server's unique index is what decides. The code is
+  // written on the trays on día 7, so a collision surfaces long before that.
+  if ((await allRows(db, 'incubadora')).some(i => i.codigo === codigo)) {
+    return fail(CODES.CONFLICT,
+      `Ya existe la incubadora ${codigo}. Revisa la generación del insectario ${ins.codigo}.`);
+  }
+
+  const fecha = isoOrNow(data.fecha);
+  const prov = await provenance(data.operator_name);
+  const recoleccion = {
+    id: uuid(),
+    insectario_id: ins.id,
+    recolecta,
+    fecha,
+    huevos_g: null,
+    peso_ovipositores_g: peso,
+    atrayente_cambiado: true,
+    notas: str(data.notas),
+    protocolo: 'v2',
+    deleted_at: null,
+    ...prov
+  };
+  const incubadora = {
+    id: uuid(),
+    recoleccion_id: recoleccion.id,
+    codigo,
+    // Día 0. Defaults to the recolecta's farm day; editable because the lab has
+    // yet to confirm whether día 0 is the recolecta or the hatching.
+    fecha_inicio: data.fecha_inicio || farmDay(fecha),
+    starter_kg: starter,
+    individuos_total: null,
+    notas: '',
+    distribuida_at: null,
+    distribuida_por: null,
+    estado: 'incubando',
+    deleted_at: null,
+    ...prov
+  };
+
+  await commitWrite(db, {
+    writes: [{ store: 'recoleccion', row: recoleccion }, { store: 'incubadora', row: incubadora }],
+    outbox: {
+      op: 'rpc', rpc: 'crear_recoleccion_v2', rowId: recoleccion.id,
+      payload: { p_recoleccion: recoleccion, p_incubadora: incubadora },
+      dependsOn: [ins.id],
+      createdBy: prov.created_by, dispositivoId: prov.dispositivo_id
+    }
+  });
+
+  return ok({
+    recoleccion: Object.assign(deepCopy(recoleccion), {
+      insectario_nombre: ins.nombre_insectario, insectario_codigo: ins.codigo
+    }),
+    incubadora: deepCopy(incubadora)
+  });
+}
+
+/**
+ * Día 7: the incubadora is split into N bandejas, which get carga 1 in the
+ * same action ("Transferencia y primera carga"). All of it is ONE server call,
+ * so the trays and their first feeding can never land apart.
+ */
+export async function distribuirIncubadora(id, data = {}) {
+  const n = num(data.n_bandejas);
+  if (n === null || !Number.isInteger(n) || n < 1 || n > 99) {
+    return fail(CODES.VALIDATION, 'Número de bandejas: entre 1 y 99.');
+  }
+
+  const db = await openDb();
+  const inc = await rowById(db, 'incubadora', id);
+  if (!inc || inc.deleted_at) return fail(CODES.NOT_FOUND, 'Incubadora no encontrada.');
+  if (inc.distribuida_at) return fail(CODES.CONFLICT, `La incubadora ${inc.codigo} ya fue distribuida.`);
+  const rec = await rowById(db, 'recoleccion', inc.recoleccion_id);
+  if (!rec || rec.deleted_at) return fail(CODES.NOT_FOUND, 'La recolecta de esta incubadora no está en el teléfono.');
+
+  const cfg = await protocolo(db);
+  const porBandeja = num(data.individuos_por_bandeja) ?? cfg.individuos_por_bandeja;
+  if (porBandeja < 0) return fail(CODES.VALIDATION, 'Las larvas por bandeja no pueden ser negativas.');
+  const total = num(data.individuos_total) ?? porBandeja * n;
+
+  const fecha = isoOrNow(data.fecha);
+  const prov = await provenance(data.operator_name);
+
+  const bandejas = Array.from({ length: n }, (_, i) => ({
+    id: uuid(),
+    recoleccion_id: rec.id,
+    incubadora_id: inc.id,
+    no_bandeja: i + 1,
+    id_bandeja: bandejaV2Codigo(inc.codigo, i + 1),
+    fecha,
+    individuos: porBandeja,
+    gramos_huevos: null,
+    iniciador_g: null,
+    tipo_iniciador: null,
+    notas: '',
+    estado: 'en_crecimiento',
+    cerrada_admin_at: null,
+    cerrada_admin_motivo: null,
+    protocolo: 'v2',
+    deleted_at: null,
+    ...prov
+  }));
+
+  const c1 = cargaDef(cfg, 1);
+  const grupal = uuid();
+  const cargas = data.carga1 === false || !c1 ? [] : bandejas.map(b => ({
+    id: uuid(),
+    bandeja_id: b.id,
+    fecha,
+    tipo_alimento: ALIMENTO_V2,
+    cantidad_kg: c1.kg,
+    origen: 'grupal',
+    grupal_id: grupal,
+    carga: 1,
+    tamizado: false,
+    notas: '',
+    foto_key: null,
+    protocolo: 'v2',
+    deleted_at: null,
+    ...prov
+  }));
+
+  const next = {
+    ...inc,
+    distribuida_at: fecha,
+    distribuida_por: prov.registrado_por,
+    individuos_total: total,
+    estado: 'distribuida',
+    updated_at: nowIso()
+  };
+
+  await commitWrite(db, {
+    writes: [
+      { store: 'incubadora', row: next },
+      ...bandejas.map(row => ({ store: 'bandeja', row })),
+      ...cargas.map(row => ({ store: 'alimentacion', row }))
+    ],
+    outbox: {
+      op: 'rpc', rpc: 'distribuir_incubadora', rowId: inc.id,
+      payload: {
+        p_distribucion: { incubadora_id: inc.id, fecha, registrado_por: prov.registrado_por,
+                          individuos_total: total },
+        p_bandejas: bandejas,
+        p_cargas: cargas
+      },
+      // Waits for the recolecta + incubadora if they are still queued.
+      dependsOn: [inc.id],
+      createdBy: prov.created_by, dispositivoId: prov.dispositivo_id
+    },
+    refreshTrays: bandejas.map(b => b.id)
+  });
+
+  return ok({ incubadora: deepCopy(next), bandejas: deepCopy(bandejas), cargas: cargas.length });
+}
+
+/**
+ * v2 feeding: one tap, nothing typed. The diet is fixed, so the load number
+ * decides the kilos (carga 1 = 1,5 kg, 2 = 2 kg, 3 = 2 kg by default). Several
+ * trays at once travel as ONE server call, like the old bulk feed.
+ */
+export async function logCarga(data) {
+  const lista = Array.isArray(data?.bandeja_ids) ? data.bandeja_ids : [data?.bandeja_id];
+  const ids = [...new Set(lista.filter(Boolean))];
+  if (!ids.length) return fail(CODES.VALIDATION, 'Selecciona al menos una bandeja.');
+
+  const db = await openDb();
+  const cfg = await protocolo(db);
+  const def = cargaDef(cfg, data.carga);
+  if (!def) {
+    return fail(CODES.VALIDATION, `Indica qué carga es (${cfg.cargas.map(c => c.n).join(', ')}).`);
+  }
+
+  const trays = new Map((await allRows(db, 'bandeja')).map(t => [t.id, t]));
+  const unknown = ids.filter(id => !trays.has(id));
+  if (unknown.length) {
+    return fail(CODES.NOT_FOUND, `${unknown.length} bandeja(s) ya no existen en este teléfono. Vuelve a elegirlas.`);
+  }
+  const v1 = ids.filter(id => !esV2(trays.get(id)));
+  if (v1.length) {
+    return fail(CODES.VALIDATION,
+      `Estas bandejas son del protocolo anterior y usan el formulario anterior: ${etiquetas(trays, v1)}.`);
+  }
+  const cerradas = ids.filter(id => ['en_ayuno', 'cosechada'].includes(trays.get(id).estado));
+  if (cerradas.length) {
+    return fail(CODES.CONFLICT, `Ya no se alimentan (ayuno o cosecha): ${etiquetas(trays, cerradas)}.`);
+  }
+  const dadas = new Set((await allRows(db, 'alimentacion'))
+    .filter(a => Number(a.carga) === def.n && ids.includes(a.bandeja_id))
+    .map(a => a.bandeja_id));
+  if (dadas.size) {
+    return fail(CODES.CONFLICT, `Ya recibieron la carga ${def.n}: ${etiquetas(trays, [...dadas])}.`);
+  }
+
+  const fecha = isoOrNow(data.fecha);
+  const prov = await provenance(data.operator_name);
+  const grupal = ids.length > 1 ? uuid() : null;
+  const rows = ids.map(bandeja_id => ({
+    id: uuid(),
+    bandeja_id,
+    fecha,
+    tipo_alimento: ALIMENTO_V2,
+    cantidad_kg: def.kg,
+    origen: grupal ? 'grupal' : 'individual',
+    grupal_id: grupal,
+    carga: def.n,
+    tamizado: Boolean(data.tamizado),
+    notas: str(data.notas),
+    foto_key: null,
+    protocolo: 'v2',
+    deleted_at: null,
+    ...prov
+  }));
+
+  const outbox = grupal
+    ? { op: 'rpc', rpc: 'log_alimentacion_grupal', rowId: grupal, payload: { p_rows: rows } }
+    : { op: 'upsert', table: 'alimentacion', rowId: rows[0].id, payload: rows[0] };
+
+  await commitWrite(db, {
+    writes: rows.map(row => ({ store: 'alimentacion', row })),
+    outbox: { ...outbox, dependsOn: ids, createdBy: prov.created_by, dispositivoId: prov.dispositivo_id },
+    refreshTrays: ids
+  });
+
+  return ok({ carga: def.n, kg: def.kg, created: rows.length, rows: deepCopy(rows) });
 }

@@ -21,6 +21,7 @@
  * the UI.
  */
 import { reqToPromise, withTx, getAllByIndex } from './idb/tx.js';
+import { ayunoAbierto } from './idb/schema.js';
 
 export const ESTADO = {
   CRECIMIENTO: 'en_crecimiento',
@@ -68,8 +69,13 @@ export async function refreshBandeja(stores, bandejaId) {
   consider('revision', revs);
   consider('separacion', seps);
 
-  const abierto = ayunos.find(a => a.peso_final_kg === null || a.peso_final_kg === undefined) || null;
+  const abierto = ayunos.find(ayunoAbierto) || null;
   const sep = seps[0] || null;
+
+  // v2: which of the scheduled loads this tray has had. Kept as a list, not a
+  // count, so a load logged twice by two phones does not read as a later one.
+  const cargas = [...new Set(alims.map(a => Number(a.carga)).filter(n => Number.isFinite(n) && n > 0))]
+    .sort((a, b) => a - b);
 
   let loteId = null;
   if (sep) {
@@ -85,6 +91,8 @@ export async function refreshBandeja(stores, bandejaId) {
     n_alimentaciones: alims.length,
     kg_alimento_total: alims.reduce((s, a) => s + (Number(a.cantidad_kg) || 0), 0),
     n_revisiones: revs.length,
+    cargas_dadas: cargas,
+    tiene_ayuno: ayunos.length ? 1 : 0,
     tiene_ayuno_abierto: abierto ? 1 : 0,
     ayuno_abierto_id: abierto?.id ?? null,
     separacion_id: sep?.id ?? null,

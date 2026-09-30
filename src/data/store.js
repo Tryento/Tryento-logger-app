@@ -4,7 +4,27 @@
 import { reqToPromise, withTx, getAllByIndex } from './idb/tx.js';
 import { withIndexMirrors, EVENT_STORES } from './idb/schema.js';
 import { refreshBandeja, REFRESH_STORES } from './cache.js';
-import { enqueue, OPEN_STATUSES, STUCK_STATUSES } from './outbox.js';
+import { enqueue, rowsOf, OPEN_STATUSES, STUCK_STATUSES } from './outbox.js';
+
+/** The primary key of `row` in `store`, whatever its keyPath shape. */
+export function keyOf(store, row) {
+  const kp = store.keyPath;
+  return Array.isArray(kp) ? kp.map(k => row[k]) : row[kp];
+}
+
+/** Local bookkeeping that is not part of what an operator did. */
+const NOT_A_CHANGE = new Set(['updated_at', 'synced_at', '_abierto', '_resuelto']);
+
+/** Fields that differ between two versions of a row, as {field: [before, after]}. */
+function diffFields(before, after) {
+  const out = {};
+  for (const k of new Set([...Object.keys(before || {}), ...Object.keys(after || {})])) {
+    if (NOT_A_CHANGE.has(k)) continue;
+    const a = before?.[k] ?? null, b = after?.[k] ?? null;
+    if (JSON.stringify(a) !== JSON.stringify(b)) out[k] = [a, b];
+  }
+  return out;
+}
 
 /** Stores touched when writing to `store`, so a transaction can be opened once
  *  over exactly the right set. */
@@ -32,11 +52,29 @@ export async function commitWrite(db, { writes = [], outbox = null, refreshTrays
   if (refreshTrays.length) for (const s of REFRESH_STORES) names.add(s);
 
   return withTx(db, [...names], 'readwrite', async s => {
+    // What this write did, so "Descartar" can take back exactly that and
+    // nothing else: rows it created are removed, fields it changed go back.
+    const created = [], changed = [];
     for (const { store, row } of writes) {
-      await reqToPromise(s[store].put(withIndexMirrors(store, row)));
+      const key = keyOf(s[store], row);
+      const before = key === undefined ? undefined : await reqToPromise(s[store].get(key));
+      const next = withIndexMirrors(store, row);
+      await reqToPromise(s[store].put(next));
+      if (!before) created.push({ store, key });
+      else {
+        const fields = diffFields(before, next);
+        if (Object.keys(fields).length) changed.push({ store, key, fields });
+      }
     }
     let item = null;
-    if (outbox) item = await enqueue(s, outbox);
+    if (outbox) {
+      const createdIds = created.map(c => c.key).filter(k => typeof k === 'string');
+      item = await enqueue(s, {
+        ...outbox,
+        rowIds: [...(outbox.rowIds || []), ...createdIds],
+        undo: { created, changed }
+      });
+    }
     for (const id of new Set(refreshTrays.filter(Boolean))) {
       await refreshBandeja(s, id);
     }
@@ -57,7 +95,7 @@ export async function applyServerRows(db, store, rows) {
 
   const open = (await getAllByIndex(db, 'outbox', 'by_status'))
     .filter(it => OPEN_STATUSES.includes(it.status) || STUCK_STATUSES.includes(it.status));
-  const guarded = new Set(open.map(it => it.row_id).filter(Boolean));
+  const guarded = new Set(open.flatMap(rowsOf));
 
   const trays = new Set();
   let applied = 0, skipped = 0;
@@ -76,6 +114,19 @@ export async function applyServerRows(db, store, rows) {
       applied++;
       if (row.bandeja_id) trays.add(row.bandeja_id);
       if (store === 'bandeja') trays.add(row.id);
+
+      // A value seeded on this phone before the first sync gives way to the
+      // server's copy of the same value. The two have different ids, so without
+      // this every picker showed each option twice.
+      if (store === 'catalogo' && row.tipo) {
+        const locals = await reqToPromise(s.catalogo.index('by_tipo').getAll(row.tipo));
+        const same = String(row.valor ?? '').trim().toLowerCase();
+        for (const l of locals) {
+          if (l._seeded && l.id !== row.id && String(l.valor ?? '').trim().toLowerCase() === same) {
+            await reqToPromise(s.catalogo.delete(l.id));
+          }
+        }
+      }
     }
     if (names.has('bandeja_cache')) {
       for (const id of trays) await refreshBandeja(s, id);

@@ -15,8 +15,8 @@
 import { openDb, requestPersistentStorage } from './src/data/idb/open.js';
 import { putLocal, allRows } from './src/data/store.js';
 import { loadCachedSession } from './src/data/session.js';
-import { uuid } from './src/data/ids.js';
-import { nowIso } from './src/data/time.js';
+import { uuidFromString } from './src/data/ids.js';
+import { nowIso, farmDay, ddmm, toNaiveLocal, addDays } from './src/data/time.js';
 import { isBackendConfigured } from './src/data/config.js';
 import { startSync, syncNow, nudge } from './src/data/sync/loop.js';
 import { refreshStatus, getSyncStatus, onChange, statusLabel } from './src/data/status.js';
@@ -64,8 +64,11 @@ async function seedIfEmpty(db) {
   if (!existing.length) {
     const rows = [];
     for (const [tipo, valores] of Object.entries(CATALOGO_DEFAULTS)) {
+      // `_seeded` marks these as local stand-ins: the server's copy of the same
+      // value replaces them when it arrives (store.js applyServerRows).
       valores.forEach((valor, orden) => rows.push({
-        id: uuid(), tipo, valor, orden, activo: true,
+        id: uuidFromString(`seed:${tipo}:${String(valor).toLowerCase()}`),
+        tipo, valor, orden: orden + 1, activo: true,
         created_at: nowIso(), updated_at: nowIso(), _seeded: true
       }));
     }
@@ -179,6 +182,30 @@ export const listAyunosAbiertos = guard(reads.listAyunosAbiertos);
 export const rechazarLote = guard(writes.rechazarLote, { isWrite: true });
 /** Remember a typed name so it comes back as a chip. Local convenience only. */
 export const rememberOperator = guard(writes.rememberOperator);
+/**
+ * Who is registering, for the one-tap actions (Atractante, QC, empacado…).
+ * The screen keeps the chosen name across reloads; it MUST hand it back here on
+ * start, or those actions record nobody. QA found exactly that: every `*_por`
+ * column null although the header showed a name.
+ */
+export const setOperator = guard(async nombre => {
+  const n = await writes.setCurrentOperator(nombre);
+  return n ? { ok: true, data: { nombre: n } } : { ok: false, error: { code: 'validation_error', message: 'Nombre vacío.' } };
+});
+
+/* ── protocolo v2 ───────────────────────────────────────────────────────── */
+
+export const getProtocolo = guard(reads.getProtocolo);
+export const listIncubadoras = guard(reads.listIncubadoras);
+export const getIncubadoraDetail = guard(reads.getIncubadoraDetail);
+export const createRecoleccionV2 = guard(writes.createRecoleccionV2, { isWrite: true });
+export const distribuirIncubadora = guard(writes.distribuirIncubadora, { isWrite: true });
+export const logCarga = guard(writes.logCarga, { isWrite: true });
+export const logAyunoGrupal = guard(writes.logAyunoGrupal, { isWrite: true });
+
+/** Farm-calendar helpers for the screens, so a preview never disagrees with
+ *  what is saved (the UI's own date math read date-only strings as UTC). */
+export const fechas = { farmDay, ddmm, toNaiveLocal, addDays };
 
 export { getSyncStatus, onChange, statusLabel };
 export const sync = () => syncNow({ force: true });
@@ -219,7 +246,9 @@ const api = {
   createInsectario, marcarAtractante, marcarCierre, createRecoleccion, createBandeja,
   logAlimentacion, logAlimentacionGrupal, logAyuno, logRevision, logSeparacion,
   createLote, updateLoteQC, marcarEmpacado, marcarDespachado,
-  logAyunoFin, listAyunosAbiertos, rechazarLote, rememberOperator,
+  logAyunoFin, listAyunosAbiertos, rechazarLote, rememberOperator, setOperator,
+  getProtocolo, listIncubadoras, getIncubadoraDetail, createRecoleccionV2,
+  distribuirIncubadora, logCarga, logAyunoGrupal, fechas,
   getSyncStatus, onChange, statusLabel, sync,
   listConflicts, resolveConflict,
   capturePhoto, localPhotoUrl, attachPhotoToRow,

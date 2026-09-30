@@ -1,0 +1,353 @@
+<title>Protocolo de 16 días</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+  :root {
+    --paper: #FAFBF7;
+    --ink: #17221B;
+    --muted: #56655B;
+    --rule: #D5DDD3;
+    --incub: #E4EEDC;
+    --incub-ink: #2E5A34;
+    --engorde: #D3E9D6;
+    --engorde-ink: #1F6B3A;
+    --ayuno: #F3E6CC;
+    --ayuno-ink: #8A5A12;
+    --accent: #2C8A4B;
+    --ask: #9A6410;
+    --box: #FFFFFF;
+    --font-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    --font-head: "IBM Plex Sans Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "IBM Plex Mono", "Courier New", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #121813;
+      --ink: #E6EFE7;
+      --muted: #9BAE9F;
+      --rule: #2C3A30;
+      --incub: #1D2A20;
+      --incub-ink: #A9D3AE;
+      --engorde: #173222;
+      --engorde-ink: #8FE0A8;
+      --ayuno: #33280F;
+      --ayuno-ink: #F0C46C;
+      --accent: #5CC77E;
+      --ask: #E8B45A;
+      --box: #182019;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #121813;
+    --ink: #E6EFE7;
+    --muted: #9BAE9F;
+    --rule: #2C3A30;
+    --incub: #1D2A20;
+    --incub-ink: #A9D3AE;
+    --engorde: #173222;
+    --engorde-ink: #8FE0A8;
+    --ayuno: #33280F;
+    --ayuno-ink: #F0C46C;
+    --accent: #5CC77E;
+    --ask: #E8B45A;
+    --box: #182019;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.55;
+    padding-inline: 16px;
+    padding-block: 28px 48px;
+  }
+  .page { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 34px; }
+
+  header { display: flex; flex-direction: column; gap: 6px; border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
+  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-family: var(--font-head); font-weight: 700; font-size: 34px; line-height: 1.1; margin: 0; text-wrap: balance; }
+  .lede { margin: 0; max-width: 65ch; color: var(--ink); }
+
+  h2 {
+    font-family: var(--font-head); font-weight: 700; font-size: 21px; margin: 0;
+    display: flex; align-items: baseline; gap: 10px; text-wrap: balance;
+  }
+  h2 .tag { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+  section { display: flex; flex-direction: column; gap: 14px; }
+  p { margin: 0; max-width: 68ch; }
+
+  .timeline-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--box); }
+  .timeline-wrap svg { display: block; width: 100%; min-width: 760px; height: auto; }
+  svg text { font-family: var(--font-body); fill: var(--ink); }
+  svg .day { font-family: var(--font-mono); font-size: 12px; fill: var(--muted); }
+  svg .band-incub { fill: var(--incub); }
+  svg .band-engorde { fill: var(--engorde); }
+  svg .band-ayuno { fill: var(--ayuno); }
+  svg .band-label-incub { fill: var(--incub-ink); font-family: var(--font-head); font-weight: 700; font-size: 14px; letter-spacing: .04em; }
+  svg .band-label-engorde { fill: var(--engorde-ink); font-family: var(--font-head); font-weight: 700; font-size: 14px; letter-spacing: .04em; }
+  svg .band-label-ayuno { fill: var(--ayuno-ink); font-family: var(--font-head); font-weight: 700; font-size: 13px; letter-spacing: .04em; }
+  svg .axis { stroke: var(--ink); stroke-width: 1.5; }
+  svg .tick { stroke: var(--muted); stroke-width: 1; }
+  svg .pin { stroke: var(--accent); stroke-width: 2; }
+  svg .dot { fill: var(--accent); }
+  svg .ev-day { font-family: var(--font-mono); font-weight: 600; font-size: 12.5px; fill: var(--accent); }
+  svg .ev { font-size: 12.5px; }
+  svg .bracket { stroke: var(--ayuno-ink); stroke-width: 1.5; fill: none; }
+  svg .note { font-size: 12px; fill: var(--muted); }
+  svg .harvest { font-size: 12.5px; font-weight: 600; }
+
+  .totals { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 14px; color: var(--muted); }
+  .totals b { color: var(--ink); font-family: var(--font-mono); font-weight: 600; }
+
+  .flow { display: grid; grid-template-columns: 1fr auto 1.6fr auto 1fr; align-items: stretch; gap: 10px; }
+  .flow .step { border: 1px solid var(--rule); border-radius: 6px; background: var(--box); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .flow .step strong { font-family: var(--font-head); font-size: 16px; }
+  .flow .step span { font-size: 13.5px; color: var(--muted); }
+  .flow .arrow { align-self: center; font-family: var(--font-mono); color: var(--muted); font-size: 18px; }
+  .states { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); }
+  @media (max-width: 640px) {
+    .flow { grid-template-columns: 1fr; }
+    .flow .arrow { transform: rotate(90deg); justify-self: start; padding-left: 12px; }
+  }
+
+  .safe { border-left: 4px solid var(--accent); background: var(--box); padding: 14px 16px; border-radius: 0 6px 6px 0; }
+  .safe p { font-size: 16px; }
+
+  ul.plain { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; max-width: 68ch; }
+
+  ol.questions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--rule); }
+  ol.questions li { display: grid; grid-template-columns: 34px 1fr; gap: 4px 12px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+  .qn { font-family: var(--font-mono); font-weight: 600; font-size: 15px; color: var(--ask); padding-top: 1px; }
+  .q { font-weight: 600; }
+  .prop { grid-column: 2; font-size: 14.5px; color: var(--muted); }
+  .prop b { color: var(--ink); font-weight: 600; }
+  .mark { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 14px; color: var(--muted); padding-top: 4px; }
+  .mark .box { display: inline-block; width: 14px; height: 14px; border: 1.5px solid var(--ink); border-radius: 2px; vertical-align: -2px; margin-right: 6px; }
+  .mark .line { display: inline-block; min-width: 180px; border-bottom: 1px solid var(--ink); height: 1em; vertical-align: -3px; margin-left: 6px; }
+
+  footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 12px; }
+</style>
+
+<div class="page">
+  <header>
+    <div class="eyebrow">TryEnto · para la reunión · marcar con lápiz</div>
+    <h1>El protocolo de 16 días, tal como lo va a llevar la app</h1>
+    <p class="lede">Así entendimos el régimen nuevo. Si algo no es así, táchelo y escriba al lado. Abajo están las preguntas que faltan, cada una con lo que la app va a hacer mientras tanto.</p>
+  </header>
+
+  <section>
+    <h2>La línea de tiempo <span class="tag">días desde el día 0</span></h2>
+    <div class="timeline-wrap">
+      <svg viewBox="0 0 880 330" role="img" aria-label="Línea de tiempo del ciclo de 16 días: incubadora del día 0 al 7, bandeja de engorde del día 7 al 16 con cargas los días 7, 10 y 13, ayuno los días 14 y 15, y cosecha el día 16.">
+        <!-- event labels -->
+        <g>
+          <line class="pin" x1="40" y1="112" x2="40" y2="150"/>
+          <circle class="dot" cx="40" cy="112" r="4"/>
+          <text x="34" y="44"><tspan class="ev-day">DÍA 0</tspan></text>
+          <text x="34" y="62" class="ev">se arma la</text>
+          <text x="34" y="78" class="ev">incubadora</text>
+          <text x="34" y="94" class="ev">(starter)</text>
+
+          <line class="pin" x1="390" y1="112" x2="390" y2="150"/>
+          <circle class="dot" cx="390" cy="112" r="4"/>
+          <text x="390" y="44" text-anchor="middle"><tspan class="ev-day">DÍA 7</tspan></text>
+          <text x="390" y="62" text-anchor="middle" class="ev">distribución a</text>
+          <text x="390" y="78" text-anchor="middle" class="ev">bandejas + carga 1</text>
+          <text x="390" y="94" text-anchor="middle" class="ev">1,5 kg</text>
+
+          <line class="pin" x1="540" y1="112" x2="540" y2="150"/>
+          <circle class="dot" cx="540" cy="112" r="4"/>
+          <text x="540" y="44" text-anchor="middle"><tspan class="ev-day">DÍA 10</tspan></text>
+          <text x="540" y="62" text-anchor="middle" class="ev">carga 2 · 2 kg</text>
+          <text x="540" y="78" text-anchor="middle" class="ev">+ tamizado</text>
+          <text x="540" y="94" text-anchor="middle" class="ev">de control</text>
+
+          <line class="pin" x1="690" y1="112" x2="690" y2="150"/>
+          <circle class="dot" cx="690" cy="112" r="4"/>
+          <text x="690" y="44" text-anchor="middle"><tspan class="ev-day">DÍA 13</tspan></text>
+          <text x="690" y="62" text-anchor="middle" class="ev">carga 3 · 2 kg</text>
+          <text x="690" y="78" text-anchor="middle" class="ev">(última)</text>
+
+          <line class="pin" x1="840" y1="112" x2="840" y2="150"/>
+          <circle class="dot" cx="840" cy="112" r="4"/>
+          <text x="846" y="44" text-anchor="end"><tspan class="ev-day">DÍA 16</tspan></text>
+          <text x="846" y="62" text-anchor="end" class="ev">cosecha</text>
+        </g>
+
+        <!-- stage bands -->
+        <rect class="band-incub" x="40" y="150" width="350" height="44"/>
+        <text class="band-label-incub" x="215" y="177" text-anchor="middle">INCUBADORA</text>
+        <rect class="band-engorde" x="390" y="150" width="350" height="44"/>
+        <text class="band-label-engorde" x="565" y="177" text-anchor="middle">BANDEJA DE ENGORDE</text>
+        <rect class="band-ayuno" x="740" y="150" width="100" height="44"/>
+        <text class="band-label-ayuno" x="790" y="177" text-anchor="middle">AYUNO</text>
+
+        <!-- axis -->
+        <line class="axis" x1="40" y1="194" x2="840" y2="194"/>
+        <g>
+          <line class="tick" x1="40" y1="194" x2="40" y2="201"/><text class="day" x="40" y="216" text-anchor="middle">0</text>
+          <line class="tick" x1="90" y1="194" x2="90" y2="201"/><text class="day" x="90" y="216" text-anchor="middle">1</text>
+          <line class="tick" x1="140" y1="194" x2="140" y2="201"/><text class="day" x="140" y="216" text-anchor="middle">2</text>
+          <line class="tick" x1="190" y1="194" x2="190" y2="201"/><text class="day" x="190" y="216" text-anchor="middle">3</text>
+          <line class="tick" x1="240" y1="194" x2="240" y2="201"/><text class="day" x="240" y="216" text-anchor="middle">4</text>
+          <line class="tick" x1="290" y1="194" x2="290" y2="201"/><text class="day" x="290" y="216" text-anchor="middle">5</text>
+          <line class="tick" x1="340" y1="194" x2="340" y2="201"/><text class="day" x="340" y="216" text-anchor="middle">6</text>
+          <line class="tick" x1="390" y1="194" x2="390" y2="201"/><text class="day" x="390" y="216" text-anchor="middle">7</text>
+          <line class="tick" x1="440" y1="194" x2="440" y2="201"/><text class="day" x="440" y="216" text-anchor="middle">8</text>
+          <line class="tick" x1="490" y1="194" x2="490" y2="201"/><text class="day" x="490" y="216" text-anchor="middle">9</text>
+          <line class="tick" x1="540" y1="194" x2="540" y2="201"/><text class="day" x="540" y="216" text-anchor="middle">10</text>
+          <line class="tick" x1="590" y1="194" x2="590" y2="201"/><text class="day" x="590" y="216" text-anchor="middle">11</text>
+          <line class="tick" x1="640" y1="194" x2="640" y2="201"/><text class="day" x="640" y="216" text-anchor="middle">12</text>
+          <line class="tick" x1="690" y1="194" x2="690" y2="201"/><text class="day" x="690" y="216" text-anchor="middle">13</text>
+          <line class="tick" x1="740" y1="194" x2="740" y2="201"/><text class="day" x="740" y="216" text-anchor="middle">14</text>
+          <line class="tick" x1="790" y1="194" x2="790" y2="201"/><text class="day" x="790" y="216" text-anchor="middle">15</text>
+          <line class="tick" x1="840" y1="194" x2="840" y2="201"/><text class="day" x="840" y="216" text-anchor="middle">16</text>
+        </g>
+
+        <!-- below the axis -->
+        <path class="bracket" d="M590 232 v8 h100 v-8"/>
+        <text class="note" x="640" y="258" text-anchor="middle">días 11–12: cama</text>
+        <text class="note" x="640" y="274" text-anchor="middle">no más de 36 °C</text>
+
+        <text class="note" x="215" y="244" text-anchor="middle">27–30 °C · mojar las paredes</text>
+        <text class="note" x="215" y="260" text-anchor="middle">solo si el starter se seca</text>
+
+        <text class="harvest" x="846" y="244" text-anchor="end">≈ 98 % al horno</text>
+        <text class="harvest" x="846" y="262" text-anchor="end">≈ 2 % al laboratorio</text>
+        <text class="note" x="846" y="280" text-anchor="end">(se pesa aparte)</text>
+
+        <text class="note" x="40" y="314">Una recolecta = una incubadora. El día 7 esa incubadora se reparte en varias bandejas de ≈ 25.000 larvas.</text>
+      </svg>
+    </div>
+    <div class="totals">
+      <span>Ensilaje por bandeja: <b>1,5 + 2 + 2 = 5,5 kg</b></span>
+      <span>Tiempo en la bandeja: <b>día 7 → día 16</b></span>
+      <span>Código de ejemplo: <b>F7AR9</b> = generación F7 · insectario A · recolecta 9</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>El alimento <span class="tag">de la entrada al comedero</span></h2>
+    <div class="flow">
+      <div class="step"><strong>Recepción</strong><span>Qué material llegó, cuántos kg y qué día.</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><strong>Ensilaje</strong><span>Cada tanda: con qué se armó y cuándo pasa de un paso al otro.</span><span class="states">armado → sellado → listo → en uso → agotado</span><span>Se anotan lecturas de temperatura. La app avisa cuándo toca que esté listo.</span></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><strong>Cargas</strong><span>Alimentar es un solo toque. Cada carga descuenta sus kg del ensilaje que está en uso.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Lo que ya está anotado</h2>
+    <div class="safe">
+      <p>Lo registrado antes queda guardado tal cual, marcado como protocolo anterior, y nunca se mezcla con los números nuevos.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Qué va a hacer la app</h2>
+    <ul class="plain">
+      <li>Al guardar una recolecta arma su incubadora con el código (por ejemplo F7AR9) y pide confirmar que se cambió el atrayente.</li>
+      <li>Cuenta los días de cada incubadora y cada bandeja y dice qué toca hoy, qué está atrasado y qué viene.</li>
+      <li>Alimentar no pide tipo ni cantidad: se marcan las bandejas y se confirma. Los kg salen del plan (1,5 · 2 · 2).</li>
+      <li>En la cosecha pide dos pesos: lo que va al horno y lo que va al laboratorio.</li>
+      <li>Lotes, control de calidad, empaque y despacho siguen igual que ahora.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Preguntas pendientes <span class="tag">marque una opción</span></h2>
+    <ol class="questions">
+      <li>
+        <span class="qn">1</span>
+        <span class="q">¿El día 0 es el día de la recolecta (cuando se arma la incubadora) o el día en que nacen las larvas?</span>
+        <span class="prop">Mientras tanto: <b>el día 0 es el día de la recolecta</b>, y se puede corregir en cada incubadora.</span>
+        <span class="mark"><span><span class="box"></span>De acuerdo</span><span>Otra:<span class="line"></span></span></span>
+      </li>
+      <li>
+        <span class="qn">2</span>
+        <span class="q">¿Cómo se llaman las bandejas que salen de una incubadora?</span>
+        <span class="prop">Mientras tanto: <b>F7AR9-01, F7AR9-02…</b> (provisional).</span>
+        <span class="mark"><span><span class="box"></span>De acuerdo</span><span>Otra:<span class="line"></span></span></span>
+      </li>
+      <li>
+        <span class="qn">3</span>
+        <span class="q">El número de recolecta (el «9» de F7AR9): ¿vuelve a 1 con cada generación nueva de moscas?</span>
+        <span class="prop">Mientras tanto: <b>sigue contando</b> en cada insectario.</span>
+        <span class="mark"><span><span class="box"></span>De acuerdo</span><span><span class="box"></span>Vuelve a 1</span></span>
+      </li>
+      <li>
+        <span class="qn">4</span>
+        <span class="q">Letra de cada insectario: ICA = A, ICB = B, ICC = C. ¿Y JN3A?</span>
+        <span class="prop">Mientras tanto: <b>J</b>.</span>
+        <span class="mark"><span><span class="box"></span>De acuerdo</span><span>Otra:<span class="line"></span></span></span>
+      </li>
+      <li>
+        <span class="qn">5</span>
+        <span class="q">Peso de ovipositores: ¿un solo peso por insectario en cada recolecta?</span>
+        <span class="prop">Mientras tanto: <b>sí, uno por insectario</b>.</span>
+        <span class="mark"><span><span class="box"></span>De acuerdo</span><span><span class="box"></span>También por ovipositor</span></span>
+      </li>
+      <li>
+        <span class="qn">6</span>
+        <span class="q">Las ≈ 25.000 larvas por bandeja: ¿se cuentan o se calculan (por peso o por muestra)?</span>
+        <span class="prop">Mientras tanto: <b>la app propone 25.000</b> y se puede corregir en cada bandeja.</span>
+        <span class="mark"><span><span class="box"></span>Se calculan</span><span><span class="box"></span>Se cuentan</span><span>Cómo:<span class="line"></span></span></span>
+      </li>
+      <li>
+        <span class="qn">7</span>
+        <span class="q">Ayuno (días 14 y 15): ¿se siguen pesando las bandejas al empezar y al terminar?</span>
+        <span class="prop">Mientras tanto: <b>pesar es opcional</b>; basta con marcar que empezó. La cosecha lo cierra.</span>
+        <span class="mark"><span><span class="box"></span>No se pesa</span><span><span class="box"></span>Se pesa al empezar y al terminar</span></span>
+      </li>
+      <li>
+        <span class="qn">8</span>
+        <span class="q">¿Cuántos días después de sellado está listo el ensilaje para usar?</span>
+        <span class="prop">Mientras tanto: <b>queda por definir</b>; se cambia en la configuración sin tocar la app.</span>
+        <span class="mark"><span>Días:<span class="line" style="min-width:90px"></span></span></span>
+      </li>
+      <li>
+        <span class="qn">9</span>
+        <span class="q">¿Anotamos de qué entrega de material salió cada ensilaje?</span>
+        <span class="prop">Mientras tanto: <b>solo material y kg</b>; indicar la entrega es opcional.</span>
+        <span class="mark"><span><span class="box"></span>De acuerdo</span><span><span class="box"></span>Siempre indicar la entrega</span></span>
+      </li>
+      <li>
+        <span class="qn">10</span>
+        <span class="q">En la recepción de material, ¿anotamos quién lo trajo (proveedor u origen)?</span>
+        <span class="prop">Mientras tanto: <b>sí, como dato opcional</b>.</span>
+        <span class="mark"><span><span class="box"></span>De acuerdo</span><span><span class="box"></span>No hace falta</span></span>
+      </li>
+      <li>
+        <span class="qn">11</span>
+        <span class="q">El botón «Atractante» del insectario (fecha en que se pusieron los ovipositores): ¿se sigue usando, o lo reemplaza el «atrayente cambiado» de cada recolecta?</span>
+        <span class="prop">Mientras tanto: <b>se mantienen los dos</b>.</span>
+        <span class="mark"><span><span class="box"></span>Mantener</span><span><span class="box"></span>Quitar el botón</span></span>
+      </li>
+      <li>
+        <span class="qn">12</span>
+        <span class="q">Temperatura de la cama los días 11 y 12: ¿se anota la medición?</span>
+        <span class="prop">Mientras tanto: <b>sí</b>, en la bandeja, y la app avisa si pasa de 36 °C.</span>
+        <span class="mark"><span><span class="box"></span>De acuerdo</span><span><span class="box"></span>No se anota</span></span>
+      </li>
+      <li>
+        <span class="qn">13</span>
+        <span class="q">El 2 % que va al laboratorio: ¿a qué insectario o generación va?</span>
+        <span class="prop">Mientras tanto: <b>solo se anota el peso</b>.</span>
+        <span class="mark"><span><span class="box"></span>De acuerdo</span><span>Va a:<span class="line"></span></span></span>
+      </li>
+      <li>
+        <span class="qn">14</span>
+        <span class="q">¿Desde qué fecha rige el protocolo nuevo? Las bandejas que ya van a mitad de ciclo terminan con el anterior.</span>
+        <span class="prop">Mientras tanto: <b>desde el día en que se instale la actualización</b>.</span>
+        <span class="mark"><span><span class="box"></span>De acuerdo</span><span>Fecha:<span class="line" style="min-width:120px"></span></span></span>
+      </li>
+    </ol>
+  </section>
+
+  <footer>Preparado a partir del documento «Régimen de alimentación optimizado (ciclo de 16 días)». Todo lo que dice «mientras tanto» se puede cambiar después sin perder datos.</footer>
+</div>

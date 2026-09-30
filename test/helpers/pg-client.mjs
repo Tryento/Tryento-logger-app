@@ -18,9 +18,12 @@ const ident = s => {
   return s;
 };
 
-/** A JS value as the text form Postgres can cast to the parameter's type. */
-function asText(v) {
+/** A JS value as the text form Postgres can cast to the parameter's type.
+ *  PostgREST sends JSON: a json/jsonb parameter gets JSON even for an array;
+ *  only a real array type (uuid[]) gets an array literal. */
+function asText(v, type = '') {
   if (v === null || v === undefined) return null;
+  if (/^jsonb?$/.test(type)) return JSON.stringify(v);
   if (Array.isArray(v)) {
     return '{' + v.map(x => x === null ? 'NULL' : `"${String(x).replace(/["\\]/g, m => '\\' + m)}"`).join(',') + '}';
   }
@@ -38,6 +41,39 @@ export function pgClient(db, { schema = 'app' } = {}) {
 
     from(table) {
       return {
+        /**
+         * select('*') with eq / gt / in / order / limit, awaited like
+         * supabase-js. Rows come back as `to_jsonb`, i.e. with timestamps in
+         * the same text form PostgREST sends (microseconds and an offset) —
+         * that exact form is what the pull pages on.
+         */
+        select() {
+          const where = [], params = [], order = [];
+          let limit = null;
+          const run = async () => {
+            calls.push({ kind: 'select', table, where: [...where] });
+            try {
+              const sql = `select to_jsonb(t) as j from ${ident(schema)}.${ident(table)} t`
+                + (where.length ? ` where ${where.join(' and ')}` : '')
+                + (order.length ? ` order by ${order.join(', ')}` : '')
+                + (limit !== null ? ` limit ${Number(limit)}` : '');
+              const res = await db.query(sql, params);
+              return { data: res.rows.map(r => r.j), error: null };
+            } catch (e) {
+              return { data: null, error: pgErr(e) };
+            }
+          };
+          const b = {
+            eq(c, v) { params.push(v); where.push(`t.${ident(c)} = $${params.length}`); return b; },
+            gt(c, v) { params.push(v); where.push(`t.${ident(c)} > $${params.length}`); return b; },
+            in(c, vs) { params.push(vs.map(String)); where.push(`t.${ident(c)}::text = any($${params.length}::text[])`); return b; },
+            order(c, { ascending = true } = {}) { order.push(`t.${ident(c)} ${ascending ? 'asc' : 'desc'}`); return b; },
+            limit(n) { limit = n; return b; },
+            then(ok, ko) { return run().then(ok, ko); }
+          };
+          return b;
+        },
+
         // push.js always sends ignoreDuplicates: true, so only `do nothing` is modelled.
         async upsert(row, { onConflict = 'id' } = {}) {
           calls.push({ kind: 'upsert', table, row });
@@ -86,7 +122,7 @@ export function pgClient(db, { schema = 'app' } = {}) {
       try {
         const res = await db.query(
           `select ${ident(schema)}.${ident(name)}(${named.join(', ')}) as r`,
-          keys.map(k => asText(args[k])));
+          keys.map(k => asText(args[k], typeOf(k))));
         return { data: res.rows[0]?.r ?? null, error: null };
       } catch (e) {
         return { data: null, error: pgErr(e) };

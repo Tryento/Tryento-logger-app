@@ -16,7 +16,7 @@
 import { getClient, toError, canSync } from '../supabase.js';
 import {
   claimBatch, markInflight, markDone, markRetry, markConflict,
-  classifyError, STATUS
+  classifyError, rowsOf, STATUS
 } from '../outbox.js';
 import { recordConflict } from '../conflicts.js';
 import { currentUserId, isTokenExpired } from '../session.js';
@@ -43,15 +43,21 @@ import { uploadBlobsFor } from './blobs.js';
  *    every other device's cursor — and nobody would ever pull them. Letting the
  *    server default them makes a late arrival land ahead of every cursor.
  *    `created_at` is kept: it is genuinely "when the operator entered this".
+ *
+ *  - `protocolo`, which the SERVER decides: new columns default to v1, and an
+ *    event takes its tray's protocol by trigger (0007). Never sending it keeps
+ *    the old flows working even before 0007 is applied, and means an old
+ *    cached build cannot label v2 work as v1.
  */
 const STRIP_ALWAYS = new Set([
   '_abierto', '_resuelto',
   'estado', 'merma_pct', 'rendimiento_pct', 'poblacion_estimada',
   'desviacion_cierre_dias', 'desviacion_ovipositores_dias',
   'n_bandejas', 'despachado', 'empacado', 'last_evento', 'separacion',
-  'lote_id', 'insectario_nombre', 'insectario_codigo',
+  'insectario_nombre', 'insectario_codigo',
   'tiene_ayuno_abierto', 'ayuno_abierto_id',
   'kg_alimento_total', 'n_alimentaciones', 'abierto',
+  'protocolo',
   'updated_at', 'synced_at'
 ]);
 
@@ -68,7 +74,10 @@ const STRIP_ALWAYS = new Set([
  * the entire sync chain below the first table.
  */
 const STRIP_PER_TABLE = {
-  bandeja: new Set(['insectario_id', 'recolecta'])
+  // `lote_id` used to be in STRIP_ALWAYS, but it is a real column of
+  // lote_separacion — the same trap as insectario_id above, just not sprung yet.
+  bandeja: new Set(['insectario_id', 'recolecta', 'lote_id', 'incubadora_codigo',
+                    'dia_ciclo', 'siguiente_paso', 'cargas_dadas', 'n_cargas'])
 };
 
 export function toWire(table, row) {
@@ -151,7 +160,7 @@ export async function pushOnce(db, { limit = PUSH_BATCH_SIZE } = {}) {
 
     const waitingOnFailure =
       (item.depends_on || []).some(d => failedRows.has(d)) ||
-      (item.row_id && failedRows.has(item.row_id));
+      rowsOf(item).some(r => failedRows.has(r));
     if (waitingOnFailure) { result.skipped++; continue; }
 
     await markInflight(db, item.id);
@@ -174,8 +183,8 @@ export async function pushOnce(db, { limit = PUSH_BATCH_SIZE } = {}) {
         await recordConflict(db, item, err, reason);
         result.conflicts++;
       }
-      // Either way this row did not land, so hold back anything behind it.
-      if (item.row_id) failedRows.add(item.row_id);
+      // Either way these rows did not land, so hold back anything behind them.
+      for (const r of rowsOf(item)) failedRows.add(r);
       // Loop continues either way. This is the line that stops one poison item
       // from silently stalling every write behind it.
     }

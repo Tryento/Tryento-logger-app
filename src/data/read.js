@@ -12,9 +12,18 @@
 import { ok, fail, CODES, deepCopy, str } from './envelope.js';
 import { openDb } from './idb/open.js';
 import { metaGet } from './idb/tx.js';
+import { ayunoAbierto } from './idb/schema.js';
 import { allRows, rowById, rowsByIndex } from './store.js';
 import { allCache, getCache } from './cache.js';
-import { daysBetween } from './time.js';
+import { daysBetween, farmDay } from './time.js';
+import {
+  mergeProtocolo, v2Vigente, diaCiclo, siguientePaso, pasoIncubadora, pasoLabel, cuandoLabel
+} from './protocolo.js';
+
+/** The protocol settings this device has, over the built-in defaults. */
+export async function loadProtocolo(db) {
+  return mergeProtocolo(await allRows(db, 'parametro'));
+}
 
 const round1 = v => (v === null || v === undefined ? null : Math.round(v * 10) / 10);
 
@@ -79,24 +88,59 @@ function decorateLote(row, nBandejas = 0) {
 function decorateAyuno(row) {
   return Object.assign(deepCopy(row), {
     merma_pct: mermaPct(row.peso_inicial_kg, row.peso_final_kg),
-    abierto: row.peso_final_kg === null || row.peso_final_kg === undefined
+    abierto: ayunoAbierto(row)
   });
 }
 
 /* ── joins ──────────────────────────────────────────────────────────────── */
 
 async function buildIndex(db) {
-  const [insectarios, recolecciones, links, lotes] = await Promise.all([
+  const [insectarios, recolecciones, links, lotes, incubadoras, parametros] = await Promise.all([
     allRows(db, 'insectario'),
     allRows(db, 'recoleccion'),
     allRows(db, 'lote_separacion'),
-    allRows(db, 'lote')
+    allRows(db, 'lote'),
+    allRows(db, 'incubadora'),
+    allRows(db, 'parametro')
   ]);
   return {
     insectarioById: new Map(insectarios.map(r => [r.id, r])),
     recoleccionById: new Map(recolecciones.map(r => [r.id, r])),
     loteBySeparacion: new Map(links.map(l => [l.separacion_id, l.lote_id])),
-    loteById: new Map(lotes.map(c => [c.id, c]))
+    loteById: new Map(lotes.map(c => [c.id, c])),
+    incubadoraById: new Map(incubadoras.map(i => [i.id, i])),
+    incubadoraByRecoleccion: new Map(incubadoras.map(i => [i.recoleccion_id, i])),
+    cfg: mergeProtocolo(parametros),
+    hoy: farmDay()
+  };
+}
+
+/**
+ * Where a v2 tray is in its cycle. Explicit records only — the loads it got,
+ * whether it fasted, whether it was harvested — never inferred from blanks.
+ */
+function cicloBandeja(row, c, idx) {
+  const protocolo = row.protocolo || 'v1';
+  const inc = row.incubadora_id ? idx.incubadoraById.get(row.incubadora_id) || null : null;
+  if (protocolo !== 'v2' || !inc) {
+    return { protocolo, incubadora_codigo: inc ? inc.codigo : null, dia_ciclo: null,
+             cargas_dadas: [], n_cargas: 0, siguiente_paso: null };
+  }
+  const estado = c?.estado ?? row.estado;
+  const tray = {
+    dia_ciclo: diaCiclo(inc.fecha_inicio, idx.hoy),
+    cargas_dadas: c?.cargas_dadas || [],
+    tiene_ayuno: Boolean(c?.tiene_ayuno) || estado === 'en_ayuno',
+    cosechada: estado === 'cosechada'
+  };
+  const paso = siguientePaso(tray, idx.cfg);
+  return {
+    protocolo,
+    incubadora_codigo: inc.codigo,
+    dia_ciclo: tray.dia_ciclo,
+    cargas_dadas: tray.cargas_dadas,
+    n_cargas: tray.cargas_dadas.length,
+    siguiente_paso: paso ? { ...paso, label: pasoLabel(paso), cuando: cuandoLabel(paso) } : null
   };
 }
 
@@ -118,7 +162,8 @@ function joinBandeja(row, idx, cache) {
     ayuno_abierto_id: c?.ayuno_abierto_id ?? null,
     kg_alimento_total: c?.kg_alimento_total ?? 0,
     n_alimentaciones: c?.n_alimentaciones ?? 0,
-    last_evento: c?.last_evento_tipo ? { tipo: c.last_evento_tipo, fecha: c.last_evento_fecha } : null
+    last_evento: c?.last_evento_tipo ? { tipo: c.last_evento_tipo, fecha: c.last_evento_fecha } : null,
+    ...cicloBandeja(row, c, idx)
   });
 }
 
@@ -138,9 +183,15 @@ export async function getInsectarioDetail(id) {
   const db = await openDb();
   const row = await rowById(db, 'insectario', id);
   if (!row || row.deleted_at) return fail(CODES.NOT_FOUND, 'Insectario no encontrado.');
+  const incs = new Map((await allRows(db, 'incubadora')).map(i => [i.recoleccion_id, i]));
   const recolecciones = (await rowsByIndex(db, 'recoleccion', 'by_insectario', id))
-    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-  return ok({ insectario: decorateInsectario(row), recolecciones: deepCopy(recolecciones) });
+    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+    .map(r => Object.assign(deepCopy(r), {
+      protocolo: r.protocolo || 'v1',
+      incubadora_id: incs.get(r.id)?.id ?? null,
+      incubadora_codigo: incs.get(r.id)?.codigo ?? null
+    }));
+  return ok({ insectario: decorateInsectario(row), recolecciones });
 }
 
 export async function listRecolecciones(filters = {}) {
@@ -148,14 +199,72 @@ export async function listRecolecciones(filters = {}) {
   const idx = await buildIndex(db);
   let rows = await allRows(db, 'recoleccion');
   if (filters.insectario_id) rows = rows.filter(r => r.insectario_id === filters.insectario_id);
+  if (filters.protocolo) rows = rows.filter(r => (r.protocolo || 'v1') === filters.protocolo);
   rows.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
   return ok(rows.map(r => {
     const ins = idx.insectarioById.get(r.insectario_id);
+    const inc = idx.incubadoraByRecoleccion.get(r.id);
     return Object.assign(deepCopy(r), {
+      protocolo: r.protocolo || 'v1',
       insectario_nombre: ins ? ins.nombre_insectario : null,
-      insectario_codigo: ins ? ins.codigo : null
+      insectario_codigo: ins ? ins.codigo : null,
+      incubadora_id: inc ? inc.id : null,
+      incubadora_codigo: inc ? inc.codigo : null
     });
   }));
+}
+
+/* ── protocolo v2 ───────────────────────────────────────────────────────── */
+
+/** Settings plus today's farm day, for the screens that show the plan. */
+export async function getProtocolo() {
+  const db = await openDb();
+  const cfg = await loadProtocolo(db);
+  const hoy = farmDay();
+  return ok({ ...cfg, hoy, v2_vigente: v2Vigente(cfg, hoy) });
+}
+
+function decorateIncubadora(inc, idx, nBandejas = 0) {
+  const rec = idx.recoleccionById.get(inc.recoleccion_id) || null;
+  const ins = rec ? idx.insectarioById.get(rec.insectario_id) || null : null;
+  const paso = pasoIncubadora(inc, idx.cfg, idx.hoy);
+  return Object.assign(deepCopy(inc), {
+    estado: inc.distribuida_at ? 'distribuida' : 'incubando',
+    dia_ciclo: diaCiclo(inc.fecha_inicio, idx.hoy),
+    recolecta: rec ? rec.recolecta : null,
+    recoleccion_fecha: rec ? rec.fecha : null,
+    peso_ovipositores_g: rec ? rec.peso_ovipositores_g ?? null : null,
+    insectario_id: ins ? ins.id : null,
+    insectario_codigo: ins ? ins.codigo : null,
+    insectario_nombre: ins ? ins.nombre_insectario : null,
+    n_bandejas: nBandejas,
+    siguiente_paso: paso ? { ...paso, label: pasoLabel(paso), cuando: cuandoLabel(paso) } : null
+  });
+}
+
+export async function listIncubadoras(filters = {}) {
+  const db = await openDb();
+  const idx = await buildIndex(db);
+  const trays = await allRows(db, 'bandeja');
+  const counts = new Map();
+  for (const t of trays) if (t.incubadora_id) counts.set(t.incubadora_id, (counts.get(t.incubadora_id) || 0) + 1);
+
+  let rows = [...idx.incubadoraById.values()].map(i => decorateIncubadora(i, idx, counts.get(i.id) || 0));
+  if (filters.estado) rows = rows.filter(r => r.estado === filters.estado);
+  rows.sort((a, b) => String(b.fecha_inicio).localeCompare(String(a.fecha_inicio)) ||
+                      String(a.codigo).localeCompare(String(b.codigo)));
+  return ok(rows);
+}
+
+export async function getIncubadoraDetail(id) {
+  const db = await openDb();
+  const row = await rowById(db, 'incubadora', id);
+  if (!row || row.deleted_at) return fail(CODES.NOT_FOUND, 'Incubadora no encontrada.');
+  const [idx, cache] = await Promise.all([buildIndex(db), allCache(db)]);
+  const bandejas = (await rowsByIndex(db, 'bandeja', 'by_incubadora', id))
+    .map(b => joinBandeja(b, idx, cache.get(b.id)))
+    .sort((a, b) => (a.no_bandeja ?? 0) - (b.no_bandeja ?? 0));
+  return ok({ incubadora: decorateIncubadora(row, idx, bandejas.length), bandejas });
 }
 
 export async function listBandejas(filters = {}) {
@@ -231,7 +340,7 @@ export async function listSeparacionesDisponibles() {
   const rows = seps
     .filter(s => !pooled.has(s.id))
     .map(s => Object.assign(deepCopy(s), {
-      bandeja_label: trayById.get(s.bandeja_id)?.id_bandeja || s.bandeja_id
+      bandeja_label: trayById.get(s.bandeja_id)?.id_bandeja || '(bandeja sin sincronizar)'
     }))
     .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
 
@@ -355,19 +464,35 @@ export async function listAyunosAbiertos() {
   const [ayunos, trays] = await Promise.all([allRows(db, 'ayuno'), allRows(db, 'bandeja')]);
   const trayById = new Map(trays.map(t => [t.id, t]));
   const rows = ayunos
-    .filter(a => a.peso_final_kg === null || a.peso_final_kg === undefined)
+    .filter(ayunoAbierto)
     .map(a => Object.assign(decorateAyuno(a), {
-      bandeja_label: trayById.get(a.bandeja_id)?.id_bandeja || a.bandeja_id
+      bandeja_label: trayById.get(a.bandeja_id)?.id_bandeja || '(bandeja sin sincronizar)',
+      protocolo: trayById.get(a.bandeja_id)?.protocolo || 'v1'
     }))
     .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
   return ok(rows);
 }
 
-/** Catalogue values, replacing the frozen module-level arrays. */
+/**
+ * Catalogue values, replacing the frozen module-level arrays.
+ *
+ * Each value once. A phone seeds the lists before its first sync so the
+ * pickers work offline; the server's copies of the same values arrive later
+ * with different ids. Without this every option showed twice, and both copies
+ * lit up together because they share one form value.
+ */
 export async function listCatalogo(tipo) {
   const db = await openDb();
   const rows = (await rowsByIndex(db, 'catalogo', 'by_tipo', tipo))
     .filter(c => c.activo !== false)
+    // Server rows first, so they win the de-duplication below.
+    .sort((a, b) => Number(Boolean(a._seeded)) - Number(Boolean(b._seeded)));
+  const byValue = new Map();
+  for (const c of rows) {
+    const k = String(c.valor ?? '').trim().toLowerCase();
+    if (k && !byValue.has(k)) byValue.set(k, c);
+  }
+  const unique = [...byValue.values()]
     .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(a.valor).localeCompare(String(b.valor)));
-  return ok(rows.map(c => c.valor));
+  return ok(unique.map(c => c.valor));
 }

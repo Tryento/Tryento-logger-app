@@ -53,14 +53,30 @@ async function nextSeq(stores) {
 }
 
 /**
+ * Every row an item stands for.
+ *
+ * One call to the server can create several rows — a distribución creates a
+ * bandeja per tray plus its first feeding — and anything queued against ANY of
+ * them must wait for that call. With only `row_id`, a feeding queued against a
+ * brand-new tray did not see the tray as pending, went out first, and was
+ * rejected by the foreign key: a permanent conflict for a perfectly good row.
+ */
+export const rowsOf = item =>
+  item?.row_ids?.length ? item.row_ids : (item?.row_id ? [item.row_id] : []);
+
+/**
  * Enqueue one operation. MUST be called inside the same transaction as the
  * local row write — see the note in tx.js on why the two cannot be split.
  *
  * @param stores  the object-store map from withTx (needs `outbox` and `meta`)
+ * @param rowIds  other rows this operation creates (see rowsOf)
+ * @param undo    how to take the local effect back if the operator discards it
+ *                (filled in by commitWrite)
  */
 export async function enqueue(stores, {
-  op, table = null, rpc = null, rowId = null, payload,
-  dependsOn = [], blobIds = [], createdBy = null, dispositivoId = null, createdAt
+  op, table = null, rpc = null, rowId = null, rowIds = [], payload,
+  dependsOn = [], blobIds = [], createdBy = null, dispositivoId = null, createdAt,
+  undo = null
 }) {
   if (!['upsert', 'rpc', 'cas'].includes(op)) throw new Error(`outbox: op inválido "${op}"`);
 
@@ -71,6 +87,8 @@ export async function enqueue(stores, {
     table,
     rpc,
     row_id: rowId,
+    row_ids: [...new Set([rowId, ...rowIds].filter(Boolean))],
+    undo,
     payload,
     depends_on: dependsOn.filter(Boolean),
     blob_ids: blobIds.filter(Boolean),
@@ -162,14 +180,23 @@ export async function claimBatch(db, { limit = 50, now = Date.now() } = {}) {
     .filter(it => it.status === STATUS.PENDING && (it.next_attempt_at || 0) <= now)
     .sort((a, b) => a.seq - b.seq);
 
-  // Rows that still owe the server something, and rows that will never land.
-  const owing = new Set();
-  const stuckByRow = new Map();
+  // Rows that still owe the server something, and rows that will never land —
+  // remembered with WHICH items owe them. A parent is always queued before its
+  // children, so an item only waits on items queued EARLIER. Without that
+  // rule an item that both creates a row and lists it as a dependency (the
+  // distribución creates bandejas and depends on its incubadora, which is also
+  // its own row) would wait on itself forever.
+  const owing = new Map();        // row -> seqs of open items that owe it
+  const stuckByRow = new Map();   // row -> stuck items that owe it
+  const add = (map, k, v) => { if (!map.has(k)) map.set(k, []); map.get(k).push(v); };
   for (const it of all) {
-    if (!it.row_id) continue;
-    if (OPEN_STATUSES.includes(it.status)) owing.add(it.row_id);
-    if (STUCK_STATUSES.includes(it.status)) stuckByRow.set(it.row_id, it);
+    for (const r of rowsOf(it)) {
+      if (OPEN_STATUSES.includes(it.status)) add(owing, r, it.seq);
+      if (STUCK_STATUSES.includes(it.status)) add(stuckByRow, r, it);
+    }
   }
+  const owedBefore = (row, seq) => (owing.get(row) || []).some(s => s < seq);
+  const stuckBefore = (row, seq) => (stuckByRow.get(row) || []).find(it => it.seq < seq) || null;
 
   const ready = [];
   const blocked = [];
@@ -191,28 +218,30 @@ export async function claimBatch(db, { limit = 50, now = Date.now() } = {}) {
     // the row they update was held back waiting for its parent, the CAS ran
     // first, updated zero rows, reported success, and the weight was lost with
     // nothing queued, nothing stuck and nothing to see.
-    if (item.row_id && held.has(item.row_id)) skip = true;
+    const mine = rowsOf(item);
+    if (mine.some(r => held.has(r))) skip = true;
 
     // ── declared dependencies ───────────────────────────────────────────────
     if (!skip) {
       for (const dep of item.depends_on || []) {
         if (satisfied.has(dep)) continue;              // goes out earlier in this batch
-        if (stuckByRow.has(dep)) {                     // will never land
-          blocked.push({ item, parent: stuckByRow.get(dep) });
+        const parent = stuckBefore(dep, item.seq);
+        if (parent) {                                  // will never land
+          blocked.push({ item, parent });
           skip = true;
           break;
         }
-        if (owing.has(dep)) { skip = true; break; }    // still queued: try next pass
+        if (owedBefore(dep, item.seq)) { skip = true; break; }  // still queued: try next pass
       }
     }
 
     if (skip) {
-      if (item.row_id) held.add(item.row_id);
+      for (const r of mine) held.add(r);
       continue;
     }
 
     ready.push(item);
-    if (item.row_id) satisfied.add(item.row_id);
+    for (const r of mine) satisfied.add(r);
     if (ready.length >= limit) break;
   }
 

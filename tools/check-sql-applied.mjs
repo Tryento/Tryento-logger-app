@@ -66,7 +66,18 @@ const checks = [
   // Called the way phones on older builds call them: without p_por.
   ['0006', 'marcar_despachado(p_id) sin ambigüedad',     () => rpcUnambiguous('marcar_despachado', { p_id: NOBODY })],
   ['0006', 'marcar_empacado(p_id, p_vencimiento)',       () => rpcUnambiguous('marcar_empacado', { p_id: NOBODY, p_vencimiento: null })],
-  ['0006', 'marcar_atractante(p_id, p_fecha)',           () => rpcUnambiguous('marcar_atractante', { p_id: NOBODY, p_fecha: '2000-01-01' })]
+  ['0006', 'marcar_atractante(p_id, p_fecha)',           () => rpcUnambiguous('marcar_atractante', { p_id: NOBODY, p_fecha: '2000-01-01' })],
+  // Protocolo v2. The two new functions reject empty input before writing
+  // anything (22023), so calling them empty only proves they exist.
+  ['0007', 'columna bandeja.protocolo',                  () => column('bandeja', 'protocolo')],
+  ['0007', 'columna alimentacion.carga',                 () => column('alimentacion', 'carga')],
+  ['0007', 'columna separacion.reserva_cria_g',          () => column('separacion', 'reserva_cria_g')],
+  ['0007', 'tabla incubadora',                           () => table('incubadora')],
+  ['0007', 'tabla parametro',                            () => table('parametro')],
+  ['0007', 'crear_recoleccion_v2(...)',                  () => rpc('crear_recoleccion_v2', { p_recoleccion: {}, p_incubadora: {} })],
+  ['0007', 'distribuir_incubadora(...)',                 () => rpc('distribuir_incubadora', { p_distribucion: {}, p_bandejas: [], p_cargas: [] })],
+  ['0007', 'cerrar_ayuno(p_id, p_peso, p_at, p_por)',    () => rpcUnambiguous('cerrar_ayuno', { p_id: NOBODY, p_peso: null, p_at: null, p_por: null })],
+  ['0007', 'cerrar_ayuno sin p_por (teléfonos viejos)',  () => rpcUnambiguous('cerrar_ayuno', { p_id: NOBODY, p_peso: null, p_at: null })]
 ];
 
 let bad = 0;

@@ -24,22 +24,33 @@ About 20 minutes. Two services, both free tier:
 > sólo los que salgan como `FALTA`. Copia el CONTENIDO del archivo, no su nombre.
 >
 > 1. **`0004_atribucion_acciones.sql`** — quién hizo cada acción de un toque.
->    (Ya está aplicado en la base de producción.)
+>    (Aplicado en producción.)
 > 2. **`0005_renombrar_lote.sql`** — `cochada` vuelve a llamarse `lote`, como en
 >    AppSheet. Renombra en el lugar: no borra ni copia datos. Recrea las
->    funciones y vistas él mismo.
+>    funciones y vistas él mismo. (Aplicado en producción.)
 > 3. **`0006_sobrecargas.sql`** — quita funciones duplicadas que dejó 0004.
+>    (Aplicado en producción.)
+> 4. **`0007_protocolo_v2.sql`** — el protocolo nuevo de 16 días: incubadora,
+>    distribución en bandejas, cargas fijas, ayuno de un toque, 2 % al
+>    laboratorio, y la tabla `parametro` con los días y kilos del plan. No
+>    convierte ni borra datos viejos: todo lo existente queda marcado `v1`.
 >
 > Después vuelve a correr `npm run check:sql-applied`: todo debe decir `ok`.
 > Recién entonces haz push.
 >
 > **El orden importa.** La app llama a las funciones de la base por su nombre.
-> Si haces push antes del SQL, crear lotes, QC, empacado, despacho y rechazo
-> fallan y quedan en *Conflictos* hasta correr el SQL.
+> Si haces push antes del SQL, lo nuevo (recolecta con incubadora, distribución,
+> cierre de ayuno con quién lo hizo) falla y queda en *Conflictos* hasta correr
+> el SQL. Lo que ya existía sigue funcionando.
 >
 > **Nunca pegues `SETUP_COMPLETO.sql` en una base que ya tiene datos.** Es sólo
 > para una base nueva y vacía; en una existente falla en la primera línea.
-> `0005` y `0006` se pueden correr dos veces sin daño.
+> `0005`, `0006` y `0007` se pueden correr dos veces sin daño.
+>
+> **Cambiar el plan** (días, kilos por carga, larvas por bandeja, fecha de
+> inicio del protocolo nuevo): Supabase → Table Editor → esquema `app` → tabla
+> `parametro`. Cada fila tiene una descripción. Los teléfonos lo toman en la
+> siguiente sincronización; no hace falta publicar la app.
 
 ## Step 0 — be in the right folder
 
@@ -163,8 +174,12 @@ npm run check:backend
 ```
 
 This writes a real colony, tray, feeding, fast, harvest and oven run to your
-Supabase, checks the triggers fired and the computed values are right, then
-deletes everything it created.
+Supabase (plus the new-protocol recolecta, incubadora and distribution once
+0007 is applied), checks the triggers fired and the computed values are right,
+then marks everything it created as deleted (`deleted_at`). It never
+hard-deletes: phones cannot see a hard delete, and a phone that had synced
+those rows would keep them. To erase old test rows for good, a week later:
+`node tools/cleanup-qa.mjs ZZTEST-… --purge`.
 
 Expected output ends with:
 

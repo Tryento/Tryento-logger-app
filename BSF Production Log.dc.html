@@ -318,6 +318,14 @@ a:hover{color:#4ADE80}
           </div>
         </div>
 
+        <!-- A v2 tray is fed from the plan, not from this form. -->
+        <sc-if value="{{ showV2FeedNotice }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:10px;background:#0E2415;border:1px solid #1E4A2F;border-radius:12px;padding:14px">
+            <div style="font-size:15.5px;font-weight:600;color:#EAF7EC">Esta bandeja es del protocolo nuevo: la comida y los kg ya están en el plan.</div>
+            <button onClick="{{ onV2FeedNotice }}" style="width:100%;min-height:54px;border-radius:11px;border:none;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">{{ v2FeedNoticeLabel }}</button>
+          </div>
+        </sc-if>
+
         <sc-if value="{{ showAlimentoFields }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;flex-direction:column;gap:9px">
             <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">TIPO DE ALIMENTO</div>
@@ -335,8 +343,11 @@ a:hover{color:#4ADE80}
 
         <sc-if value="{{ showAyunoFields }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;flex-direction:column;gap:12px">
+            <sc-if value="{{ showAyunoV2Hint }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size:14.5px;color:#9FB8A6;background:#111A14;border:1px solid #1D2A21;border-radius:11px;padding:12px">Protocolo nuevo: ayuno de los días 14 y 15. Pesar es opcional; la cosecha lo cierra.</div>
+            </sc-if>
             <div style="display:flex;flex-direction:column;gap:9px">
-              <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">PESO INICIAL</div>
+              <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">{{ pesoInicialLabel }}</div>
               <div style="display:flex;align-items:center;gap:10px">
                 <input inputMode="decimal" value="{{ f.peso_inicial_kg }}" onChange="{{ h.peso_inicial_kg }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
                 <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">kg</div>
@@ -369,12 +380,23 @@ a:hover{color:#4ADE80}
 
         <sc-if value="{{ showSeparacionFields }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;flex-direction:column;gap:9px">
-            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">LARVA LIMPIA</div>
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">{{ larvaLabel }}</div>
             <div style="display:flex;align-items:center;gap:10px">
               <input inputMode="decimal" value="{{ f.larva_limpia_g }}" onChange="{{ h.larva_limpia_g }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
               <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">g</div>
             </div>
             <div style="font-size:14px;color:#7FA189">Esta bandeja quedará disponible para un lote.</div>
+            <!-- v2 cosecha: the ≈2 % that goes to the lab, weighed separately. -->
+            <sc-if value="{{ showReservaField }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:9px;padding-top:6px">
+                <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">PARA EL LABORATORIO (MOSCAS)</div>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <input inputMode="decimal" value="{{ f.reserva_cria_g }}" onChange="{{ h.reserva_cria_g }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+                  <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">g</div>
+                </div>
+                <div style="font-size:14px;color:{{ reservaHintFg }}">{{ reservaHint }}</div>
+              </div>
+            </sc-if>
           </div>
         </sc-if>
 
@@ -566,16 +588,16 @@ a:hover{color:#4ADE80}
           <button onClick="{{ ins.onCierre }}" disabled="{{ ins.cierreDone }}" style="min-height:58px;border-radius:11px;border:1.5px solid {{ ins.cierreBd }};background:{{ ins.cierreBg }};color:{{ ins.cierreFg }};font-size:16px;font-weight:700;cursor:pointer">{{ ins.cierreLabel }}</button>
         </div>
 
-        <button onClick="{{ onNuevaRecoleccion }}" style="width:100%;min-height:60px;border-radius:12px;border:none;background:#22C55E;color:#061308;font-size:18px;font-weight:700;cursor:pointer">+ Nueva recolección</button>
+        <button onClick="{{ onNuevaRecoleccion }}" style="width:100%;min-height:60px;border-radius:12px;border:none;background:#22C55E;color:#061308;font-size:18px;font-weight:700;cursor:pointer">{{ nuevaRecoleccionBtnLabel }}</button>
 
         <div style="display:flex;flex-direction:column;gap:10px">
           <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">{{ ins.recoleccionesLabel }}</div>
           <sc-for list="{{ ins.recolecciones }}" as="r" hint-placeholder-count="3">
-            <div style="display:flex;align-items:center;gap:12px;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px 14px">
-              <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15.5px;font-weight:600">{{ r.id }}</span>
+            <button onClick="{{ r.onOpen }}" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px 14px;cursor:pointer;color:#EAF7EC">
+              <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15.5px;font-weight:600">{{ r.label }}</span>
               <span style="flex:1;font-size:14px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.fecha }}</span>
-              <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15px;color:#C9E2CF">{{ r.huevos }}</span>
-            </div>
+              <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15px;color:#C9E2CF">{{ r.dato }}</span>
+            </button>
           </sc-for>
         </div>
       </div>
@@ -635,9 +657,13 @@ a:hover{color:#4ADE80}
 
     <sc-if value="{{ isNuevaRecoleccion }}" hint-placeholder-val="{{ false }}">
       <div style="display:flex;flex-direction:column;gap:20px">
-        <div style="display:flex;align-items:center;gap:10px;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:13px 15px">
-          <span style="font-size:12px;font-weight:600;letter-spacing:.09em;color:#7FA189;white-space:nowrap">INSECTARIO</span>
-          <span style="flex:1;font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:18px;font-weight:600">{{ f.insectario_id }}</span>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">INSECTARIO</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ recInsectarioChips }}" as="c" hint-placeholder-count="3">
+              <button onClick="{{ c.onClick }}" style="min-height:54px;padding:0 16px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:16px;font-weight:600;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
         </div>
 
         <div style="display:flex;flex-direction:column;gap:9px">
@@ -648,17 +674,267 @@ a:hover{color:#4ADE80}
           </div>
         </div>
 
+        <!-- Protocolo nuevo: ovipositors weighed as a set, atrayente changed at
+             every recolecta, and one incubadora made from it on the same day. -->
+        <sc-if value="{{ recEsV2 }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:20px">
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">PESO DE LOS OVIPOSITORES</div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <input inputMode="decimal" value="{{ f.peso_ovipositores_g }}" onChange="{{ h.peso_ovipositores_g }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+                <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">g</div>
+              </div>
+              <div style="font-size:13.5px;color:#7FA189">Todo el juego de ovipositores de este insectario, sin tocar los huevos.</div>
+            </div>
+
+            <button onClick="{{ onToggleAtrayente }}" style="display:flex;align-items:center;gap:12px;width:100%;min-height:62px;padding:0 16px;border-radius:12px;border:1.5px solid {{ atrayenteBd }};background:{{ atrayenteBg }};color:{{ atrayenteFg }};font-size:17px;font-weight:700;text-align:left;cursor:pointer">
+              <span style="width:24px;height:24px;flex:none;border-radius:6px;border:2px solid {{ atrayenteFg }};display:flex;align-items:center;justify-content:center;font-size:16px">{{ atrayenteMark }}</span>
+              <span>Se cambió el atrayente</span>
+            </button>
+
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">STARTER EN LA INCUBADORA</div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <input inputMode="decimal" value="{{ f.starter_kg }}" onChange="{{ h.starter_kg }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+                <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">kg</div>
+              </div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">DÍA 0 DE LA INCUBADORA</div>
+              <input type="date" value="{{ f.fecha_inicio }}" onChange="{{ h.fecha_inicio }}" style="width:100%;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+              <div style="font-size:13.5px;color:#7FA189">Desde este día se cuentan los días del ciclo: distribución el día 7, cosecha el día 16.</div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:10px;background:#0E2415;border:1px solid #1E4A2F;border-radius:12px;padding:13px 15px">
+              <span style="font-size:12px;font-weight:600;letter-spacing:.09em;color:#5FBF7F;white-space:nowrap">SE CREA LA INCUBADORA</span>
+              <span style="flex:1;text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:20px;font-weight:600;color:#4ADE80">{{ incubadoraPreview }}</span>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ recEsV1 }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">HUEVOS</div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <input inputMode="decimal" value="{{ f.huevos_g }}" onChange="{{ h.huevos_g }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+              <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">g</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <textarea value="{{ f.notas }}" onChange="{{ h.notas }}" placeholder="Notas (opcional)" rows="2" style="width:100%;padding:13px 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500;resize:vertical"></textarea>
+
         <div style="display:flex;flex-direction:column;gap:9px">
-          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">HUEVOS</div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <input inputMode="decimal" value="{{ f.huevos_g }}" onChange="{{ h.huevos_g }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
-            <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none">g</div>
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">REGISTRADO POR</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ operatorChips }}" as="c" hint-placeholder-count="6">
+              <button onClick="{{ c.onClick }}" style="min-height:50px;padding:0 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
           </div>
         </div>
 
         <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
           <button onClick="{{ onSaveRecoleccion }}" disabled="{{ nuevaRecoleccionDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ nuevaRecoleccionBg }};color:{{ nuevaRecoleccionFg }};font-size:19.5px;font-weight:700;cursor:pointer">{{ nuevaRecoleccionLabel }}</button>
         </div>
+      </div>
+    </sc-if>
+
+    <!-- Protocolo nuevo: feeding is the plan's next load, one tap per group of
+         trays. Nothing to type: the load number decides the kilos. -->
+    <sc-if value="{{ isCargas }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="font-size:14.5px;color:#9FB8A6">Toca las bandejas que alimentaste y confirma. Los kilos salen del plan de alimentación.</div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">CARGA</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ cargaChips }}" as="c" hint-placeholder-count="3">
+              <button onClick="{{ c.onClick }}" style="flex:1 1 30%;min-height:60px;padding:0 10px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:700;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">BANDEJAS QUE LA NECESITAN</div>
+            <div style="font-size:13.5px;font-weight:700;color:#22C55E;white-space:nowrap">{{ cargaCountLabel }}</div>
+          </div>
+          <sc-if value="{{ hasCargaBandejas }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              <sc-for list="{{ cargaBandejaChips }}" as="c" hint-placeholder-count="6">
+                <button onClick="{{ c.onClick }}" style="min-height:56px;padding:4px 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:1px;cursor:pointer">
+                  <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15.5px;font-weight:600">{{ c.label }}</span>
+                  <span style="font-size:12px;font-weight:600;white-space:nowrap;opacity:.8">{{ c.sub }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ noCargaBandejas }}" hint-placeholder-val="{{ false }}">
+            <div style="background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:16px;font-size:15px;color:#9FB8A6">Ninguna bandeja espera esta carga.</div>
+          </sc-if>
+        </div>
+
+        <sc-if value="{{ showTamizado }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ onToggleTamizado }}" style="display:flex;align-items:center;gap:12px;width:100%;min-height:60px;padding:0 16px;border-radius:12px;border:1.5px solid {{ tamizadoBd }};background:{{ tamizadoBg }};color:{{ tamizadoFg }};font-size:16.5px;font-weight:700;text-align:left;cursor:pointer">
+            <span style="width:24px;height:24px;flex:none;border-radius:6px;border:2px solid {{ tamizadoFg }};display:flex;align-items:center;justify-content:center;font-size:16px">{{ tamizadoMark }}</span>
+            <span>Tamizado de control hecho (retirar frass)</span>
+          </button>
+        </sc-if>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">FECHA Y HORA</div>
+          <div style="display:flex;gap:8px">
+            <input type="datetime-local" value="{{ f.fecha }}" onChange="{{ h.fecha }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+            <button onClick="{{ onSetNow }}" style="flex:none;min-height:56px;padding:0 18px;border-radius:11px;border:1.5px solid #22C55E;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Ahora</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">REGISTRADO POR</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ operatorChips }}" as="c" hint-placeholder-count="6">
+              <button onClick="{{ c.onClick }}" style="min-height:50px;padding:0 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <sc-if value="{{ hasV1Activas }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ onOpenAlimentarV1 }}" style="width:100%;min-height:52px;border-radius:11px;border:1.5px dashed #2A4030;background:#141C16;color:#9FB8A6;font-size:15px;font-weight:600;cursor:pointer">Bandejas del protocolo anterior &#8250;</button>
+        </sc-if>
+
+        <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
+          <button onClick="{{ onSaveCargas }}" disabled="{{ cargasDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ cargasBg }};color:{{ cargasFg }};font-size:19px;font-weight:700;cursor:pointer">{{ cargasLabel }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- Protocolo nuevo, días 14–15: every tray of a distribución fasts on the
+         same day, so starting the fast is one tap for all of them. -->
+    <sc-if value="{{ isAyunoV2 }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="font-size:14.5px;color:#9FB8A6">Días 14 y 15: cero alimento. Marca las bandejas que empiezan el ayuno. Pesar es opcional; la cosecha del día 16 lo cierra.</div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">BANDEJAS</div>
+            <div style="font-size:13.5px;font-weight:700;color:#FB923C;white-space:nowrap">{{ ayunoCountLabel }}</div>
+          </div>
+          <sc-if value="{{ hasAyunoBandejas }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              <sc-for list="{{ ayunoBandejaChips }}" as="c" hint-placeholder-count="6">
+                <button onClick="{{ c.onClick }}" style="min-height:56px;padding:4px 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:1px;cursor:pointer">
+                  <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:15.5px;font-weight:600">{{ c.label }}</span>
+                  <span style="font-size:12px;font-weight:600;white-space:nowrap;opacity:.8">{{ c.sub }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ noAyunoBandejas }}" hint-placeholder-val="{{ false }}">
+            <div style="background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:16px;font-size:15px;color:#9FB8A6">Ninguna bandeja del protocolo nuevo está por ayunar.</div>
+          </sc-if>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">FECHA Y HORA</div>
+          <div style="display:flex;gap:8px">
+            <input type="datetime-local" value="{{ f.fecha }}" onChange="{{ h.fecha }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+            <button onClick="{{ onSetNow }}" style="flex:none;min-height:56px;padding:0 18px;border-radius:11px;border:1.5px solid #22C55E;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Ahora</button>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">REGISTRADO POR</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ operatorChips }}" as="c" hint-placeholder-count="6">
+              <button onClick="{{ c.onClick }}" style="min-height:50px;padding:0 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
+          <button onClick="{{ onSaveAyunoV2 }}" disabled="{{ ayunoV2Disabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ ayunoV2Bg }};color:{{ ayunoV2Fg }};font-size:19px;font-weight:700;cursor:pointer">{{ ayunoV2Label }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isIncubadoras }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <button onClick="{{ onNuevaRecoleccionHome }}" style="width:100%;min-height:60px;border-radius:12px;border:1.5px dashed #2A4030;background:#141C16;font-size:17.5px;font-weight:700;color:#EAF7EC;cursor:pointer">+ Nueva recolecta</button>
+        <sc-if value="{{ noIncubadoras }}" hint-placeholder-val="{{ false }}">
+          <div style="background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:16px;font-size:15px;color:#9FB8A6">Todavía no hay incubadoras. Cada recolecta del protocolo nuevo crea una.</div>
+        </sc-if>
+        <sc-for list="{{ incubadoraRows }}" as="g" hint-placeholder-count="3">
+          <button onClick="{{ g.onOpen }}" style="display:flex;flex-direction:column;gap:8px;width:100%;text-align:left;background:#141C16;border:1px solid #1D2A21;border-radius:13px;padding:14px 15px;cursor:pointer;color:#EAF7EC">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:20px;font-weight:600">{{ g.codigo }}</span>
+              <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;padding:3px 7px;border-radius:5px;background:{{ g.estadoBg }};color:#061308">{{ g.estadoLabel }}</span>
+              <span style="flex:1"></span>
+              <span style="color:#4E6B58;font-size:22px">&#8250;</span>
+            </div>
+            <div style="font-size:14px;color:#9FB8A6">{{ g.line2 }}</div>
+            <div style="font-size:14px;font-weight:700;color:{{ g.pasoFg }}">{{ g.paso }}</div>
+          </button>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isIncubadoraDetalle }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="background:#141C16;border:1px solid #1D2A21;border-radius:14px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:14px 15px;background:{{ inc.estadoBg }};color:#061308">
+            <div style="flex:1;font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:21px;font-weight:600">{{ inc.codigo }}</div>
+            <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;flex:none">{{ inc.estadoLabel }}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#1F3A29">
+            <sc-for list="{{ inc.facts }}" as="x" hint-placeholder-count="4">
+              <div style="background:#141C16;padding:12px 15px;display:flex;flex-direction:column;gap:3px">
+                <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:#7FA189;white-space:nowrap">{{ x.label }}</div>
+                <div style="font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis">{{ x.value }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="padding:11px 15px;border-top:1px solid #1F3A29;font-size:14.5px;color:#9FB8A6">{{ inc.notesLine }}</div>
+        </div>
+
+        <sc-if value="{{ inc.showDistribuir }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:14px;background:#141C16;border:1px solid #1D2A21;border-radius:13px;padding:15px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189">DÍA 7 · DISTRIBUIR EN BANDEJAS</div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;font-weight:600;letter-spacing:.08em;color:#7FA189;white-space:nowrap">NÚMERO DE BANDEJAS</div>
+              <input inputMode="numeric" value="{{ f.n_bandejas }}" onChange="{{ h.n_bandejas }}" placeholder="0" style="width:100%;min-height:58px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#0A0A0A;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;font-weight:600;letter-spacing:.08em;color:#7FA189;white-space:nowrap">LARVAS POR BANDEJA</div>
+              <input inputMode="numeric" value="{{ f.individuos_por_bandeja }}" onChange="{{ h.individuos_por_bandeja }}" style="width:100%;min-height:58px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#0A0A0A;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600" />
+              <div style="font-size:13.5px;color:#7FA189">{{ inc.totalLine }}</div>
+            </div>
+            <button onClick="{{ onToggleCarga1 }}" style="display:flex;align-items:center;gap:12px;width:100%;min-height:58px;padding:0 14px;border-radius:12px;border:1.5px solid {{ carga1Bd }};background:{{ carga1Bg }};color:{{ carga1Fg }};font-size:16px;font-weight:700;text-align:left;cursor:pointer">
+              <span style="width:24px;height:24px;flex:none;border-radius:6px;border:2px solid {{ carga1Fg }};display:flex;align-items:center;justify-content:center;font-size:16px">{{ carga1Mark }}</span>
+              <span>{{ carga1Label }}</span>
+            </button>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ inc.codigosPreview }}</div>
+            <button onClick="{{ onDistribuir }}" disabled="{{ distribuirDisabled }}" style="width:100%;min-height:60px;border-radius:11px;border:none;background:{{ distribuirBg }};color:{{ distribuirFg }};font-size:17.5px;font-weight:700;cursor:pointer">{{ distribuirLabel }}</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ inc.hasBandejas }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">{{ inc.bandejasLabel }}</div>
+            <sc-for list="{{ inc.bandejas }}" as="b" hint-placeholder-count="3">
+              <button onClick="{{ b.onOpen }}" style="display:flex;align-items:stretch;gap:12px;width:100%;text-align:left;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px;min-height:66px;cursor:pointer">
+                <div style="width:6px;flex:none;border-radius:3px;background:{{ b.estadoBg }}"></div>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;justify-content:center">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:16px;font-weight:600;color:#EAF7EC">{{ b.id_bandeja }}</span>
+                    <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;flex:none;padding:3px 7px;border-radius:5px;background:{{ b.estadoBg }};color:#061308">{{ b.estadoLabel }}</span>
+                  </div>
+                  <div style="font-size:14px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ b.line2 }}</div>
+                </div>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
       </div>
     </sc-if>
 
@@ -876,7 +1152,7 @@ a:hover{color:#4ADE80}
         <sc-if value="{{ hasAyunosAbiertos }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;flex-direction:column;gap:11px">
             <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189">{{ ayunosLabel }}</div>
-            <div style="font-size:14px;color:#9FB8A6">Un ayuno se cierra en la segunda visita, al pesar otra vez. Sin ese peso no hay merma.</div>
+            <div style="font-size:14px;color:#9FB8A6">Protocolo anterior: el ayuno se cierra al pesar otra vez (sin ese peso no hay merma). Protocolo nuevo: lo cierra la cosecha del día 16.</div>
             <sc-for list="{{ ayunoRows }}" as="a" hint-placeholder-count="2">
               <button onClick="{{ a.onClose }}" style="width:100%;text-align:left;background:#141C16;border:1px solid #FB923C;border-radius:13px;padding:14px;display:flex;align-items:center;gap:11px;cursor:pointer;color:#EAF7EC">
                 <div style="flex:1;min-width:0">
@@ -973,6 +1249,21 @@ const EVENTO_META = {
   separacion: { label: 'Separación', dot: '#38BDF8' }
 };
 const EVENTO_ORDER = ['alimentacion', 'ayuno', 'revision', 'separacion'];
+const ESTADO_INCUBADORA = {
+  incubando: { label: 'Incubando', bg: '#A78BFA' },
+  distribuida: { label: 'Distribuida', bg: '#64748B' }
+};
+// How urgent a step is, as a colour: late, due today, coming up.
+const PASO_FG = { atrasado: '#F87171', hoy: '#22C55E', proximo: '#9FB8A6' };
+// Used only until the settings arrive from the data layer; the same values as
+// src/data/protocolo.js and 0007_protocolo_v2.sql.
+const PROTOCOLO_FALLBACK = {
+  cargas: [{ n: 1, dia: 7, kg: 1.5 }, { n: 2, dia: 10, kg: 2, tamizado: true }, { n: 3, dia: 13, kg: 2 }],
+  dias_incubacion: 7, dia_inicio_ayuno: 14, horas_ayuno: 48, dia_cosecha: 16,
+  individuos_por_bandeja: 25000, reserva_cria_pct: 2,
+  letras_insectario: { ICA: 'A', ICB: 'B', ICC: 'C', JN3A: 'J' }, v2_vigente: true
+};
+const kgTxt = n => String(Math.round(Number(n) * 100) / 100).replace('.', ',');
 const NEON = '#22C55E';
 const INK = '#061308';
 const CARD = '#141C16';
@@ -985,12 +1276,14 @@ const FIELDS = ['q', 'filterInsectario', 'bandejaSearch', 'fecha', 'bandeja_id',
   'cantidad_kg', 'peso_inicial_kg', 'peso_final_kg', 'larva_limpia_g', 'notas', 'operator_name',
   'recoleccion_id', 'no_bandeja', 'gramos_huevos', 'iniciador_g', 'tipo_iniciador',
   'nombre_insectario', 'fecha_inicio', 'generacion_moscas', 'biomasa_kg', 'proyeccion_ovipositores', 'proyeccion_cierre',
-  'huevos_g', 'tiempo_secado_horas', 'qc_prueba_crujiente', 'operator_input', 'ask_value'];
+  'huevos_g', 'tiempo_secado_horas', 'qc_prueba_crujiente', 'operator_input', 'ask_value',
+  'reserva_cria_g', 'peso_ovipositores_g', 'starter_kg', 'n_bandejas', 'individuos_por_bandeja'];
 
 class Component extends DCLogic {
   state = {
     screen: 'operator', prev: 'home', tab: 'home', ready: false, saving: false,
     insectarios: [], bandejas: [], recolecciones: [], lotes: [], operators: [], operator: null,
+    incubadoras: [], protocolo: null, incubadoraDetalle: null,
     bandejaDetalle: null, insectarioDetalle: null, loteDetalle: null, separacionesDisponibles: [],
     form: {}, estadoFilter: '', insFilter: '', range: 'any', toast: null,
     photoName: '', photoId: null, photoUrl: null,
@@ -1022,8 +1315,14 @@ class Component extends DCLogic {
       return;
     }
 
+    // The name chosen on this phone survives reloads here, in localStorage. The
+    // one-tap actions (Atractante, QC, empacado, cierre de ayuno…) read it from
+    // the data layer, so it must be handed back on every start. It was not, and
+    // every one of those actions was saved with nobody's name.
+    if (saved && api.setOperator) { try { await api.setOperator(saved); } catch (e) { /* the name still shows */ } }
+
     // Each list on its own: one that fails must not blank the other four.
-    const lists = await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'operators']);
+    const lists = await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'operators', 'incubadoras', 'protocolo']);
     this.setState(Object.assign({ ready: true, operator: saved || null, screen: saved ? 'home' : 'operator' }, lists));
 
     // A background pull brings other people's work down; without this the
@@ -1060,7 +1359,9 @@ class Component extends DCLogic {
       bandejas: () => this.api.listBandejas({}),
       recolecciones: () => this.api.listRecolecciones({}),
       lotes: () => this.api.listLotes({}),
-      operators: () => this.api.listOperators()
+      operators: () => this.api.listOperators(),
+      incubadoras: () => (this.api.listIncubadoras ? this.api.listIncubadoras({}) : { ok: true, data: [] }),
+      protocolo: () => (this.api.getProtocolo ? this.api.getProtocolo() : { ok: true, data: null })
     };
     const results = await Promise.allSettled(names.map(n => calls[n]()));
     const out = {}, failed = [];
@@ -1100,26 +1401,47 @@ class Component extends DCLogic {
     this._toastTimer = setTimeout(() => this.setState({ toast: null }), 2800);
   }
 
+  // Dates follow the FARM's calendar (America/Caracas), through the data
+  // layer's helpers, never the phone's own time zone. Reading a date-only
+  // string with new Date() took it as UTC midnight, so the insectario ID
+  // preview showed yesterday's date for four hours every evening.
+  fechas() { return this.api && this.api.fechas ? this.api.fechas : null; }
   now() {
+    const F = this.fechas();
+    if (F) return F.toNaiveLocal(new Date());
     const d = new Date(), p = n => String(n).padStart(2, '0');
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
-  today() { return this.now().slice(0, 10); }
-  ddmm(dateStr) { const d = new Date((dateStr || this.now())); const p = n => String(n).padStart(2, '0'); return p(d.getDate()) + p(d.getMonth() + 1); }
+  today() { const F = this.fechas(); return F ? F.farmDay() : this.now().slice(0, 10); }
+  ddmm(dateStr) {
+    const F = this.fechas();
+    if (F) return F.ddmm(dateStr || new Date()) || '—';
+    const d = new Date((dateStr || this.now())); const p = n => String(n).padStart(2, '0'); return p(d.getDate()) + p(d.getMonth() + 1);
+  }
+
+  /** Protocol settings: from the data layer once loaded, the defaults before. */
+  cfg() { return this.state.protocolo || PROTOCOLO_FALLBACK; }
 
   async refreshLists() {
     if (!this.api || this.state.fatal) return;
-    this.setState(await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes']));
+    this.setState(await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'incubadoras', 'protocolo']));
   }
 
   fmt(dt) {
     if (!dt) return '—';
+    const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const str = String(dt);
+    const hasTime = str.indexOf('T') >= 0;
+    const F = this.fechas();
+    // Instants are shown in farm time; a date-only value is a calendar day and
+    // is never converted at all.
+    const local = hasTime && F ? F.toNaiveLocal(dt) : str;
+    const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(local || '');
+    if (m) return Number(m[3]) + ' ' + MES[Number(m[2]) - 1] + (hasTime && m[4] ? ' · ' + m[4] + ':' + m[5] : '');
     const d = new Date(dt);
-    if (isNaN(d)) return dt;
-    const m = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][d.getMonth()];
+    if (isNaN(d)) return str;
     const p = n => String(n).padStart(2, '0');
-    const hasTime = String(dt).indexOf('T') >= 0;
-    return d.getDate() + ' ' + m + (hasTime ? ' · ' + p(d.getHours()) + ':' + p(d.getMinutes()) : '');
+    return d.getDate() + ' ' + MES[d.getMonth()] + (hasTime ? ' · ' + p(d.getHours()) + ':' + p(d.getMinutes()) : '');
   }
   rel(dt) {
     if (!dt) return '';
@@ -1140,18 +1462,67 @@ class Component extends DCLogic {
   bandejaRow(b) {
     const meta = ESTADO_BANDEJA[b.estado] || ESTADO_BANDEJA.en_crecimiento;
     const last = b.last_evento;
-    return {
-      id_bandeja: b.id_bandeja, estadoLabel: meta.label, estadoBg: meta.bg,
+    // Protocolo nuevo: where the tray is in its 16 days and what it needs next.
+    const paso = b.siguiente_paso;
+    const line2 = b.protocolo === 'v2'
+      ? [b.insectario_codigo || '—', b.dia_ciclo == null ? null : 'Día ' + b.dia_ciclo,
+         paso ? paso.label + ' ' + paso.cuando : (b.estado === 'cosechada' ? 'cosechada' : null)].filter(Boolean).join('  ·  ')
       // insectario_codigo, not insectario_id: the PK is an opaque UUID now and
       // the code is what the team reads.
-      line2: (b.insectario_codigo || '—') + '  ·  ' + (last ? (EVENTO_META[last.tipo] || {}).label + ' ' + this.rel(last.fecha) : 'sin eventos'),
+      : (b.insectario_codigo || '—') + '  ·  ' + (last ? (EVENTO_META[last.tipo] || {}).label + ' ' + this.rel(last.fecha) : 'sin eventos');
+    return {
+      id_bandeja: b.id_bandeja, estadoLabel: meta.label, estadoBg: meta.bg,
+      line2,
       onOpen: () => this.openBandejaDetalle(b.id)
     };
   }
 
+  /* ------------------------------------------------------ protocolo v2 lists */
+
+  /** v2 trays whose next step is carga `n`, with the ones due now first. */
+  cargaCandidatas(n) {
+    const rank = { atrasado: 0, hoy: 1, proximo: 2 };
+    return this.state.bandejas
+      .filter(b => b.protocolo === 'v2' && b.estado === 'en_crecimiento' && b.siguiente_paso &&
+                   b.siguiente_paso.paso === 'carga' && b.siguiente_paso.carga === n)
+      .sort((a, b) => (rank[a.siguiente_paso.estado] - rank[b.siguiente_paso.estado]) ||
+                      String(a.id_bandeja).localeCompare(String(b.id_bandeja)));
+  }
+
+  /** The load most trays need now; otherwise the lowest one still pending. */
+  cargaSugerida() {
+    const due = {};
+    let lowest = null;
+    for (const b of this.state.bandejas) {
+      const p = b.siguiente_paso;
+      if (b.protocolo !== 'v2' || !p || p.paso !== 'carga') continue;
+      if (lowest === null || p.carga < lowest) lowest = p.carga;
+      if (p.estado !== 'proximo') due[p.carga] = (due[p.carga] || 0) + 1;
+    }
+    const best = Object.keys(due).sort((a, b) => due[b] - due[a] || a - b)[0];
+    return best ? Number(best) : lowest;
+  }
+
+  ayunoCandidatas() {
+    const rank = { atrasado: 0, hoy: 1, proximo: 2 };
+    return this.state.bandejas
+      .filter(b => b.protocolo === 'v2' && b.estado === 'en_crecimiento' && b.siguiente_paso &&
+                   b.siguiente_paso.paso === 'ayuno')
+      .sort((a, b) => (rank[a.siguiente_paso.estado] - rank[b.siguiente_paso.estado]) ||
+                      String(a.id_bandeja).localeCompare(String(b.id_bandeja)));
+  }
+
+  dueIds(list) { return list.filter(b => b.siguiente_paso.estado !== 'proximo').map(b => b.id); }
+
   /* -------------------------------------------------------------- navigation */
 
   go(screen, extra) { this.setState(Object.assign({ prev: this.state.screen, screen }, extra || {})); }
+  // Re-opening the screen you are already on (after saving) must not make
+  // "back" point at itself.
+  goKeep(screen, extra) {
+    if (this.state.screen === screen) this.setState(Object.assign({ screen }, extra || {}));
+    else this.go(screen, extra);
+  }
 
   // Prefill with whoever is currently registering, so changing a typo is an
   // edit rather than retyping the whole name.
@@ -1188,10 +1559,46 @@ class Component extends DCLogic {
       form: {
         bandeja_id: bandejaId || '', bandejaSearch: '', tipo_evento: tipoEvento || '', fecha: this.now(),
         tipo_alimento: tipoEvento === 'alimentacion' ? (this.props.defaultTipoAlimento || 'Bagazo') : '',
-        cantidad_kg: '', peso_inicial_kg: '', horas_ayuno: 24, peso_final_kg: '', larva_limpia_g: '',
-        notas: '', operator_name: this.state.operator || ''
+        // Empty = the protocol's default (24 h old protocol, 48 h new one).
+        cantidad_kg: '', peso_inicial_kg: '', horas_ayuno: '', peso_final_kg: '', larva_limpia_g: '',
+        reserva_cria_g: '', notas: '', operator_name: this.state.operator || ''
       }
     });
+  };
+
+  /* protocolo v2 screens */
+
+  openCargas = (carga, ids) => {
+    const n = carga || this.cargaSugerida() || (this.cfg().cargas[0] || {}).n || 1;
+    this.setState({
+      prev: this.state.screen, screen: 'cargas',
+      form: { carga: n, bandeja_ids: ids || this.dueIds(this.cargaCandidatas(n)), tamizado: false,
+              fecha: this.now(), operator_name: this.state.operator || '' }
+    });
+  };
+
+  setCarga = n => this.setState(s => ({
+    form: Object.assign({}, s.form, { carga: n, bandeja_ids: this.dueIds(this.cargaCandidatas(n)), tamizado: false })
+  }));
+
+  openAyunoV2 = ids => {
+    this.setState({
+      prev: this.state.screen, screen: 'ayunoV2',
+      form: { bandeja_ids: ids || this.dueIds(this.ayunoCandidatas()), fecha: this.now(), operator_name: this.state.operator || '' }
+    });
+  };
+
+  openIncubadoras = () => this.go('incubadoras');
+
+  openIncubadoraDetalle = async id => {
+    this.goKeep('incubadoraDetalle', {
+      incubadoraDetalle: null,
+      form: { n_bandejas: '', individuos_por_bandeja: String(this.cfg().individuos_por_bandeja || ''), carga1: true,
+              operator_name: this.state.operator || '' }
+    });
+    const r = await this.api.getIncubadoraDetail(id);
+    this.setState({ incubadoraDetalle: r.ok ? r.data : null });
+    if (!r.ok) this.toast('No se pudo abrir', r.error.message, 'error');
   };
 
   openAlimentarGrupal = () => {
@@ -1202,7 +1609,8 @@ class Component extends DCLogic {
   };
 
   openNuevaBandeja = recoleccionId => {
-    const rc = recoleccionId || (this.state.recolecciones[0] && this.state.recolecciones[0].id) || '';
+    const v1 = this.state.recolecciones.filter(r => r.protocolo !== 'v2');
+    const rc = recoleccionId || (v1[0] && v1[0].id) || '';
     this.setState({
       prev: this.state.screen, screen: 'nuevaBandeja',
       // no_bandeja starts EMPTY on purpose. The marker goes on the physical
@@ -1220,9 +1628,17 @@ class Component extends DCLogic {
     });
   };
 
-  openNuevaRecoleccion = () => {
-    const ins = this.state.insectarioDetalle ? this.state.insectarioDetalle.insectario : null;
-    this.setState({ prev: this.state.screen, screen: 'nuevaRecoleccion', form: { insectario_id: ins ? ins.id : '', fecha: this.now(), huevos_g: '', operator_name: this.state.operator || '' } });
+  // From an insectario's page the insectario is already chosen; from the home
+  // screen the operator picks it (preselected when only one colony is active).
+  openNuevaRecoleccion = fromInsectario => {
+    const insD = this.state.insectarioDetalle;
+    const activos = this.state.insectarios.filter(i => i.estado === 'activo');
+    const id = fromInsectario === true && insD ? insD.insectario.id : (activos.length === 1 ? activos[0].id : '');
+    this.setState({
+      prev: this.state.screen, screen: 'nuevaRecoleccion',
+      form: { insectario_id: id, fecha: this.now(), huevos_g: '', peso_ovipositores_g: '', atrayente_cambiado: false,
+              starter_kg: '', fecha_inicio: this.today(), notas: '', operator_name: this.state.operator || '' }
+    });
   };
 
   openNuevoLote = async () => {
@@ -1237,19 +1653,27 @@ class Component extends DCLogic {
     if (s === 'insectarioDetalle') return this.setState({ screen: 'insectarios', tab: 'insectarios' });
     if (s === 'loteDetalle') return this.setState({ screen: 'lotes', tab: 'lotes' });
     if (s === 'operator') return this.setState({ screen: this.state.tab === 'home' ? 'home' : this.state.tab });
+    if (s === 'incubadoraDetalle') {
+      const p = this.state.prev;
+      return this.setState({ screen: p && p !== s && p !== 'nuevaRecoleccion' ? p : 'incubadoras' });
+    }
     const prev = this.state.prev;
     this.setState({ screen: prev === s ? 'home' : prev });
   };
 
   onSeeAllBandejas = () => this.setState({ screen: 'bandejas', tab: 'bandejas', prev: this.state.screen });
 
-  pickOperator = name => {
+  pickOperator = async name => {
     try { window.localStorage.setItem('tryento.operator', name); } catch (e) { /* ignore */ }
-    // Tapping a chip also refreshes its recency, so the people actually working
-    // today stay at the top of the list instead of whoever was added first.
-    if (this.api && this.api.rememberOperator) this.api.rememberOperator(name);
     const nextForm = this.state.form && this.state.form.operator_name !== undefined ? Object.assign({}, this.state.form, { operator_name: name }) : this.state.form;
     this.setState({ operator: name, form: nextForm, screen: this.state.prev === 'operator' ? 'home' : this.state.prev });
+    // Tapping a chip also refreshes its recency, so the people actually working
+    // today stay at the top of the list, and tells the data layer who is
+    // registering. Awaited: the one-tap actions read it from there.
+    if (this.api && this.api.rememberOperator) {
+      const r = await this.api.rememberOperator(name);
+      if (r && !r.ok && this.api.setOperator) await this.api.setOperator(name);
+    }
   };
 
   /* ----------------------------------------------------------- toggles/steppers */
@@ -1277,7 +1701,16 @@ class Component extends DCLogic {
     this.setState(s => ({ form: Object.assign({}, s.form, { separacion_ids: arr, peso_inicial_kg: Math.round(sum) / 1000 }) }));
   };
 
-  adjustHoras = delta => this.setState(s => ({ form: Object.assign({}, s.form, { horas_ayuno: Math.max(1, (Number(s.form.horas_ayuno) || 24) + delta) }) }));
+  /** Default fasting hours for the tray in the form: the protocol's 48 h for a
+   *  v2 tray, the old 24 h otherwise. */
+  horasDefault(f) {
+    const t = this.state.bandejas.find(b => b.id === (f || this.state.form).bandeja_id);
+    return t && t.protocolo === 'v2' ? (this.cfg().horas_ayuno || 48) : 24;
+  }
+
+  adjustHoras = delta => this.setState(s => ({ form: Object.assign({}, s.form, { horas_ayuno: Math.min(168, Math.max(1, (Number(s.form.horas_ayuno) || this.horasDefault(s.form)) + delta)) }) }));
+
+  toggleField = k => this.setState(s => ({ form: Object.assign({}, s.form, { [k]: !s.form[k] }) }));
 
   // The prototype kept only file.name and threw the image away, so no photo was
   // ever stored anywhere. These now decode, downscale and persist the actual
@@ -1306,9 +1739,9 @@ class Component extends DCLogic {
     let r;
     const common = { bandeja_id: f.bandeja_id, fecha: f.fecha, operator_name: f.operator_name, notas: f.notas, blob_id: this.state.photoId || null };
     if (f.tipo_evento === 'alimentacion') r = await this.api.logAlimentacion(Object.assign({}, common, { tipo_alimento: f.tipo_alimento, cantidad_kg: f.cantidad_kg }));
-    else if (f.tipo_evento === 'ayuno') r = await this.api.logAyuno(Object.assign({}, common, { peso_inicial_kg: f.peso_inicial_kg, horas_ayuno: f.horas_ayuno, peso_final_kg: f.peso_final_kg }));
+    else if (f.tipo_evento === 'ayuno') r = await this.api.logAyuno(Object.assign({}, common, { peso_inicial_kg: f.peso_inicial_kg, horas_ayuno: f.horas_ayuno || undefined, peso_final_kg: f.peso_final_kg }));
     else if (f.tipo_evento === 'revision') r = await this.api.logRevision(common);
-    else if (f.tipo_evento === 'separacion') r = await this.api.logSeparacion(Object.assign({}, common, { larva_limpia_g: f.larva_limpia_g }));
+    else if (f.tipo_evento === 'separacion') r = await this.api.logSeparacion(Object.assign({}, common, { larva_limpia_g: f.larva_limpia_g, reserva_cria_g: f.reserva_cria_g }));
     else r = { ok: false, error: { message: 'Selecciona un tipo de evento.' } };
     this.setState({ saving: false });
     if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
@@ -1355,12 +1788,68 @@ class Component extends DCLogic {
   saveRecoleccion = async () => {
     const f = this.state.form;
     this.setState({ saving: true });
+    if (this.cfg().v2_vigente !== false && this.api.createRecoleccionV2) {
+      // Protocolo nuevo: the recolecta and its incubadora, in one save.
+      const r = await this.api.createRecoleccionV2({
+        insectario_id: f.insectario_id, fecha: f.fecha, peso_ovipositores_g: f.peso_ovipositores_g,
+        atrayente_cambiado: !!f.atrayente_cambiado, starter_kg: f.starter_kg, fecha_inicio: f.fecha_inicio,
+        notas: f.notas, operator_name: f.operator_name
+      });
+      this.setState({ saving: false });
+      if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+      this.toast('Incubadora ' + r.data.incubadora.codigo, 'Recolecta ' + r.data.recoleccion.recolecta + ' · día 0 el ' + this.fmt(r.data.incubadora.fecha_inicio));
+      await this.refreshLists();
+      this.openIncubadoraDetalle(r.data.incubadora.id);
+      return;
+    }
     const r = await this.api.createRecoleccion(f);
     this.setState({ saving: false });
     if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
     this.toast('Recolección registrada', 'Recolecta ' + r.data.recolecta);
     await this.refreshLists();
     this.openInsectarioDetalle(f.insectario_id);
+  };
+
+  saveCargas = async () => {
+    const f = this.state.form;
+    this.setState({ saving: true });
+    const r = await this.api.logCarga({ bandeja_ids: f.bandeja_ids, carga: f.carga, tamizado: !!f.tamizado,
+                                        fecha: f.fecha, operator_name: f.operator_name });
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Carga ' + r.data.carga + ' registrada', r.data.created + ' bandeja(s) · ' + kgTxt(r.data.kg * r.data.created) + ' kg de ensilaje');
+    await this.refreshLists();
+    this.setState({ screen: 'home', tab: 'home' });
+  };
+
+  saveAyunoV2 = async () => {
+    const f = this.state.form;
+    this.setState({ saving: true });
+    const r = await this.api.logAyunoGrupal({ bandeja_ids: f.bandeja_ids, fecha: f.fecha, operator_name: f.operator_name });
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Ayuno iniciado', r.data.created + ' bandeja(s) · cosecha el día ' + this.cfg().dia_cosecha);
+    await this.refreshLists();
+    await this.refreshSecondary();
+    this.setState({ screen: 'home', tab: 'home' });
+  };
+
+  distribuir = async () => {
+    const d = this.state.incubadoraDetalle;
+    if (!d) return;
+    const f = this.state.form;
+    this.setState({ saving: true });
+    const r = await this.api.distribuirIncubadora(d.incubadora.id, {
+      n_bandejas: f.n_bandejas, individuos_por_bandeja: f.individuos_por_bandeja,
+      carga1: f.carga1 !== false, operator_name: f.operator_name || this.state.operator
+    });
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    const b = r.data.bandejas;
+    this.toast('Distribuida en ' + b.length + ' bandejas',
+      b[0].id_bandeja + (b.length > 1 ? ' a ' + b[b.length - 1].id_bandeja : '') + (r.data.cargas ? ' · carga 1 dada' : ''));
+    await this.refreshLists();
+    this.openIncubadoraDetalle(d.incubadora.id);
   };
 
   saveLote = async () => {
@@ -1386,10 +1875,25 @@ class Component extends DCLogic {
     this.openLoteDetalle(id);
   };
 
+  /** QC fields typed in the panel, so a decision never throws them away.
+   *  "Aprobar" used to send only qc_aprobado, and whatever the person had
+   *  just written about the crunch test was lost. */
+  qcTecleado() {
+    const f = this.state.form;
+    const out = {};
+    if (f.tiempo_secado_horas !== '' && f.tiempo_secado_horas != null) out.tiempo_secado_horas = f.tiempo_secado_horas;
+    if (f.peso_final_kg !== '' && f.peso_final_kg != null) out.peso_final_kg = f.peso_final_kg;
+    if (f.qc_color_dorado) out.qc_color_dorado = f.qc_color_dorado;
+    if ((f.qc_prueba_crujiente || '').trim()) out.qc_prueba_crujiente = f.qc_prueba_crujiente;
+    if (this.state.qcPhotoId) out.blob_id = this.state.qcPhotoId;
+    return out;
+  }
+
   aprobarQc = async () => {
     const id = this.state.loteDetalle.lote.id;
-    const r = await this.api.updateLoteQC(id, { qc_aprobado: true });
+    const r = await this.api.updateLoteQC(id, Object.assign(this.qcTecleado(), { qc_aprobado: true }));
     if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.setState({ qcPhotoId: null, qcPhotoName: '', qcPhotoUrl: null });
     this.toast('Calidad aprobada', r.data.codigo);
     await this.refreshLists();
     this.openLoteDetalle(id);
@@ -1418,7 +1922,7 @@ class Component extends DCLogic {
     const a = this.state.ask;
     if (!a) return;
     const raw = (this.state.form.ask_value || '').trim();
-    if (!raw) return;
+    if (!raw && !a.allowEmpty) return;
     if (a.validate) {
       const err = a.validate(raw);
       if (err) return this.setState(st => ({ ask: Object.assign({}, st.ask, { error: err }) }));
@@ -1437,6 +1941,12 @@ class Component extends DCLogic {
       placeholder: 'Motivo',
       confirmLabel: 'Rechazar'
     }, async motivo => {
+      // Keep what was typed in the QC panel: it is the evidence for the rejection.
+      const typed = this.qcTecleado();
+      if (Object.keys(typed).length) {
+        const q = await this.api.updateLoteQC(lote.id, typed);
+        if (!q.ok) return this.toast('No se guardo', q.error.message, 'error');
+      }
       const r = await this.api.rechazarLote(lote.id, motivo);
       if (!r.ok) return this.toast('No se guardo', r.error.message, 'error');
       this.toast('Lote rechazado', r.data.codigo, 'error');
@@ -1466,27 +1976,40 @@ class Component extends DCLogic {
   // The second half of a fast: weigh out ~24 h after weighing in. The prototype
   // had no way to record this at all, so merma_pct was permanently null.
   cerrarAyuno = ayuno => {
+    // Protocolo nuevo: the fast may close without a weight (the cosecha
+    // normally closes it). The old protocol always closes with one.
+    const v2 = ayuno.protocolo === 'v2' || ayuno.peso_inicial_kg == null;
+    const pi = ayuno.peso_inicial_kg;
     this.ask({
       title: 'Cerrar ayuno - ' + ayuno.bandeja_label,
-      hint: 'Peso inicial: ' + ayuno.peso_inicial_kg + ' kg. Escribe el peso final en kg.',
-      placeholder: '0.00',
+      hint: v2
+        ? 'Protocolo nuevo: el peso final es opcional. Déjalo vacío para cerrar sin pesar.'
+        : 'Peso inicial: ' + pi + ' kg. Escribe el peso final en kg.',
+      placeholder: v2 ? 'peso final (opcional)' : '0.00',
       inputMode: 'decimal',
       confirmLabel: 'Cerrar ayuno',
+      allowEmpty: v2,
       validate: v => {
+        if (!v && v2) return null;
         const n = Number(String(v).replace(',', '.'));
         if (!isFinite(n) || n <= 0) return 'Escribe un peso valido en kg.';
-        if (n > ayuno.peso_inicial_kg) return 'El peso final no puede superar los ' + ayuno.peso_inicial_kg + ' kg iniciales.';
+        if (pi != null && n > pi) return 'El peso final no puede superar los ' + pi + ' kg iniciales.';
         return null;
       }
     }, async v => {
-      const r = await this.api.logAyunoFin(ayuno.id, { peso_final_kg: String(v).replace(',', '.') });
+      const r = await this.api.logAyunoFin(ayuno.id, v ? { peso_final_kg: String(v).replace(',', '.') } : {});
       if (!r.ok) return this.toast('No se guardo', r.error.message, 'error');
-      const merma = r.data.peso_inicial_kg > 0
+      const merma = r.data.peso_inicial_kg > 0 && r.data.peso_final_kg != null
         ? Math.round(((r.data.peso_inicial_kg - r.data.peso_final_kg) / r.data.peso_inicial_kg) * 1000) / 10
         : null;
       this.toast('Ayuno cerrado', merma == null ? '' : 'Merma ' + merma + '%');
       await this.refreshLists();
       await this.refreshSecondary();
+      // The tray on screen changed: show it as it is now, not as it was.
+      if (this.state.screen === 'bandejaDetalle' && this.state.bandejaDetalle &&
+          this.state.bandejaDetalle.bandeja.id === ayuno.bandeja_id) {
+        this.openBandejaDetalle(ayuno.bandeja_id);
+      }
     });
   };
 
@@ -1512,7 +2035,7 @@ class Component extends DCLogic {
     const id = this.state.insectarioDetalle.insectario.id;
     const r = await this.api.marcarAtractante(id);
     if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
-    this.toast('Atractante registrado', id);
+    this.toast('Atractante registrado', this.state.insectarioDetalle.insectario.codigo);
     await this.refreshLists();
     this.openInsectarioDetalle(id);
   };
@@ -1521,7 +2044,7 @@ class Component extends DCLogic {
     const id = this.state.insectarioDetalle.insectario.id;
     const r = await this.api.marcarCierre(id);
     if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
-    this.toast('Cierre registrado', id);
+    this.toast('Cierre registrado', this.state.insectarioDetalle.insectario.codigo);
     await this.refreshLists();
     this.openInsectarioDetalle(id);
   };
@@ -1539,9 +2062,12 @@ class Component extends DCLogic {
       bandejaDetalle: s.bandejaDetalle ? s.bandejaDetalle.bandeja.id_bandeja : 'Bandeja',
       registrarEvento: 'Registrar evento', alimentarGrupal: 'Alimentar bandejas', nuevaBandeja: 'Nueva bandeja',
       insectarios: 'Insectarios', insectarioDetalle: s.insectarioDetalle ? s.insectarioDetalle.insectario.codigo : 'Insectario',
-      nuevoInsectario: 'Nuevo insectario', nuevaRecoleccion: 'Nueva recolección',
+      nuevoInsectario: 'Nuevo insectario',
+      nuevaRecoleccion: this.cfg().v2_vigente !== false ? 'Nueva recolecta' : 'Nueva recolección',
       lotes: 'Lotes', loteDetalle: s.loteDetalle ? s.loteDetalle.lote.codigo : 'Lote', nuevoLote: 'Nuevo lote',
-      sincronizacion: 'Sincronización'
+      sincronizacion: 'Sincronización',
+      cargas: 'Alimentar', ayunoV2: 'Iniciar ayuno', incubadoras: 'Incubadoras',
+      incubadoraDetalle: s.incubadoraDetalle ? s.incubadoraDetalle.incubadora.codigo : 'Incubadora'
     };
     const bandejasActivas = s.bandejas.filter(b => BANDEJA_ACTIVA(b.estado)).length;
 
@@ -1556,6 +2082,8 @@ class Component extends DCLogic {
       isNuevoInsectario: screen === 'nuevoInsectario', isNuevaRecoleccion: screen === 'nuevaRecoleccion',
       isLotes: screen === 'lotes', isLoteDetalle: screen === 'loteDetalle', isNuevoLote: screen === 'nuevoLote',
       isSync: screen === 'sincronizacion',
+      isCargas: screen === 'cargas', isAyunoV2: screen === 'ayunoV2', isIncubadoras: screen === 'incubadoras',
+      isIncubadoraDetalle: screen === 'incubadoraDetalle',
       showTabs: screen === 'home' || screen === 'bandejas' || screen === 'insectarios' || screen === 'lotes',
       f, h: this.handlers, ovenCapacidad: ovenCap,
       hasToast: !!s.toast, toastMsg: s.toast ? s.toast.msg : '', toastSub: s.toast ? s.toast.sub : '',
@@ -1574,8 +2102,26 @@ class Component extends DCLogic {
     vals.hasFatal = !!s.fatal;
     vals.fatalDetail = s.fatal ? 'Detalle: ' + s.fatal : '';
     vals.onFatalRetry = () => { try { window.location.reload(); } catch (e) { /* noop */ } };
-    vals.homeStatus = s.ready ? bandejasActivas + ' bandejas activas · ' + (s.operator ? 'registrando como ' + s.operator : 'sin nombre elegido') : 'Cargando datos de producción…';
-    vals.homeActions = [
+    const cfg = this.cfg();
+    const v2On = cfg.v2_vigente !== false;
+    // What the protocol says is due today or late: v2 trays plus incubadoras
+    // waiting to be distributed.
+    const pendientes = s.bandejas.filter(b => b.protocolo === 'v2' && b.siguiente_paso && b.siguiente_paso.estado !== 'proximo').length
+      + (s.incubadoras || []).filter(i => i.siguiente_paso && i.siguiente_paso.estado !== 'proximo').length;
+    vals.homeStatus = s.ready
+      ? [bandejasActivas + ' bandejas activas', v2On && pendientes ? pendientes + ' para hoy' : null,
+         s.operator ? 'registrando como ' + s.operator : 'sin nombre elegido'].filter(Boolean).join(' · ')
+      : 'Cargando datos de producción…';
+    const v1Activas = s.bandejas.some(b => b.protocolo !== 'v2' && BANDEJA_ACTIVA(b.estado));
+    vals.homeActions = v2On ? [
+      { label: 'Alimentar', bg: '#111A14', fg: TEXT, mark: NEON, onClick: () => this.openCargas() },
+      { label: 'Nueva recolecta', bg: NEON, fg: INK, mark: INK, onClick: () => this.openNuevaRecoleccion(false) },
+      { label: 'Incubadoras', bg: '#111A14', fg: TEXT, mark: '#A78BFA', onClick: this.openIncubadoras },
+      { label: 'Iniciar ayuno', bg: '#111A14', fg: TEXT, mark: '#FB923C', onClick: () => this.openAyunoV2() },
+      { label: 'Cosecha', bg: '#111A14', fg: TEXT, mark: '#38BDF8', onClick: () => this.openRegistrarEvento('separacion') },
+      // Trays that started under the old protocol finish under it.
+      ...(v1Activas ? [{ label: 'Alimentar (anterior)', bg: '#111A14', fg: TEXT, mark: '#5F7A68', onClick: this.openAlimentarGrupal }] : [])
+    ] : [
       { label: 'Alimentar', bg: '#111A14', fg: TEXT, mark: NEON, onClick: this.openAlimentarGrupal },
       { label: 'Separar bandeja', bg: '#111A14', fg: TEXT, mark: '#38BDF8', onClick: () => this.openRegistrarEvento('separacion') },
       { label: 'Registrar ayuno', bg: '#111A14', fg: TEXT, mark: '#FB923C', onClick: () => this.openRegistrarEvento('ayuno') },
@@ -1603,8 +2149,10 @@ class Component extends DCLogic {
     /* bandejas list */
     vals.bandejaEstadoChips = [this.chip('Todas', !s.estadoFilter, () => this.setState({ estadoFilter: '' }))].concat(
       Object.keys(ESTADO_BANDEJA).map(k => this.chip(ESTADO_BANDEJA[k].label, s.estadoFilter === k, () => this.setState({ estadoFilter: k }), ESTADO_BANDEJA[k].bg, INK)));
-    const insIds = [...new Set(s.bandejas.map(b => b.insectario_id).filter(Boolean))];
-    vals.insectarioFilterOptions = [{ value: '', label: 'Todos' }].concat(insIds.map(id => ({ value: id, label: id })));
+    // The option VALUE is the id, the LABEL is the code people read.
+    const insCodes = new Map();
+    for (const b of s.bandejas) if (b.insectario_id && !insCodes.has(b.insectario_id)) insCodes.set(b.insectario_id, b.insectario_codigo || b.insectario_nombre || '—');
+    vals.insectarioFilterOptions = [{ value: '', label: 'Todos' }].concat([...insCodes].map(([id, code]) => ({ value: id, label: code })));
     vals.rangeChips = [['any', 'Cualquiera'], ['7', '7 días'], ['30', '30 días']].map(r => this.chip(r[1], s.range === r[0], () => this.setState({ range: r[0] })));
     const days = s.range === '7' ? 7 : s.range === '30' ? 30 : null;
     const cutoff = days ? new Date(Date.now() - days * 86400000).toISOString().slice(0, 16) : null;
@@ -1623,33 +2171,67 @@ class Component extends DCLogic {
     /* bandeja detalle */
     const bd = s.bandejaDetalle;
     if (bd) {
-      const meta = ESTADO_BANDEJA[bd.bandeja.estado] || ESTADO_BANDEJA.en_crecimiento;
-      const openAyuno = (s.ayunosAbiertos || []).find(a => a.bandeja_id === bd.bandeja.id);
-      const quick = BANDEJA_ACTIVA(bd.bandeja.estado) ? [
-        // Closing the open fast comes first: it is time-sensitive (the weigh-out
-        // is ~24 h after the weigh-in) and it is the only way merma is ever
-        // recorded.
-        ...(openAyuno ? [{ label: 'Cerrar ayuno', bg: '#FB923C', fg: INK, bd: '#FB923C', onClick: () => this.cerrarAyuno(openAyuno) }] : []),
-        { label: 'Alimentar', bg: '#111A14', fg: TEXT, bd: '#1E4A2F', onClick: () => this.openRegistrarEvento('alimentacion', bd.bandeja.id) },
-        { label: 'Ayuno', bg: '#111A14', fg: TEXT, bd: '#1E4A2F', onClick: () => this.openRegistrarEvento('ayuno', bd.bandeja.id) },
-        { label: 'Revisión', bg: '#111A14', fg: TEXT, bd: '#1E4A2F', onClick: () => this.openRegistrarEvento('revision', bd.bandeja.id) },
-        { label: 'Separar', bg: '#111A14', fg: TEXT, bd: '#1E4A2F', onClick: () => this.openRegistrarEvento('separacion', bd.bandeja.id) }
-      ] : [];
+      const t = bd.bandeja;
+      const meta = ESTADO_BANDEJA[t.estado] || ESTADO_BANDEJA.en_crecimiento;
+      const openAyuno = (s.ayunosAbiertos || []).find(a => a.bandeja_id === t.id);
+      const isV2 = t.protocolo === 'v2';
+      const paso = t.siguiente_paso;
+      const btn = (label, onClick, main) => main
+        ? { label, bg: NEON, fg: INK, bd: NEON, onClick }
+        : { label, bg: '#111A14', fg: TEXT, bd: '#1E4A2F', onClick };
+      let quick = [];
+      if (BANDEJA_ACTIVA(t.estado) && isV2) {
+        // The protocol's next step comes first and stands out.
+        const next = paso && paso.paso === 'carga' ? btn(paso.label, () => this.openCargas(paso.carga, [t.id]), true)
+          : paso && paso.paso === 'ayuno' ? btn('Iniciar ayuno', () => this.openAyunoV2([t.id]), true)
+          : paso && paso.paso === 'cosecha' ? btn('Cosechar', () => this.openRegistrarEvento('separacion', t.id), true)
+          : null;
+        // Only what the protocol says comes next, plus an inspection. Offering
+        // "ayuno" or "cosecha" on día 0 only invites mistakes; an off-plan
+        // harvest is still possible from the Cosecha tile on the home screen.
+        quick = [
+          ...(next ? [next] : []),
+          btn('Revisión', () => this.openRegistrarEvento('revision', t.id))
+        ];
+      } else if (BANDEJA_ACTIVA(t.estado)) {
+        quick = [
+          // Closing the open fast comes first: it is time-sensitive (the weigh-out
+          // is ~24 h after the weigh-in) and it is the only way merma is ever
+          // recorded.
+          ...(openAyuno ? [{ label: 'Cerrar ayuno', bg: '#FB923C', fg: INK, bd: '#FB923C', onClick: () => this.cerrarAyuno(openAyuno) }] : []),
+          btn('Alimentar', () => this.openRegistrarEvento('alimentacion', t.id)),
+          btn('Ayuno', () => this.openRegistrarEvento('ayuno', t.id)),
+          btn('Revisión', () => this.openRegistrarEvento('revision', t.id)),
+          btn('Separar', () => this.openRegistrarEvento('separacion', t.id))
+        ];
+      }
+      const nCargas = (cfg.cargas || []).length;
       vals.bd = {
-        id_bandeja: bd.bandeja.id_bandeja, estadoLabel: meta.label, estadoBg: meta.bg,
-        facts: [
-          { label: 'INSECTARIO', value: bd.bandeja.insectario_codigo || '—' },
-          { label: 'RECOLECCIÓN', value: bd.bandeja.recolecta || '—' },
-          { label: 'FECHA', value: this.fmt(bd.bandeja.fecha) + ' · ' + this.ageDays(bd.bandeja.fecha) },
-          { label: 'INICIADOR', value: (bd.bandeja.iniciador_g || '—') + ' g · ' + (bd.bandeja.tipo_iniciador || '—') }
+        id_bandeja: t.id_bandeja, estadoLabel: meta.label, estadoBg: meta.bg,
+        facts: isV2 ? [
+          { label: 'INSECTARIO', value: t.insectario_codigo || '—' },
+          { label: 'INCUBADORA', value: t.incubadora_codigo || '—' },
+          { label: 'DÍA DEL CICLO', value: t.dia_ciclo == null ? '—' : 'Día ' + t.dia_ciclo + ' de ' + cfg.dia_cosecha },
+          { label: 'CARGAS', value: (t.cargas_dadas && t.cargas_dadas.length ? t.cargas_dadas.join(', ') : 'ninguna') + ' de ' + nCargas },
+          { label: 'LARVAS', value: t.individuos == null ? '—' : Number(t.individuos).toLocaleString('es') },
+          { label: 'EN BANDEJA DESDE', value: this.fmt(t.fecha) }
+        ] : [
+          { label: 'INSECTARIO', value: t.insectario_codigo || '—' },
+          { label: 'RECOLECCIÓN', value: t.recolecta || '—' },
+          { label: 'FECHA', value: this.fmt(t.fecha) + ' · ' + this.ageDays(t.fecha) },
+          { label: 'INICIADOR', value: (t.iniciador_g || '—') + ' g · ' + (t.tipo_iniciador || '—') },
+          { label: 'PROTOCOLO', value: 'Anterior' }
         ],
-        notesLine: bd.bandeja.notas || (bd.bandeja.separacion ? 'Separada — larva limpia: ' + bd.bandeja.separacion.larva_limpia_g + ' g' : 'Sin separar todavía'),
+        notesLine: t.notas || (isV2
+          ? (paso ? 'Siguiente: ' + paso.label + ' · ' + paso.cuando : (t.separacion ? 'Cosechada — ' + t.separacion.larva_limpia_g + ' g al horno' : 'Sin pasos pendientes'))
+          : (t.separacion ? 'Separada — larva limpia: ' + t.separacion.larva_limpia_g + ' g' : 'Sin separar todavía')),
         showQuickActions: quick.length > 0, quickActions: quick,
         showLoteLink: !!bd.lote, loteId: bd.lote ? bd.lote.codigo : '', onOpenLote: () => this.openLoteDetalle(bd.lote.id),
-        timelineLabel: 'HISTORIAL · ' + bd.eventos.length + ' EVENTOS',
+        timelineLabel: 'HISTORIAL · ' + bd.eventos.length + ' EVENTOS' + (isV2 ? '' : ' · PROTOCOLO ANTERIOR'),
         eventos: bd.eventos.map(l => ({
           evento: (EVENTO_META[l.tipo] || {}).label || l.tipo, when: this.fmt(l.fecha), detail: this.eventoDetalle(l),
-          meta: [l.operator_name, l.foto ? 'foto' : ''].filter(Boolean).join(' · '),
+          // Who did it, as stored on the record itself.
+          meta: [l.registrado_por, l.foto_key ? 'foto' : ''].filter(Boolean).join(' · '),
           notas: l.tipo === 'revision' ? '' : (l.notas || ''), dot: (EVENTO_META[l.tipo] || {}).dot || '#5F7A68'
         }))
       };
@@ -1669,9 +2251,10 @@ class Component extends DCLogic {
     vals.askConfirmLabel = ask ? (ask.confirmLabel || 'Guardar') : 'Guardar';
     vals.askError = ask ? (ask.error || '') : '';
     vals.askHasError = !!(ask && ask.error);
-    vals.askDisabled = !askVal;
-    vals.askBg = askVal ? NEON : DISABLED_BG;
-    vals.askFg = askVal ? INK : DISABLED_FG;
+    const askOk = !!askVal || !!(ask && ask.allowEmpty);
+    vals.askDisabled = !askOk;
+    vals.askBg = askOk ? NEON : DISABLED_BG;
+    vals.askFg = askOk ? INK : DISABLED_FG;
     vals.onAskCancel = this.closeAsk;
     vals.onAskConfirm = this.submitAsk;
 
@@ -1729,7 +2312,7 @@ class Component extends DCLogic {
     vals.ayunosLabel = 'AYUNOS ABIERTOS · ' + ays.length;
     vals.ayunoRows = ays.map(a => ({
       label: a.bandeja_label,
-      sub: 'Inició ' + this.rel(a.fecha) + ' · ' + a.peso_inicial_kg + ' kg · ' + a.horas_ayuno + ' h',
+      sub: 'Inició ' + this.rel(a.fecha) + ' · ' + (a.peso_inicial_kg == null ? 'sin pesar' : a.peso_inicial_kg + ' kg') + ' · ' + a.horas_ayuno + ' h',
       onClose: () => this.cerrarAyuno(a)
     }));
 
@@ -1749,10 +2332,28 @@ class Component extends DCLogic {
       onPick: () => this.setState(st => ({ form: Object.assign({}, st.form, { bandeja_id: b.id, bandejaSearch: '' }) }))
     })) : [];
     vals.eventoChips = EVENTO_ORDER.map(k => this.chip(EVENTO_META[k].label, f.tipo_evento === k, () => this.setField('tipo_evento', k), EVENTO_META[k].dot, INK));
-    vals.showAlimentoFields = f.tipo_evento === 'alimentacion';
+    // The tray chosen in the form decides which protocol's rules apply.
+    const trayEv = s.bandejas.find(b => b.id === f.bandeja_id) || null;
+    const trayEvV2 = !!trayEv && trayEv.protocolo === 'v2';
+    const pasoEv = trayEv ? trayEv.siguiente_paso : null;
+    vals.showV2FeedNotice = f.tipo_evento === 'alimentacion' && trayEvV2;
+    vals.v2FeedNoticeLabel = pasoEv && pasoEv.paso === 'carga' ? 'Dar ' + pasoEv.label : 'Ir a Alimentar';
+    vals.onV2FeedNotice = () => this.openCargas(pasoEv && pasoEv.paso === 'carga' ? pasoEv.carga : null, trayEv ? [trayEv.id] : null);
+    vals.showAlimentoFields = f.tipo_evento === 'alimentacion' && !trayEvV2;
     vals.showAyunoFields = f.tipo_evento === 'ayuno';
+    vals.showAyunoV2Hint = f.tipo_evento === 'ayuno' && trayEvV2;
+    vals.pesoInicialLabel = trayEvV2 ? 'PESO INICIAL (opcional)' : 'PESO INICIAL';
     vals.showSeparacionFields = f.tipo_evento === 'separacion';
-    vals.horasLabel = (f.horas_ayuno || 24) + ' h';
+    vals.larvaLabel = trayEvV2 ? 'LARVA PARA HORNEADO' : 'LARVA LIMPIA';
+    vals.showReservaField = f.tipo_evento === 'separacion' && trayEvV2;
+    const gHorno = parseFloat(f.larva_limpia_g), gLab = parseFloat(f.reserva_cria_g);
+    const pctLab = gHorno >= 0 && gLab >= 0 && (gHorno + gLab) > 0 ? Math.round((gLab / (gHorno + gLab)) * 1000) / 10 : null;
+    const objetivo = cfg.reserva_cria_pct || 2;
+    vals.reservaHint = pctLab == null
+      ? 'Se pesa aparte. Objetivo del plan: ≈ ' + objetivo + ' % de la cosecha.'
+      : 'Es el ' + String(pctLab).replace('.', ',') + ' % de la cosecha (objetivo ≈ ' + objetivo + ' %).';
+    vals.reservaHintFg = pctLab != null && Math.abs(pctLab - objetivo) > 1 ? '#FB923C' : '#7FA189';
+    vals.horasLabel = (f.horas_ayuno || this.horasDefault(f)) + ' h';
     vals.onHorasMinus = () => this.adjustHoras(-6); vals.onHorasPlus = () => this.adjustHoras(6);
     const pi = parseFloat(f.peso_inicial_kg), pf = parseFloat(f.peso_final_kg);
     const merma = pi > 0 && !isNaN(pf) ? Math.round(((pi - pf) / pi) * 1000) / 10 : null;
@@ -1761,18 +2362,22 @@ class Component extends DCLogic {
     vals.mermaBg = merma == null ? '#17211A' : '#0E2415'; vals.mermaFg = merma == null ? '#5A6F60' : '#4ADE80'; vals.mermaLabelFg = merma == null ? '#5A6F60' : '#5FBF7F';
 
     const evReady = !!f.bandeja_id && !!f.tipo_evento &&
-      (f.tipo_evento !== 'alimentacion' || !!f.tipo_alimento) &&
-      (f.tipo_evento !== 'ayuno' || !!f.peso_inicial_kg) &&
+      // A v2 tray is fed from "Alimentar", never from this form.
+      (f.tipo_evento !== 'alimentacion' || (!trayEvV2 && !!f.tipo_alimento)) &&
+      (f.tipo_evento !== 'ayuno' || trayEvV2 || !!f.peso_inicial_kg) &&
       (f.tipo_evento !== 'separacion' || !!f.larva_limpia_g);
     vals.eventoDisabled = s.saving || !evReady;
     vals.eventoBg = vals.eventoDisabled ? DISABLED_BG : NEON; vals.eventoFg = vals.eventoDisabled ? DISABLED_FG : INK;
-    vals.eventoLabel = s.saving ? 'Guardando…' : 'Guardar ' + ((EVENTO_META[f.tipo_evento] || {}).label || 'evento').toLowerCase();
+    vals.eventoLabel = s.saving ? 'Guardando…'
+      : f.tipo_evento === 'separacion' && trayEvV2 ? 'Guardar cosecha'
+      : 'Guardar ' + ((EVENTO_META[f.tipo_evento] || {}).label || 'evento').toLowerCase();
     vals.onSaveEvento = this.saveEvento;
 
     /* alimentar grupal */
     // Trays still in ayuno are deliberately included: fasting is part of the
     // rearing cycle and a tray only leaves the feeding pool once harvested.
-    const activas = s.bandejas.filter(b => BANDEJA_ACTIVA(b.estado));
+    // Only old-protocol trays: a v2 tray is fed from the plan ("Alimentar").
+    const activas = s.bandejas.filter(b => BANDEJA_ACTIVA(b.estado) && b.protocolo !== 'v2');
     vals.grupalBandejaChips = activas.map(b => this.chip(b.id_bandeja, (f.bandeja_ids || []).indexOf(b.id) >= 0, () => this.toggleGrupalBandeja(b.id)));
     vals.selectedCountLabel = (f.bandeja_ids || []).length + ' seleccionadas';
     vals.grupalDisabled = s.saving || !(f.bandeja_ids || []).length || !f.tipo_alimento || !f.cantidad_kg;
@@ -1781,7 +2386,11 @@ class Component extends DCLogic {
     vals.onSaveGrupal = this.saveGrupal;
 
     /* nueva bandeja */
-    vals.recoleccionChips = s.recolecciones.slice(0, 6).map(r => this.chip(r.insectario_nombre + ' · ' + r.recolecta, f.recoleccion_id === r.id, () => this.setField('recoleccion_id', r.id)));
+    // Old-protocol trays hang from old-protocol recolecciones; v2 trays only come
+    // out of an incubadora. The code, not the name, so two colonies with the
+    // same name never look alike.
+    vals.recoleccionChips = s.recolecciones.filter(r => r.protocolo !== 'v2').slice(0, 6)
+      .map(r => this.chip((r.insectario_codigo || r.insectario_nombre || '—') + ' · R' + r.recolecta, f.recoleccion_id === r.id, () => this.setField('recoleccion_id', r.id)));
     const rec = s.recolecciones.find(r => r.id === f.recoleccion_id);
     vals.idBandejaPreview = rec ? this.ddmm(f.fecha) + '.' + rec.recolecta + '.' + (f.no_bandeja || '?') : '—';
     // Warn before saving rather than after: a duplicate number means two
@@ -1829,12 +2438,25 @@ class Component extends DCLogic {
         cierreBg: ins.cierre_real ? DISABLED_BG : '#111A14', cierreFg: ins.cierre_real ? DISABLED_FG : TEXT, cierreBd: ins.cierre_real ? DISABLED_BG : '#1E4A2F',
         onCierre: this.doCierre,
         recoleccionesLabel: 'RECOLECCIONES · ' + insD.recolecciones.length,
-        recolecciones: insD.recolecciones.map(r => ({ id: r.id, fecha: this.fmt(r.fecha), huevos: (r.huevos_g == null ? '—' : r.huevos_g + ' g') }))
+        // The recolecta number and, in v2, its incubadora code — never an id.
+        recolecciones: insD.recolecciones.map(r => r.protocolo === 'v2' ? {
+          label: 'R' + r.recolecta + ' · ' + (r.incubadora_codigo || '—'),
+          fecha: this.fmt(r.fecha),
+          dato: r.peso_ovipositores_g == null ? '—' : r.peso_ovipositores_g + ' g ovip.',
+          onOpen: () => { if (r.incubadora_id) this.openIncubadoraDetalle(r.incubadora_id); }
+        } : {
+          label: 'Recolecta ' + r.recolecta,
+          fecha: this.fmt(r.fecha),
+          dato: r.huevos_g == null ? '—' : r.huevos_g + ' g',
+          onOpen: () => {}
+        })
       };
     } else {
       vals.ins = { id: '', estadoLabel: '', estadoBg: '#1D2A21', facts: [], notesLine: 'Cargando…', atractanteDone: true, atractanteLabel: 'Atractante', atractanteBg: DISABLED_BG, atractanteFg: DISABLED_FG, atractanteBd: DISABLED_BG, onAtractante: () => {}, cierreDone: true, cierreLabel: 'Cierre', cierreBg: DISABLED_BG, cierreFg: DISABLED_FG, cierreBd: DISABLED_BG, onCierre: () => {}, recoleccionesLabel: 'RECOLECCIONES', recolecciones: [] };
     }
-    vals.onNuevaRecoleccion = this.openNuevaRecoleccion;
+    vals.onNuevaRecoleccion = () => this.openNuevaRecoleccion(true);
+    vals.nuevaRecoleccionBtnLabel = v2On ? '+ Nueva recolecta' : '+ Nueva recolección';
+    vals.onNuevaRecoleccionHome = () => this.openNuevaRecoleccion(false);
 
     /* nuevo insectario */
     vals.nombreChips = (this.api ? this.api.NOMBRES_INSECTARIO : []).map(n => this.chip(n, f.nombre_insectario === n, () => this.setField('nombre_insectario', n)));
@@ -1845,11 +2467,152 @@ class Component extends DCLogic {
     vals.nuevoInsectarioLabel = s.saving ? 'Guardando…' : 'Crear insectario';
     vals.onSaveInsectario = this.saveInsectario;
 
-    /* nueva recoleccion */
-    vals.nuevaRecoleccionDisabled = s.saving || !f.insectario_id;
+    /* nueva recoleccion / recolecta */
+    const insRec = s.insectarios.find(i => i.id === f.insectario_id) || null;
+    const insOpciones = s.insectarios.filter(i => i.estado === 'activo' || i.id === f.insectario_id);
+    vals.recInsectarioChips = insOpciones.map(i => this.chip(i.codigo, f.insectario_id === i.id, () => this.setField('insectario_id', i.id)));
+    vals.recEsV2 = v2On;
+    vals.recEsV1 = !v2On;
+    const atr = !!f.atrayente_cambiado;
+    vals.onToggleAtrayente = () => this.toggleField('atrayente_cambiado');
+    vals.atrayenteBg = atr ? '#0E2415' : CARD; vals.atrayenteFg = atr ? '#4ADE80' : TEXT;
+    vals.atrayenteBd = atr ? NEON : '#F87171'; vals.atrayenteMark = atr ? '✓' : '';
+    // The code the incubadora will get: generación + letra + R + recolecta.
+    // Only a preview; the data layer computes the real one when saving.
+    if (insRec) {
+      const nums = s.recolecciones.filter(r => r.insectario_id === insRec.id)
+        .map(r => parseInt(String(r.recolecta || '').replace(/\D/g, ''), 10)).filter(n => isFinite(n));
+      const next = (nums.length ? Math.max.apply(null, nums) : 0) + 1;
+      const gen = String(insRec.generacion_moscas || '').trim().toUpperCase().replace(/\s+/g, '') || 'F?';
+      const nom = String(insRec.nombre_insectario || '').trim();
+      const letra = String((cfg.letras_insectario || {})[nom] || nom.charAt(0) || '?').toUpperCase();
+      vals.incubadoraPreview = gen + letra + 'R' + next;
+    } else {
+      vals.incubadoraPreview = 'elige el insectario';
+    }
+    vals.nuevaRecoleccionDisabled = s.saving || !f.insectario_id ||
+      (v2On && (!(parseFloat(f.peso_ovipositores_g) > 0) || !atr));
     vals.nuevaRecoleccionBg = vals.nuevaRecoleccionDisabled ? DISABLED_BG : NEON; vals.nuevaRecoleccionFg = vals.nuevaRecoleccionDisabled ? DISABLED_FG : INK;
-    vals.nuevaRecoleccionLabel = s.saving ? 'Guardando…' : 'Registrar recolección';
+    vals.nuevaRecoleccionLabel = s.saving ? 'Guardando…'
+      : !v2On ? 'Registrar recolección'
+      : !f.insectario_id ? 'Elige el insectario'
+      : !(parseFloat(f.peso_ovipositores_g) > 0) ? 'Falta el peso de los ovipositores'
+      : !atr ? 'Confirma el cambio de atrayente'
+      : 'Guardar y crear incubadora';
     vals.onSaveRecoleccion = this.saveRecoleccion;
+
+    /* alimentar según el plan (v2) */
+    const cargaN = Number(f.carga) || null;
+    const cargaDefs = cfg.cargas || [];
+    vals.cargaChips = cargaDefs.map(c => {
+      const n = this.cargaCandidatas(c.n).length;
+      const chip = this.chip('Carga ' + c.n + ' · ' + kgTxt(c.kg) + ' kg' + (n ? ' (' + n + ')' : ''), cargaN === c.n, () => this.setCarga(c.n));
+      return chip;
+    });
+    const candidatas = cargaN ? this.cargaCandidatas(cargaN) : [];
+    const selCarga = (f.bandeja_ids || []);
+    vals.cargaBandejaChips = candidatas.map(b => {
+      const on = selCarga.indexOf(b.id) >= 0;
+      const p = b.siguiente_paso;
+      return Object.assign(this.chip(b.id_bandeja, on, () => this.toggleGrupalBandeja(b.id)), {
+        sub: 'Día ' + b.dia_ciclo + ' · ' + p.cuando
+      });
+    });
+    vals.hasCargaBandejas = candidatas.length > 0;
+    vals.noCargaBandejas = candidatas.length === 0;
+    const defCarga = cargaDefs.find(c => c.n === cargaN) || null;
+    vals.showTamizado = !!(defCarga && defCarga.tamizado);
+    vals.onToggleTamizado = () => this.toggleField('tamizado');
+    const tam = !!f.tamizado;
+    vals.tamizadoBg = tam ? '#0E2415' : CARD; vals.tamizadoFg = tam ? '#4ADE80' : TEXT;
+    vals.tamizadoBd = tam ? NEON : BORDER; vals.tamizadoMark = tam ? '✓' : '';
+    const nSel = selCarga.filter(id => candidatas.some(b => b.id === id)).length;
+    vals.cargaCountLabel = nSel + ' de ' + candidatas.length;
+    vals.hasV1Activas = v1Activas;
+    vals.onOpenAlimentarV1 = this.openAlimentarGrupal;
+    vals.cargasDisabled = s.saving || !nSel || !defCarga;
+    vals.cargasBg = vals.cargasDisabled ? DISABLED_BG : NEON; vals.cargasFg = vals.cargasDisabled ? DISABLED_FG : INK;
+    vals.cargasLabel = s.saving ? 'Guardando…'
+      : !defCarga ? 'Elige la carga'
+      : !nSel ? 'Elige las bandejas'
+      : 'Dar carga ' + defCarga.n + ' a ' + nSel + ' bandeja' + (nSel === 1 ? '' : 's') + ' · ' + kgTxt(defCarga.kg * nSel) + ' kg';
+    vals.onSaveCargas = this.saveCargas;
+
+    /* iniciar ayuno (v2) */
+    const candAyuno = this.ayunoCandidatas();
+    const selAyuno = (f.bandeja_ids || []).filter(id => candAyuno.some(b => b.id === id));
+    vals.ayunoBandejaChips = candAyuno.map(b => Object.assign(
+      this.chip(b.id_bandeja, selAyuno.indexOf(b.id) >= 0, () => this.toggleGrupalBandeja(b.id), '#FB923C', INK),
+      { sub: 'Día ' + b.dia_ciclo + ' · ' + b.siguiente_paso.cuando }));
+    vals.hasAyunoBandejas = candAyuno.length > 0;
+    vals.noAyunoBandejas = candAyuno.length === 0;
+    vals.ayunoCountLabel = selAyuno.length + ' de ' + candAyuno.length;
+    vals.ayunoV2Disabled = s.saving || !selAyuno.length;
+    vals.ayunoV2Bg = vals.ayunoV2Disabled ? DISABLED_BG : '#FB923C'; vals.ayunoV2Fg = vals.ayunoV2Disabled ? DISABLED_FG : INK;
+    vals.ayunoV2Label = s.saving ? 'Guardando…' : !selAyuno.length ? 'Elige las bandejas' : 'Iniciar ayuno de ' + selAyuno.length + ' bandeja' + (selAyuno.length === 1 ? '' : 's');
+    vals.onSaveAyunoV2 = this.saveAyunoV2;
+
+    /* incubadoras */
+    const incs = s.incubadoras || [];
+    vals.noIncubadoras = incs.length === 0;
+    vals.incubadoraRows = incs.map(i => {
+      const m = ESTADO_INCUBADORA[i.estado] || ESTADO_INCUBADORA.incubando;
+      const p = i.siguiente_paso;
+      return {
+        codigo: i.codigo, estadoLabel: m.label, estadoBg: m.bg,
+        line2: [i.insectario_codigo || '—', i.estado === 'incubando' && i.dia_ciclo != null ? 'Día ' + i.dia_ciclo : null,
+                i.estado === 'distribuida' ? i.n_bandejas + ' bandejas' : null].filter(Boolean).join('  ·  '),
+        paso: p ? p.label + ' · ' + p.cuando : '',
+        pasoFg: p ? (PASO_FG[p.estado] || '#9FB8A6') : '#9FB8A6',
+        onOpen: () => this.openIncubadoraDetalle(i.id)
+      };
+    });
+
+    const incD = s.incubadoraDetalle;
+    if (incD) {
+      const i = incD.incubadora;
+      const m = ESTADO_INCUBADORA[i.estado] || ESTADO_INCUBADORA.incubando;
+      const p = i.siguiente_paso;
+      const nB = parseInt(f.n_bandejas, 10);
+      const porB = parseInt(f.individuos_por_bandeja, 10);
+      vals.inc = {
+        codigo: i.codigo, estadoLabel: m.label, estadoBg: m.bg,
+        facts: [
+          { label: 'INSECTARIO', value: i.insectario_codigo || '—' },
+          { label: 'RECOLECTA', value: i.recolecta ? 'R' + i.recolecta + ' · ' + this.fmt(i.recoleccion_fecha) : '—' },
+          { label: 'DÍA 0', value: this.fmt(i.fecha_inicio) },
+          { label: 'DÍA DEL CICLO', value: i.dia_ciclo == null ? '—' : 'Día ' + i.dia_ciclo },
+          { label: 'OVIPOSITORES', value: i.peso_ovipositores_g == null ? '—' : i.peso_ovipositores_g + ' g' },
+          { label: 'STARTER', value: i.starter_kg == null ? '—' : kgTxt(i.starter_kg) + ' kg' },
+          { label: 'LARVAS', value: i.individuos_total == null ? '—' : Number(i.individuos_total).toLocaleString('es') },
+          { label: 'DISTRIBUIDA', value: i.distribuida_at ? this.fmt(i.distribuida_at) + (i.distribuida_por ? ' · ' + i.distribuida_por : '') : '—' }
+        ],
+        notesLine: i.estado === 'incubando'
+          ? (p ? 'Distribución en bandejas el día ' + cfg.dias_incubacion + ' · ' + p.cuando : 'Incubando')
+          : 'Distribuida en ' + incD.bandejas.length + ' bandejas',
+        showDistribuir: i.estado === 'incubando',
+        totalLine: nB > 0 && porB >= 0 ? 'Total: ' + (nB * porB).toLocaleString('es') + ' larvas en ' + nB + ' bandejas' : 'El plan propone ' + Number(cfg.individuos_por_bandeja || 0).toLocaleString('es') + ' por bandeja.',
+        codigosPreview: nB > 0 ? 'Códigos: ' + i.codigo + '-01' + (nB > 1 ? ' … ' + i.codigo + '-' + String(nB).padStart(2, '0') : '') : '',
+        hasBandejas: incD.bandejas.length > 0,
+        bandejasLabel: 'BANDEJAS · ' + incD.bandejas.length,
+        bandejas: incD.bandejas.map(b => this.bandejaRow(b))
+      };
+      const c1 = cargaDefs.find(c => c.n === 1);
+      const on1 = f.carga1 !== false;
+      vals.onToggleCarga1 = () => this.toggleField('carga1');
+      vals.carga1Bg = on1 ? '#0E2415' : CARD; vals.carga1Fg = on1 ? '#4ADE80' : TEXT;
+      vals.carga1Bd = on1 ? NEON : BORDER; vals.carga1Mark = on1 ? '✓' : '';
+      vals.carga1Label = c1 ? 'Carga 1 dada ahora (' + kgTxt(c1.kg) + ' kg por bandeja)' : 'Carga 1 dada ahora';
+      vals.distribuirDisabled = s.saving || !(nB > 0);
+      vals.distribuirLabel = s.saving ? 'Guardando…' : nB > 0 ? 'Distribuir en ' + nB + ' bandeja' + (nB === 1 ? '' : 's') : 'Escribe cuántas bandejas';
+    } else {
+      vals.inc = { codigo: '', estadoLabel: '', estadoBg: '#1D2A21', facts: [], notesLine: 'Cargando…', showDistribuir: false,
+                   totalLine: '', codigosPreview: '', hasBandejas: false, bandejasLabel: 'BANDEJAS', bandejas: [] };
+      vals.onToggleCarga1 = () => {}; vals.carga1Bg = CARD; vals.carga1Fg = TEXT; vals.carga1Bd = BORDER; vals.carga1Mark = '';
+      vals.carga1Label = 'Carga 1 dada ahora'; vals.distribuirDisabled = true; vals.distribuirLabel = '';
+    }
+    vals.distribuirBg = vals.distribuirDisabled ? DISABLED_BG : NEON; vals.distribuirFg = vals.distribuirDisabled ? DISABLED_FG : INK;
+    vals.onDistribuir = this.distribuir;
 
     /* lotes */
     vals.loteRows = s.lotes.map(l => ({
@@ -1926,12 +2689,24 @@ class Component extends DCLogic {
   }
 
   eventoDetalle(l) {
-    if (l.tipo === 'alimentacion') return (l.cantidad_kg == null ? '—' : l.cantidad_kg + ' kg') + (l.tipo_alimento ? ' · ' + l.tipo_alimento : '') + (l.origen === 'grupal' ? ' · grupal' : '');
-    if (l.tipo === 'ayuno') {
-      const merma = l.peso_inicial_kg > 0 && l.peso_final_kg != null ? Math.round(((l.peso_inicial_kg - l.peso_final_kg) / l.peso_inicial_kg) * 1000) / 10 : null;
-      return l.peso_inicial_kg + ' kg → ' + (l.peso_final_kg == null ? '…' : l.peso_final_kg + ' kg') + (merma != null ? ' · merma ' + merma + '%' : '') + ' · ' + l.horas_ayuno + ' h';
+    if (l.tipo === 'alimentacion') {
+      // Protocolo nuevo: a numbered load from the plan.
+      if (l.carga) return 'Carga ' + l.carga + ' · ' + kgTxt(l.cantidad_kg) + ' kg ' + (l.tipo_alimento || '').toLowerCase() + (l.tamizado ? ' · tamizado' : '');
+      return (l.cantidad_kg == null ? '—' : l.cantidad_kg + ' kg') + (l.tipo_alimento ? ' · ' + l.tipo_alimento : '') + (l.origen === 'grupal' ? ' · grupal' : '');
     }
-    if (l.tipo === 'separacion') return (l.larva_limpia_g == null ? '—' : l.larva_limpia_g + ' g larva limpia');
+    if (l.tipo === 'ayuno') {
+      const cerrado = l.cerrado_at || l.peso_final_kg != null;
+      if (l.peso_inicial_kg == null) {
+        return 'Sin pesar · ' + l.horas_ayuno + ' h' + (cerrado ? ' · cerrado' : ' · en curso') +
+               (l.peso_final_kg != null ? ' · final ' + l.peso_final_kg + ' kg' : '');
+      }
+      const merma = l.peso_inicial_kg > 0 && l.peso_final_kg != null ? Math.round(((l.peso_inicial_kg - l.peso_final_kg) / l.peso_inicial_kg) * 1000) / 10 : null;
+      return l.peso_inicial_kg + ' kg → ' + (l.peso_final_kg == null ? (cerrado ? 'sin peso final' : '…') : l.peso_final_kg + ' kg') + (merma != null ? ' · merma ' + merma + '%' : '') + ' · ' + l.horas_ayuno + ' h';
+    }
+    if (l.tipo === 'separacion') {
+      if (l.reserva_cria_g != null) return (l.larva_limpia_g == null ? '—' : l.larva_limpia_g + ' g al horno') + ' · ' + l.reserva_cria_g + ' g al laboratorio';
+      return (l.larva_limpia_g == null ? '—' : l.larva_limpia_g + ' g larva limpia');
+    }
     return l.notas || 'Revisión registrada';
   }
 }

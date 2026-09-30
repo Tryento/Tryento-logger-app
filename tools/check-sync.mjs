@@ -81,7 +81,7 @@ const { openDb, __closeDb } = await import('../src/data/idb/open.js');
 const { outboxStats, listStuck } = await import('../src/data/outbox.js');
 const { DB_NAME } = await import('../src/data/idb/schema.js');
 
-const ids = { insectario: [], recoleccion: [], bandeja: [], ayuno: [], separacion: [], lote: [] };
+const ids = { insectario: [], recoleccion: [], incubadora: [], bandeja: [], ayuno: [], separacion: [], lote: [] };
 const OP = 'Maria';
 
 try {
@@ -92,8 +92,10 @@ try {
   await api.rememberOperator(OP);
 
   /* ── capture, exactly as a phone does ─────────────────────────────────── */
+  // ZZTEST, never a real colony name: these rows live in production until the
+  // cleanup below marks them deleted.
   const ins = await api.createInsectario({
-    nombre_insectario: 'ICB', fecha_inicio: '2026-05-01', generacion_moscas: 'F6',
+    nombre_insectario: 'ZZTEST', fecha_inicio: '2026-05-01', generacion_moscas: 'F6',
     biomasa_kg: 3.1, proyeccion_cierre: '2026-05-22'   // sin operator_name: a proposito
   });
   if (!ins.ok) throw new Error('createInsectario: ' + ins.error.message);
@@ -122,6 +124,32 @@ try {
   await api.updateLoteQC(lote.data.id, { peso_final_kg: 0.11, tiempo_secado_horas: 14, qc_aprobado: true });
   await api.marcarEmpacado(lote.data.id, {});
   await api.marcarAtractante(ins.data.id);
+
+  // Protocolo v2, only if the server has 0007 (otherwise say so plainly).
+  const tieneV2 = !(await db.from('parametro').select('clave').limit(1)).error;
+  let v2 = null;
+  if (tieneV2) {
+    const r = await api.createRecoleccionV2({ insectario_id: ins.data.id, peso_ovipositores_g: 320,
+                                             atrayente_cambiado: true, starter_kg: 2, operator_name: OP });
+    if (!r.ok) throw new Error('createRecoleccionV2: ' + r.error.message);
+    ids.recoleccion.push(r.data.recoleccion.id);
+    ids.incubadora.push(r.data.incubadora.id);
+    const d = await api.distribuirIncubadora(r.data.incubadora.id, { n_bandejas: 2, operator_name: OP });
+    if (!d.ok) throw new Error('distribuirIncubadora: ' + d.error.message);
+    const trays = d.data.bandejas.map(b => b.id);
+    ids.bandeja.push(...trays);
+    const c2 = await api.logCarga({ bandeja_ids: trays, carga: 2, tamizado: true, operator_name: OP });
+    if (!c2.ok) throw new Error('logCarga: ' + c2.error.message);
+    const ay2 = await api.logAyunoGrupal({ bandeja_ids: trays, operator_name: OP });
+    if (!ay2.ok) throw new Error('logAyunoGrupal: ' + ay2.error.message);
+    ids.ayuno.push(...ay2.data.rows.map(a => a.id));
+    const s2 = await api.logSeparacion({ bandeja_id: trays[0], larva_limpia_g: 4900, reserva_cria_g: 100, operator_name: OP });
+    if (!s2.ok) throw new Error('logSeparacion v2: ' + s2.error.message);
+    ids.separacion.push(s2.data.id);
+    v2 = { inc: r.data.incubadora.id, trays, sep: s2.data.id };
+  } else {
+    bad('protocolo v2', 'el servidor no tiene 0007 todavía', 'Corre supabase/migrations/0007_protocolo_v2.sql en el SQL Editor.');
+  }
 
   const before = await outboxStats(await openDb());
   ok('captura sin conexion', before.pending + ' operaciones en cola');
@@ -221,6 +249,26 @@ try {
   if (r6.data && r6.data.length === 1) ok('lote vinculada a su separacion', 'nunca apunta a nada');
   else bad('lote vinculada a su separacion', ((r6.data && r6.data.length) || 0) + ' vinculos');
 
+  if (v2) {
+    const inc = (await db.from('incubadora').select('estado, distribuida_por').eq('id', v2.inc).single()).data;
+    const trays = (await db.from('bandeja').select('id, protocolo').in('id', v2.trays)).data || [];
+    const feeds = (await db.from('alimentacion').select('carga, protocolo, tamizado').in('bandeja_id', v2.trays)).data || [];
+    const fasts = (await db.from('ayuno').select('protocolo, cerrado_at, cerrado_por').in('bandeja_id', v2.trays)).data || [];
+    const sep = (await db.from('separacion').select('protocolo, reserva_cria_g').eq('id', v2.sep).single()).data;
+    if (inc && inc.estado === 'distribuida' && inc.distribuida_por === OP) ok('protocolo v2: incubadora distribuida', 'por ' + OP);
+    else bad('protocolo v2: incubadora distribuida', JSON.stringify(inc));
+    if (trays.length === 2 && trays.every(t => t.protocolo === 'v2')) ok('protocolo v2: bandejas', '2 bandejas v2');
+    else bad('protocolo v2: bandejas', JSON.stringify(trays));
+    const c1 = feeds.filter(f => f.carga === 1).length, c2n = feeds.filter(f => f.carga === 2 && f.tamizado).length;
+    if (c1 === 2 && c2n === 2 && feeds.every(f => f.protocolo === 'v2')) ok('protocolo v2: cargas 1 y 2', '4 filas, tamizado en la 2');
+    else bad('protocolo v2: cargas 1 y 2', JSON.stringify(feeds));
+    const cerrado = fasts.find(a => a.cerrado_at);
+    if (fasts.length === 2 && cerrado && cerrado.cerrado_por === OP) ok('protocolo v2: la cosecha cierra el ayuno', 'sin pesar, atribuido');
+    else bad('protocolo v2: la cosecha cierra el ayuno', JSON.stringify(fasts));
+    if (sep && sep.protocolo === 'v2' && Number(sep.reserva_cria_g) === 100) ok('protocolo v2: 2 % al laboratorio', '100 g');
+    else bad('protocolo v2: 2 % al laboratorio', JSON.stringify(sep));
+  }
+
   /* ── a second device: wipe everything local and pull from scratch ─────── */
   // Settle first. Every write called nudge(), so a background pass may still be
   // touching the database; wiping it underneath one throws InvalidStateError.
@@ -262,13 +310,21 @@ try {
   if (process.env.DEBUG) console.error(e);
 } finally {
   /* ── clean up the server ──────────────────────────────────────────────── */
+  // Marked deleted, never hard-deleted: a hard DELETE is invisible to the
+  // phones' pull, and a phone that had already pulled these rows would keep
+  // them — and have anything recorded under them rejected by a foreign key.
+  // `node tools/cleanup-qa.mjs --purge` removes them for good later.
   try {
-    if (ids.bandeja.length) await db.from('alimentacion').delete().in('bandeja_id', ids.bandeja);
-    for (const t of ['lote', 'separacion', 'ayuno', 'revision', 'bandeja', 'recoleccion', 'insectario']) {
-      if (ids[t] && ids[t].length) await db.from(t).delete().in('id', ids[t]);
+    const now = new Date().toISOString();
+    if (ids.bandeja.length) {
+      await db.from('alimentacion').update({ deleted_at: now }).in('bandeja_id', ids.bandeja);
+      await db.from('revision').update({ deleted_at: now }).in('bandeja_id', ids.bandeja);
     }
-    const left = await db.from('insectario').select('id').in('id', ids.insectario);
-    if (!left.data || !left.data.length) ok('limpieza', 'no queda nada de prueba en la base');
+    for (const t of ['lote', 'separacion', 'ayuno', 'bandeja', 'incubadora', 'recoleccion', 'insectario']) {
+      if (ids[t] && ids[t].length) await db.from(t).update({ deleted_at: now }).in('id', ids[t]);
+    }
+    const left = await db.from('insectario').select('id').in('id', ids.insectario).is('deleted_at', null);
+    if (!left.data || !left.data.length) ok('limpieza', 'filas de prueba marcadas como borradas');
     else bad('limpieza', left.data.length + ' filas quedaron');
   } catch (e) {
     bad('limpieza', e.message);

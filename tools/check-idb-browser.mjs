@@ -17,6 +17,9 @@
  *   1. a phone on the pre-rename build (cochada stores, queued lote work)
  *   2. a phone whose database cannot be upgraded -> the error banner, and the
  *      old data left untouched
+ *   3. the v2 protocol screens, driven like a person would: feed carga 2 from
+ *      the plan, register a recolecta, distribute its incubadora — then read
+ *      IndexedDB to confirm what was stored
  */
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -28,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, 'dist');
+const { DB_VERSION } = await import('../src/data/idb/schema.js');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'idb', 'schema-v1-antes-del-renombrado.mjs');
 
 if (!existsSync(path.join(DIST, 'index.html'))) {
@@ -113,14 +117,20 @@ async function launch() {
   });
   await send('Page.enable');
   await send('Runtime.enable');
+  // A phone-sized screen, so layouts are judged at the size staff use.
+  await send('Emulation.setDeviceMetricsOverride', { width: 412, height: 915, deviceScaleFactor: 1, mobile: true });
 
+  // Everything waits with a deadline: a missed browser event must fail the run
+  // with a message, not hang it.
+  const within = (p, ms, what) => Promise.race([p, new Promise((_, j) =>
+    setTimeout(() => j(new Error(`${what}: sin respuesta en ${ms / 1000} s`)), ms))]);
   const navigate = async url => {
     const loaded = new Promise(r => listeners.push(m => { if (m.method === 'Page.loadEventFired') r(); }));
-    await send('Page.navigate', { url });
-    await loaded;
+    await within(send('Page.navigate', { url }), 15000, 'navegar a ' + url);
+    await within(loaded, 20000, 'cargar ' + url);
   };
   const evaluate = async (expression) => {
-    const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+    const r = await within(send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }), 30000, 'evaluar');
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
     return r.result.value;
   };
@@ -131,7 +141,16 @@ async function launch() {
     try { proc.kill(); } catch { /* gone */ }
     await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 }).catch(() => {});
   };
-  return { navigate, evaluate, close, logs };
+  /** SHOTS=<folder> saves a full-page screenshot, to look at a screen. */
+  const shot = async name => {
+    if (!process.env.SHOTS) return;
+    await new Promise(r => setTimeout(r, 250));
+    const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+    const { writeFile, mkdir } = await import('node:fs/promises');
+    await mkdir(process.env.SHOTS, { recursive: true });
+    await writeFile(path.join(process.env.SHOTS, name + '.png'), Buffer.from(data, 'base64'));
+  };
+  return { navigate, evaluate, close, logs, shot };
 }
 
 /** Poll an expression in the page until it is truthy. */
@@ -251,7 +270,8 @@ console.log('\nEscenario 1 — teléfono con la base de ANTES del renombrado');
     check(booted === 'ok', 'la app arranca sobre la base vieja', booted || 'no respondió');
 
     const d = await b.evaluate(DUMP);
-    check(d.version === 2, 'versión local', 'v' + d.version);
+    check(d.version === DB_VERSION, 'versión local', 'v' + d.version + ' (esperada v' + DB_VERSION + ')');
+    check(d.stores.includes('incubadora') && d.stores.includes('parametro'), 'almacenes del protocolo v2 creados');
     check(!d.stores.includes('cochada') && !d.stores.includes('cochada_separacion'), 'almacenes viejos retirados');
     const codes = (d.lote || []).map(l => l.codigo).sort().join(', ');
     check(codes === 'CO-2009-L, CO-2009-S', 'los dos lotes siguen en el teléfono', codes);
@@ -304,6 +324,151 @@ console.log('\nEscenario 2 — la actualización no puede terminar');
     check((d.cochada || []).some(c => c.codigo === 'CO-SOLO-AQUI'), 'el dato viejo sigue intacto');
   } catch (e) {
     bad('escenario 2', e.message);
+  } finally {
+    await b.close();
+  }
+}
+
+/* ── scenario 3: the v2 screens ───────────────────────────────────────────── */
+
+/** Click the first visible button whose text starts with `label`. */
+const click = label => `(() => {
+  const el = [...document.querySelectorAll('button')].find(b => b.offsetParent !== null && b.textContent.trim().startsWith(${JSON.stringify(label)}));
+  if (el) el.click();
+  return !!el;
+})()`;
+/** Type into the n-th visible input matching `selector`, the way React sees it. */
+const type = (selector, value, n = 0) => `(() => {
+  const els = [...document.querySelectorAll(${JSON.stringify(selector)})].filter(e => e.offsetParent !== null);
+  const el = els[${n}];
+  if (!el) return false;
+  const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(String(value))});
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+})()`;
+const bodyHas = text => `document.body.innerText.includes(${JSON.stringify(text)}) && document.body.innerText`;
+
+console.log('\nEscenario 3 — pantallas del protocolo nuevo');
+{
+  const b = await launch();
+  try {
+    await b.navigate(`${ORIGIN}/index.html`);
+    const api = `window.__BSF_DATA_CLIENT__`;
+    const booted = await waitFor(b, `(async () => { const a = ${api}; if (!a) return null; await a.ready(); return 'ok'; })()`);
+    check(booted === 'ok', 'la app arranca en una base nueva', booted || 'no respondió');
+
+    // Name screen: a person taps their name.
+    check(Boolean(await waitFor(b, bodyHas('Maria'))), 'pantalla de nombre');
+    await b.evaluate(click('Maria'));
+
+    // A colony and an incubadora distributed 10 days ago (día 10: toca carga 2).
+    const setup = await b.evaluate(`(async () => {
+      const a = ${api};
+      const ins = await a.createInsectario({ nombre_insectario: 'ICA', fecha_inicio: a.fechas.addDays(a.fechas.farmDay(), -30), generacion_moscas: 'F7' });
+      const rec = await a.createRecoleccionV2({ insectario_id: ins.data.id, peso_ovipositores_g: 350, atrayente_cambiado: true,
+                                                fecha_inicio: a.fechas.addDays(a.fechas.farmDay(), -10) });
+      const dis = await a.distribuirIncubadora(rec.data.incubadora.id, { n_bandejas: 3 });
+      return { ok: ins.ok && rec.ok && dis.ok, codigo: rec.data.incubadora.codigo, trays: dis.data.bandejas.map(x => x.id) };
+    })()`);
+    check(setup.ok && setup.codigo === 'F7AR1', 'preparación: insectario, recolecta v2, 3 bandejas', setup.codigo);
+
+    // Reload, so the screens start from what is stored — like opening the app.
+    await b.navigate(`${ORIGIN}/index.html`);
+    const home = await waitFor(b, bodyHas('para hoy'));
+    check(Boolean(home), 'inicio avisa lo que toca hoy', home ? (home.match(/\d+ para hoy/) || [''])[0] : '');
+    await b.shot('1-inicio');
+
+    // Alimentar: carga 2 is suggested and the three trays come preselected.
+    check(await b.evaluate(click('Alimentar')), 'botón Alimentar');
+    const cargas = await waitFor(b, bodyHas('Dar carga 2 a 3 bandejas'));
+    check(Boolean(cargas), 'Alimentar propone la carga 2 con las 3 bandejas del día 10',
+          cargas ? (cargas.match(/Dar carga[^\n]*/) || [''])[0] : '');
+    await b.shot('2-alimentar');
+    check(await b.evaluate(click('Tamizado de control')), 'casilla de tamizado en la carga 2');
+    check(await b.evaluate(click('Dar carga 2')), 'confirmar con un toque');
+    check(Boolean(await waitFor(b, bodyHas('Carga 2 registrada'))), 'aviso "Carga 2 registrada"');
+    const feeds = await b.evaluate(`(async () => {
+      const a = ${api}; const ids = ${JSON.stringify(setup.trays)};
+      const out = [];
+      for (const id of ids) { const d = await a.getBandejaDetail(id); out.push(d.data.eventos.filter(e => e.tipo === 'alimentacion').map(e => e.carga + ':' + e.cantidad_kg + ':' + e.tamizado).sort().join(',')); }
+      return out;
+    })()`);
+    check(feeds.every(f => f === '1:1.5:false,2:2:true'), 'guardado: carga 1 (1,5 kg) y carga 2 (2 kg, tamizado) en cada bandeja', feeds.join(' | '));
+
+    // Nueva recolecta through the form, then distribute its incubadora.
+    await b.navigate(`${ORIGIN}/index.html`);
+    await waitFor(b, bodyHas('Nueva recolecta'));
+    check(await b.evaluate(click('Nueva recolecta')), 'botón Nueva recolecta');
+    await waitFor(b, bodyHas('PESO DE LOS OVIPOSITORES'));
+    await b.evaluate(click('ICA-'));
+    check(await b.evaluate(type('input[inputmode=decimal]', '410', 0)), 'escribir el peso de los ovipositores');
+    const bloqueado = await waitFor(b, bodyHas('Confirma el cambio de atrayente'), 3000);
+    check(Boolean(bloqueado), 'sin confirmar el atrayente no deja guardar');
+    await b.shot('3-nueva-recolecta');
+    await b.evaluate(click('Se cambió el atrayente'));
+    const preview = await waitFor(b, bodyHas('F7AR2'), 3000);
+    check(Boolean(preview), 'muestra el código de la incubadora que va a crear', 'F7AR2');
+    check(await b.evaluate(click('Guardar y crear incubadora')), 'guardar la recolecta');
+    check(Boolean(await waitFor(b, bodyHas('DISTRIBUIR EN BANDEJAS'))), 'abre la incubadora nueva, lista para distribuir');
+    check(await b.evaluate(type('input[inputmode=numeric]', '2', 0)), 'escribir el número de bandejas');
+    check(Boolean(await waitFor(b, bodyHas('Distribuir en 2 bandejas'), 3000)), 'el botón dice cuántas');
+    await b.shot('4-distribuir');
+    await b.evaluate(click('Distribuir en 2 bandejas'));
+    // The list header, not the codes: the "saved" toast also names the trays.
+    const dist = await waitFor(b, bodyHas('BANDEJAS · 2'));
+    check(Boolean(dist) && dist.includes('F7AR2-01') && dist.includes('F7AR2-02'), 'bandejas F7AR2-01 y F7AR2-02 en la incubadora');
+    await b.shot('5-incubadora');
+
+    // A v2 tray: día del ciclo, its loads, and the protocol's next step.
+    check(await b.evaluate(click('F7AR2-01')), 'abrir la bandeja F7AR2-01');
+    // "EN BANDEJA DESDE" exists only on the tray page (the incubadora page also
+    // says "DÍA DEL CICLO").
+    const tray = await waitFor(b, bodyHas('EN BANDEJA DESDE'));
+    check(Boolean(tray) && tray.includes('DÍA DEL CICLO') && tray.includes('Carga 2 · 2 kg'),
+          'la bandeja muestra el día del ciclo y la siguiente carga');
+    check(Boolean(tray) && !tray.includes('Iniciar ayuno'), 'en el día 0 no ofrece ayuno ni cosecha');
+    await b.shot('6-bandeja');
+    // An off-plan harvest goes through the home screen's Cosecha tile.
+    await b.navigate(`${ORIGIN}/index.html`);
+    await waitFor(b, bodyHas('Cosecha'));
+    await b.evaluate(click('Cosecha'));
+    await waitFor(b, bodyHas('TIPO DE EVENTO'));
+    await b.evaluate(click('F7AR2-01'));
+    const cosecha = await waitFor(b, bodyHas('PARA EL LABORATORIO'));
+    check(Boolean(cosecha) && cosecha.includes('LARVA PARA HORNEADO'), 'cosecha pide horno y laboratorio por separado');
+    await b.evaluate(type('input[inputmode=decimal]', '4900', 0));
+    await b.evaluate(type('input[inputmode=decimal]', '100', 1));
+    check(Boolean(await waitFor(b, bodyHas('Es el 2 % de la cosecha'), 3000)), 'calcula el % para el laboratorio');
+    await b.shot('7-cosecha');
+
+    const d = await b.evaluate(`(async () => {
+      const db = await new Promise((res, rej) => { const r = indexedDB.open('tryento'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+      const all = s => new Promise(res => { const q = db.transaction(s, 'readonly').objectStore(s).getAll(); q.onsuccess = () => res(q.result); });
+      const [incs, trays, feeds, outbox, recs] = await Promise.all([all('incubadora'), all('bandeja'), all('alimentacion'), all('outbox'), all('recoleccion')]);
+      db.close();
+      const inc2 = incs.find(i => i.codigo === 'F7AR2');
+      const rec2 = recs.find(r => r.id === (inc2 && inc2.recoleccion_id));
+      return {
+        inc2: inc2 ? { estado: inc2.estado, por: inc2.distribuida_por } : null,
+        rec2: rec2 ? { peso: rec2.peso_ovipositores_g, atr: rec2.atrayente_cambiado, por: rec2.registrado_por } : null,
+        trays2: trays.filter(t => inc2 && t.incubadora_id === inc2.id).map(t => t.id_bandeja).sort(),
+        carga1: feeds.filter(f => f.carga === 1).length,
+        rpcs: outbox.map(i => i.rpc || i.table)
+      };
+    })()`);
+    check(d.rec2 && d.rec2.peso === 410 && d.rec2.atr === true && d.rec2.por === 'Maria', 'IndexedDB: recolecta con peso, atrayente y quién', JSON.stringify(d.rec2));
+    check(d.inc2 && d.inc2.estado === 'distribuida' && d.inc2.por === 'Maria', 'IndexedDB: incubadora distribuida, con quién', JSON.stringify(d.inc2));
+    check(d.trays2.join(',') === 'F7AR2-01,F7AR2-02', 'IndexedDB: las 2 bandejas nuevas', d.trays2.join(','));
+    check(d.carga1 === 5, 'IndexedDB: carga 1 de las 5 bandejas', String(d.carga1));
+    check(d.rpcs.filter(r => r === 'distribuir_incubadora').length === 2 && d.rpcs.includes('crear_recoleccion_v2'),
+          'cola de envío con las operaciones v2', d.rpcs.join(', '));
+
+    const errs = b.logs.filter(l => !/service worker|sin conexión|backend/i.test(l));
+    check(errs.length === 0, 'sin errores en la consola', errs.slice(0, 3).join(' | '));
+  } catch (e) {
+    bad('escenario 3', e.message);
   } finally {
     await b.close();
   }

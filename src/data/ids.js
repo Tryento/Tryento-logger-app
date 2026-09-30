@@ -112,6 +112,32 @@ export function bandejaLabel(fecha, recolecta, noBandeja) {
 }
 
 /**
+ * `F7AR9` — v2 incubadora: fly generation (F7), the insectario's letter (A) and
+ * the recolecta number (R9). The lab defined this code.
+ *
+ * The letter comes from the `letras_insectario` setting; an insectario with no
+ * letter there uses the first letter of its name, so a new colony still gets a
+ * usable code instead of blocking the recolecta.
+ */
+export function incubadoraCodigo({ generacion, nombreInsectario, recolecta, letras = {} }) {
+  const gen = String(generacion || '').trim().toUpperCase().replace(/\s+/g, '') || 'F?';
+  const nombre = String(nombreInsectario || '').trim();
+  const letra = String(letras[nombre] || nombre.charAt(0) || '?').toUpperCase();
+  return `${gen}${letra}R${String(recolecta ?? '').trim()}`;
+}
+
+/**
+ * `F7AR9-01` — a bandeja that came out of incubadora F7AR9.
+ *
+ * PROVISIONAL: the lab has not defined this naming yet. It lives in this one
+ * function so the real rule is a one-line change. Nothing uses it as a key —
+ * the tray's identity is its UUID; this is only the label written on it.
+ */
+export function bandejaV2Codigo(incubadoraCodigoValue, n) {
+  return `${incubadoraCodigoValue}-${String(n).padStart(2, '0')}`;
+}
+
+/**
  * `CO-260922-K7QM` — oven run. Date plus a random suffix rather than a counter,
  * because a global counter cannot be assigned offline without collisions and a
  * lote is a physical event that must never be merged with another.

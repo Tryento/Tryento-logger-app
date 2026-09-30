@@ -46,8 +46,16 @@ operator their day's work.
 
 Once Supabase is configured, `npm run check:backend` writes a real colony →
 tray → feeding → fast → harvest → oven run to it, verifies the computed values
-and the state machine, and deletes everything it created. Run it before
-trusting the database.
+and the state machine, and marks everything it created as deleted (a soft
+delete, which phones can see). Run it before trusting the database.
+
+**The production protocol (v2, ciclo de 16 días)** — recolecta → incubadora
+(día 0–7) → distribución en bandejas + carga 1 (día 7) → carga 2 (día 10) →
+carga 3 (día 13) → ayuno (días 14–15) → cosecha (día 16: ~98 % al horno,
+~2 % al laboratorio). Days and kilos live in the `app.parametro` table, not in
+code. Data recorded under the old protocol is kept as-is, marked `v1`. Detail:
+[docs/protocolo-16-dias.html](docs/protocolo-16-dias.html) and
+[docs/LAB_SPEC.md](docs/LAB_SPEC.md).
 
 To connect it to Supabase, fill in [`app-config.js`](app-config.js) and apply
 the migrations in [`supabase/migrations/`](supabase/migrations/) in order.

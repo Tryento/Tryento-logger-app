@@ -12,7 +12,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { freshDb } from './helpers/env.mjs';
@@ -68,10 +68,55 @@ function splitTopLevel(body) {
 
 const NOT_A_COLUMN = /^\s*(check|unique|primary\s+key|foreign\s+key|constraint|exclude)\b/i;
 
+/** Column facts from one column definition ("name type [not null] [default …]"). */
+function columnFacts(t) {
+  const col = (/^["']?(\w+)["']?/.exec(t) || [])[1];
+  if (!col) return null;
+  const isGenerated = /generated\s+always/i.test(t);
+  const notNull = /\bnot\s+null\b/i.test(t) || /\bprimary\s+key\b/i.test(t);
+  const hasDefault = /\bdefault\b/i.test(t);
+  return { col, isGenerated, required: notNull && !hasDefault && !isGenerated };
+}
+
+/**
+ * The schema as ALL the migrations leave it: `create table` plus every later
+ * `alter table … add column` / `alter column … drop not null`. Reading 0001
+ * alone missed every table and column added since, so a new synced store
+ * looked like it had no table.
+ */
+export function parseMigrations(sqlFiles) {
+  const tables = new Map();
+  for (const raw of sqlFiles) {
+    for (const [name, def] of parseSchema(raw)) tables.set(name, def);
+    const sql = stripComments(raw);
+    const re = /alter\s+table\s+app\.(\w+)\s+([\s\S]*?);/gi;
+    let m;
+    while ((m = re.exec(sql))) {
+      const t = tables.get(m[1]);
+      if (!t) continue;
+      for (const part of splitTopLevel(m[2])) {
+        const p = part.trim();
+        const add = /^add\s+column\s+(?:if\s+not\s+exists\s+)?([\s\S]+)$/i.exec(p);
+        if (add) {
+          const f = columnFacts(add[1].trim());
+          if (!f) continue;
+          t.columns.add(f.col);
+          if (f.isGenerated) t.generated.add(f.col);
+          if (f.required) t.required.add(f.col);
+          continue;
+        }
+        const drop = /^alter\s+column\s+(\w+)\s+drop\s+not\s+null/i.exec(p);
+        if (drop) t.required.delete(drop[1]);
+      }
+    }
+  }
+  return tables;
+}
+
 export function parseSchema(rawSql) {
   const sql = stripComments(rawSql);
   const tables = new Map();
-  const re = /create\s+table\s+app\.(\w+)\s*\(/gi;
+  const re = /create\s+table\s+(?:if\s+not\s+exists\s+)?app\.(\w+)\s*\(/gi;
   let m;
   while ((m = re.exec(sql))) {
     const name = m[1];
@@ -106,8 +151,16 @@ export function parseSchema(rawSql) {
   return tables;
 }
 
-const schemaSql = await readFile(path.join(ROOT, 'supabase/migrations/0001_schema.sql'), 'utf8');
-const TABLES = parseSchema(schemaSql);
+// Every migration a fresh install runs, in order (the @setup-skip repairs are
+// for an old production database and describe no new structure).
+const MIG_DIR = path.join(ROOT, 'supabase/migrations');
+const migrationFiles = (await readdir(MIG_DIR)).filter(f => f.endsWith('.sql')).sort();
+const migrationSql = [];
+for (const f of migrationFiles) {
+  const body = await readFile(path.join(MIG_DIR, f), 'utf8');
+  if (!/@setup-skip/.test(body.slice(0, 400))) migrationSql.push(body);
+}
+const TABLES = parseMigrations(migrationSql);
 
 /* ── drive the real write path ───────────────────────────────────────────── */
 
@@ -305,4 +358,75 @@ test('every synced store maps to a real table', async () => {
     assert.ok(TABLES.has(store),
       `local store "${store}" has no app.${store} table — the pull would 404`);
   }
+});
+
+test('the parser sees what later migrations added (0004, 0007)', () => {
+  assert.ok(TABLES.get('insectario').columns.has('fecha_ovipositores_por'), '0004 alter add column');
+  assert.ok(TABLES.has('incubadora') && TABLES.get('incubadora').generated.has('estado'), '0007 create table');
+  assert.ok(TABLES.get('alimentacion').columns.has('carga'));
+  assert.ok(!TABLES.get('ayuno').required.has('peso_inicial_kg'), '0007 drops NOT NULL: v2 fasts are not weighed');
+});
+
+test('v2 writes send only columns the tables have, and never the protocol', async () => {
+  const { createRecoleccionV2, distribuirIncubadora, logCarga, logAyuno, logSeparacion } =
+    await import('../src/data/write.js');
+  const ins = await api.createInsectario({ nombre_insectario: 'ICA', fecha_inicio: '2026-08-01',
+                                           generacion_moscas: 'F7', operator_name: OP });
+  const r = await createRecoleccionV2({ insectario_id: ins.data.id, peso_ovipositores_g: 320,
+                                        atrayente_cambiado: true, starter_kg: 2, operator_name: OP });
+  assert.ok(r.ok, JSON.stringify(r.error));
+  const d = await distribuirIncubadora(r.data.incubadora.id, { n_bandejas: 2, operator_name: OP });
+  assert.ok(d.ok, JSON.stringify(d.error));
+  const [b1, b2] = d.data.bandejas;
+  assert.ok((await logCarga({ bandeja_ids: [b1.id, b2.id], carga: 2, tamizado: true, operator_name: OP })).ok);
+  assert.ok((await logCarga({ bandeja_id: b1.id, carga: 3, operator_name: OP })).ok, 'one tray: a plain upsert');
+  assert.ok((await logAyuno({ bandeja_id: b2.id, operator_name: OP })).ok, 'v2 fast without a scale');
+  assert.ok((await logSeparacion({ bandeja_id: b2.id, larva_limpia_g: 4900, reserva_cria_g: 100, operator_name: OP })).ok);
+
+  const problems = [];
+  const queued = await listOpen(await openDb());
+  for (const item of queued.filter(i => i.op === 'upsert' && ['alimentacion', 'ayuno', 'separacion'].includes(i.table))) {
+    const spec = TABLES.get(item.table);
+    const wire = toWire(item.table, item.payload);
+    if ('protocolo' in wire) problems.push(`${item.table}: sends protocolo (the server decides it)`);
+    for (const k of Object.keys(wire)) if (!spec.columns.has(k)) problems.push(`${item.table}: sends "${k}"`);
+    for (const col of spec.required) if (wire[col] === null || wire[col] === undefined) problems.push(`${item.table}: lacks "${col}"`);
+  }
+  for (const item of queued.filter(i => i.rpc === 'log_alimentacion_grupal')) {
+    for (const row of item.payload.p_rows) {
+      const wire = toWire('alimentacion', row);
+      for (const k of Object.keys(wire)) if (!TABLES.get('alimentacion').columns.has(k)) problems.push(`grupal: "${k}"`);
+    }
+  }
+  assert.deepEqual(problems, [], '\n  ' + problems.join('\n  '));
+});
+
+test('every one-tap action records who did it (p_por)', async () => {
+  const w = await import('../src/data/write.js');
+  // Earlier tests queued actions before any name was chosen; only judge the new ones.
+  const before = new Set((await listOpen(await openDb())).map(i => i.id));
+  await w.setCurrentOperator('Ricardo');
+
+  const ins = await api.createInsectario({ nombre_insectario: 'ICC', fecha_inicio: '2026-07-01' });
+  await api.marcarAtractante(ins.data.id);
+  await api.marcarCierre(ins.data.id);
+  const rec = await api.createRecoleccion({ insectario_id: ins.data.id, huevos_g: 1 });
+  const b = await api.createBandeja({ recoleccion_id: rec.data.id, no_bandeja: 1 });
+  const ay = await api.logAyuno({ bandeja_id: b.data.id, peso_inicial_kg: 2 });
+  await api.logAyunoFin(ay.data.id, { peso_final_kg: 1.9 });
+  const sep = await api.logSeparacion({ bandeja_id: b.data.id, larva_limpia_g: 300 });
+  const l1 = await api.createLote({ separacion_ids: [sep.data.id], peso_inicial_kg: 0.3 });
+  await api.updateLoteQC(l1.data.id, { peso_final_kg: 0.1, qc_aprobado: true });
+  await api.marcarEmpacado(l1.data.id, {});
+  await api.marcarDespachado(l1.data.id);
+
+  const queued = await listOpen(await openDb());
+  const cas = queued.filter(i => i.op === 'cas' && !before.has(i.id));
+  const rpcs = new Set(cas.map(i => i.rpc));
+  for (const rpc of ['marcar_atractante', 'marcar_cierre', 'cerrar_ayuno', 'actualizar_qc_lote',
+                     'marcar_empacado', 'marcar_despachado']) {
+    assert.ok(rpcs.has(rpc), `falta probar ${rpc}`);
+  }
+  const sinAutor = cas.filter(i => !i.payload?.p_por).map(i => i.rpc);
+  assert.deepEqual(sinAutor, [], 'estas acciones no guardarían quién las hizo: ' + sinAutor.join(', '));
 });

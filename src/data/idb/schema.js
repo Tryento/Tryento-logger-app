@@ -35,9 +35,11 @@ export const DB_NAME = 'tryento';
 /** Domain stores that mirror Postgres tables, in parent-first order. Pull and
  *  local upsert both walk this list so foreign keys always land in order. */
 export const SYNCED_STORES = [
+  'parametro',
   'catalogo',
   'insectario',
   'recoleccion',
+  'incubadora',
   'bandeja',
   'alimentacion',
   'ayuno',
@@ -59,13 +61,21 @@ export const EVENT_STORES = ['alimentacion', 'ayuno', 'revision', 'separacion'];
  * changing it without adding a step fails the build.
  */
 export const STORE_DEFS = {
+  // Protocol settings (days, kg, larvae per tray). Pulled, never written here.
+  parametro:     { keyPath: 'id', indexes: [['by_clave', 'clave'], ['by_updated', 'updated_at']] },
   catalogo:      { keyPath: 'id', indexes: [['by_tipo', 'tipo'], ['by_updated', 'updated_at']] },
   insectario:    { keyPath: 'id', indexes: [['by_updated', 'updated_at'], ['by_estado', 'estado']] },
   recoleccion:   { keyPath: 'id', indexes: [['by_insectario', 'insectario_id'], ['by_updated', 'updated_at']] },
-  bandeja:       { keyPath: 'id', indexes: [
+  // v2: one per recolecta, días 0–7, then split into bandejas.
+  incubadora:    { keyPath: 'id', indexes: [
                      ['by_recoleccion', 'recoleccion_id'],
                      ['by_estado', 'estado'],
                      ['by_updated', 'updated_at']] },
+  bandeja:       { keyPath: 'id', indexes: [
+                     ['by_recoleccion', 'recoleccion_id'],
+                     ['by_estado', 'estado'],
+                     ['by_updated', 'updated_at'],
+                     ['by_incubadora', 'incubadora_id']] },
   alimentacion:  { keyPath: 'id', indexes: [
                      ['by_bandeja', 'bandeja_id'],
                      ['by_grupal', 'grupal_id'],
@@ -206,6 +216,15 @@ function v2RetargetItem(item) {
 
 export const V2_RENAMES = { tables: V2_TABLES, rpcs: V2_RPCS };
 
+/* ── v3, the protocolo v2 stores ──────────────────────────────────────────── */
+
+/** Stores v3 adds, as they were defined at v3. */
+const V3_STORES = {
+  parametro:  { keyPath: 'id', indexes: [['by_clave', 'clave'], ['by_updated', 'updated_at']] },
+  incubadora: { keyPath: 'id', indexes: [['by_recoleccion', 'recoleccion_id'], ['by_estado', 'estado'],
+                                         ['by_updated', 'updated_at']] }
+};
+
 /**
  * Append-only list of upgrade steps. Index N implements version N+1.
  * Each step is (db, tx) => void | Promise<void>.
@@ -282,15 +301,35 @@ export const MIGRATIONS = [
     for (const name of ['cochada', 'cochada_separacion']) {
       if (has(name)) db.deleteObjectStore(name);
     }
+  },
+
+  // ── v3: protocolo v2 (0007_protocolo_v2.sql) ────────────────────────────
+  //
+  // Only ADDS: two stores and one index. Nothing existing is touched. The new
+  // stores have no pull cursor yet, so their first pull downloads everything.
+  (db, tx) => {
+    for (const [name, def] of Object.entries(V3_STORES)) {
+      if (!db.objectStoreNames.contains(name)) createStore(db, name, def);
+    }
+    const bandeja = tx.objectStore('bandeja');
+    if (!bandeja.indexNames.contains('by_incubadora')) {
+      bandeja.createIndex('by_incubadora', 'incubadora_id', { unique: false });
+    }
   }
 ];
 
 export const DB_VERSION = MIGRATIONS.length;
 
+/** A fast is open until it is closed: no close time and no final weight. In v1
+ *  a close always carries a weight, so this matches the old rule there; in v2
+ *  the cosecha closes the fast without one. */
+export const ayunoAbierto = row =>
+  (row?.peso_final_kg === null || row?.peso_final_kg === undefined) && !row?.cerrado_at;
+
 /** Derived 0/1 mirrors for fields IndexedDB cannot index directly. */
 export function withIndexMirrors(store, row) {
   if (store === 'ayuno') {
-    return { ...row, _abierto: row.peso_final_kg === null || row.peso_final_kg === undefined ? 1 : 0 };
+    return { ...row, _abierto: ayunoAbierto(row) ? 1 : 0 };
   }
   if (store === 'conflicts') {
     return { ...row, _resuelto: row.resuelto_at ? 1 : 0 };
