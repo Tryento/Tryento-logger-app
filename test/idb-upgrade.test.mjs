@@ -26,6 +26,7 @@ import { DB_NAME, DB_VERSION, MIGRATIONS, STORE_DEFS } from '../src/data/idb/sch
 import { openDb, __closeDb } from '../src/data/idb/open.js';
 import * as SHIPPED_BEFORE_RENAME from './fixtures/idb/schema-v1-antes-del-renombrado.mjs';
 import * as SHIPPED_AFTER_RENAME from './fixtures/idb/schema-v1-despues-del-renombrado.mjs';
+import * as SHIPPED_RELEASE_1 from './fixtures/idb/schema-v3.mjs';
 import { liveReplica, readSql } from './helpers/pg.mjs';
 import { pgClient } from './helpers/pg-client.mjs';
 
@@ -41,11 +42,17 @@ async function reset() {
   await del(DB_NAME);
 }
 
-/** A v1 database built by the v1 code that actually shipped, then filled. */
-function buildShippedV1(fixture, rows = {}) {
+/** A database built by code that actually shipped (at that build's version,
+ *  running that build's own steps), then filled. */
+function buildShipped(fixture, rows = {}) {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => fixture.MIGRATIONS[0](req.result, req.transaction);
+    const req = indexedDB.open(DB_NAME, fixture.DB_VERSION);
+    req.onupgradeneeded = ev => {
+      const db = req.result, tx = req.transaction;
+      (async () => {
+        for (let v = ev.oldVersion || 0; v < fixture.DB_VERSION; v++) await fixture.MIGRATIONS[v](db, tx);
+      })().catch(err => { try { tx.abort(); } catch { /* done */ } reject(err); });
+    };
     req.onsuccess = () => {
       const db = req.result;
       const stores = Object.keys(rows);
@@ -232,7 +239,7 @@ test('a new phone ends on exactly the schema STORE_DEFS describes', async () => 
 
 test('pre-rename phone: upgrades instead of crashing, onto the same schema as a new phone', async () => {
   await reset();
-  await buildShippedV1(SHIPPED_BEFORE_RENAME, PRE_RENAME_PHONE);
+  await buildShipped(SHIPPED_BEFORE_RENAME, PRE_RENAME_PHONE);
 
   const db = await openDb();          // threw NotFoundError before the fix
   assert.equal(db.version, DB_VERSION);
@@ -390,7 +397,7 @@ test('after 0005 + 0006, the upgraded queue lands on the server, in order, with 
 
 test('post-rename phone: keeps its lotes and its lote cursor, same final schema', async () => {
   await reset();
-  await buildShippedV1(SHIPPED_AFTER_RENAME, {
+  await buildShipped(SHIPPED_AFTER_RENAME, {
     lote: [loteRow(ID.synced, 'CO-2009-S', true)],
     lote_separacion: [{ lote_id: ID.synced, separacion_id: ID.s1, created_at: T0, updated_at: T0, synced_at: T0 }],
     outbox: [queued(1, { op: 'rpc', rpc: 'crear_lote', row_id: ID.local,
@@ -408,6 +415,141 @@ test('post-rename phone: keeps its lotes and its lote cursor, same final schema'
   assert.ok(item.payload.p_lote);
   assert.equal((await getOne(db, 'meta', 'pull_cursor:lote')).value, T0,
     'el almacén ya existía y estaba al día: no hace falta descargarlo otra vez');
+  await reset();
+});
+
+/* ── a phone on Release 1 (v3): protocolo v2, no food stores yet ──────────── */
+
+const R1 = {
+  ins: randomUUID(), rec: randomUUID(), inc: randomUUID(), par: randomUUID(),
+  b1: randomUUID(), b2: randomUUID(),
+  a1: randomUUID(), a2: randomUUID(), g1: randomUUID(),      // carga 1, synced
+  c1: randomUUID(), c2: randomUUID(), g2: randomUUID()       // carga 2, only on the phone
+};
+const DIA7 = '2026-09-26T13:00:00.000Z';
+const DIA10 = '2026-09-29T13:00:00.000Z';
+
+const r1Tray = (id, n) => ({
+  id, recoleccion_id: R1.rec, incubadora_id: R1.inc, no_bandeja: n, id_bandeja: `F7BR3-0${n}`,
+  fecha: DIA7, individuos: 25000, gramos_huevos: null, iniciador_g: null, tipo_iniciador: null,
+  notas: '', estado: 'en_crecimiento', cerrada_admin_at: null, cerrada_admin_motivo: null,
+  protocolo: 'v2', ...prov(true)
+});
+// A load exactly as the Release-1 build writes it: no ensilaje_id.
+const r1Carga = (id, bandeja_id, n, fecha, grupal_id, synced) => ({
+  id, bandeja_id, fecha, tipo_alimento: 'Ensilaje', cantidad_kg: n === 1 ? 1.5 : 2, origen: 'grupal',
+  grupal_id, carga: n, tamizado: n === 2, notas: '', foto_key: null, protocolo: 'v2', ...prov(synced)
+});
+const R1_CARGA2 = [r1Carga(R1.c1, R1.b1, 2, DIA10, R1.g2, false), r1Carga(R1.c2, R1.b2, 2, DIA10, R1.g2, false)];
+
+const RELEASE_1_PHONE = {
+  parametro: [{ id: R1.par, clave: 'dia_cosecha', valor: 16, descripcion: 'Día de la cosecha',
+                created_at: T0, updated_at: T0 }],
+  insectario: [{ id: R1.ins, codigo: 'ICB-0109', nombre_insectario: 'ICB', fecha_inicio: '2026-09-01',
+                 generacion_moscas: 'F7', ...prov(true) }],
+  recoleccion: [{ id: R1.rec, insectario_id: R1.ins, recolecta: '3', fecha: '2026-09-19T13:00:00.000Z',
+                  peso_ovipositores_g: 300, atrayente_cambiado: true, protocolo: 'v2', ...prov(true) }],
+  incubadora: [{ id: R1.inc, recoleccion_id: R1.rec, codigo: 'F7BR3', fecha_inicio: '2026-09-19',
+                 starter_kg: 1.2, individuos_total: 50000, notas: '', distribuida_at: DIA7,
+                 distribuida_por: 'Maria', estado: 'distribuida', ...prov(true) }],
+  bandeja: [r1Tray(R1.b1, 1), r1Tray(R1.b2, 2)],
+  alimentacion: [r1Carga(R1.a1, R1.b1, 1, DIA7, R1.g1, true), r1Carga(R1.a2, R1.b2, 1, DIA7, R1.g1, true),
+                 ...R1_CARGA2],
+  bandeja_cache: [R1.b1, R1.b2].map(bandeja_id => ({
+    bandeja_id, estado: 'en_crecimiento', last_evento_tipo: 'alimentacion', last_evento_fecha: DIA10,
+    n_alimentaciones: 2, kg_alimento_total: 3.5, n_revisiones: 0, cargas_dadas: [1, 2],
+    tiene_ayuno: 0, tiene_ayuno_abierto: 0, ayuno_abierto_id: null, separacion_id: null,
+    larva_limpia_g: null, lote_id: null, updated_at: DIA10
+  })),
+  outbox: [queued(1, {
+    op: 'rpc', rpc: 'log_alimentacion_grupal', row_id: R1.g2, row_ids: [R1.g2, R1.c1, R1.c2],
+    depends_on: [R1.b1, R1.b2],
+    undo: { created: R1_CARGA2.map(c => ({ store: 'alimentacion', key: c.id })), changed: [] },
+    payload: { p_rows: R1_CARGA2 }
+  })],
+  meta: [
+    { key: 'pull_cursor:alimentacion', value: T0 },
+    { key: 'pull_cursor:incubadora', value: T0 },
+    { key: 'pull_cursor:parametro', value: T0 },
+    { key: 'outbox_seq', value: 1 },
+    { key: 'operador_actual', value: 'Maria' }
+  ]
+};
+
+const asSet = rows => rows.map(r => JSON.stringify(r)).sort();
+
+test('Release-1 phone (v3): the food stores arrive, and nothing it had moves', async () => {
+  await reset();
+  await buildShipped(SHIPPED_RELEASE_1, RELEASE_1_PHONE);
+
+  const db = await openDb();
+  assert.equal(db.version, DB_VERSION);
+  assert.deepEqual(schemaOf(db), expectedSchema());
+
+  for (const [store, rows] of Object.entries(RELEASE_1_PHONE)) {
+    if (store === 'meta') continue;
+    assert.deepEqual(asSet(await getAll(db, store)), asSet(rows), `${store} queda idéntico`);
+  }
+  for (const m of RELEASE_1_PHONE.meta) assert.deepEqual(await getOne(db, 'meta', m.key), m);
+
+  for (const s of ['recepcion_alimento', 'ensilaje', 'ensilaje_insumo', 'ensilaje_lectura']) {
+    assert.deepEqual(await getAll(db, s), [], `${s} empieza vacío`);
+    assert.equal(await getOne(db, 'meta', `pull_cursor:${s}`), undefined, `${s} se descarga completo`);
+  }
+
+  // Read through the app, not the raw stores.
+  const { listBandejas, getStockAlimento, getIncubadoraDetail } = await import('../src/data/read.js');
+  const trays = (await listBandejas({})).data.filter(b => [R1.b1, R1.b2].includes(b.id));
+  assert.equal(trays.length, 2);
+  for (const t of trays) {
+    assert.equal(t.protocolo, 'v2');
+    assert.equal(t.incubadora_codigo, 'F7BR3');
+    assert.deepEqual(t.cargas_dadas, [1, 2]);
+    assert.ok(t.siguiente_paso, 'la bandeja sabe qué le toca');
+  }
+  assert.equal((await getIncubadoraDetail(R1.inc)).data.bandejas.length, 2);
+  const st = await getStockAlimento();
+  assert.ok(st.ok, JSON.stringify(st.error));
+  assert.deepEqual(st.data.materiales, []);
+  assert.equal(st.data.ensilaje_en_uso, null);
+});
+
+test('Release-1 phone: its queued load lands on a server with 0008 — same RPC, same payload', async () => {
+  const pg = await liveReplica();
+  for (const f of ['0005_renombrar_lote.sql', '0006_sobrecargas.sql', '0007_protocolo_v2.sql', '0008_alimento.sql']) {
+    await pg.exec(await readSql(`supabase/migrations/${f}`));
+  }
+  await pg.query(`insert into app.insectario (id, codigo, nombre_insectario, fecha_inicio, generacion_moscas)
+                  values ($1, 'ICB-0109', 'ICB', '2026-09-01', 'F7')`, [R1.ins]);
+  await pg.query(`insert into app.recoleccion (id, insectario_id, recolecta, fecha, protocolo,
+                                               peso_ovipositores_g, atrayente_cambiado)
+                  values ($1, $2, '3', '2026-09-19T13:00:00Z', 'v2', 300, true)`, [R1.rec, R1.ins]);
+  await pg.query(`insert into app.incubadora (id, recoleccion_id, codigo, fecha_inicio, distribuida_at, distribuida_por)
+                  values ($1, $2, 'F7BR3', '2026-09-19', $3, 'Maria')`, [R1.inc, R1.rec, DIA7]);
+  for (const [b, n, a] of [[R1.b1, 1, R1.a1], [R1.b2, 2, R1.a2]]) {
+    await pg.query(`insert into app.bandeja (id, recoleccion_id, incubadora_id, no_bandeja, id_bandeja, fecha,
+                                             individuos, protocolo)
+                    values ($1, $2, $3, $4, $5, $6, 25000, 'v2')`, [b, R1.rec, R1.inc, n, `F7BR3-0${n}`, DIA7]);
+    await pg.query(`insert into app.alimentacion (id, bandeja_id, fecha, tipo_alimento, cantidad_kg, carga, grupal_id)
+                    values ($1, $2, $3, 'Ensilaje', 1.5, 1, $4)`, [a, b, DIA7, R1.g1]);
+  }
+
+  const client = pgClient(pg);
+  useBackend(client);
+  const { pushAll } = await import('../src/data/sync/push.js');
+  const db = await openDb();
+  const r = await pushAll(db);
+  assert.deepEqual({ pushed: r.pushed, conflicts: r.conflicts, blocked: r.blocked },
+                   { pushed: 1, conflicts: 0, blocked: 0 });
+
+  const rows = (await pg.query(
+    `select carga, cantidad_kg, protocolo, ensilaje_id, registrado_por from app.alimentacion where grupal_id = $1`,
+    [R1.g2])).rows;
+  assert.equal(rows.length, 2);
+  for (const x of rows) {
+    assert.deepEqual([x.carga, Number(x.cantidad_kg), x.protocolo, x.ensilaje_id, x.registrado_por],
+                     [2, 2, 'v2', null, 'Maria']);
+  }
   await reset();
 });
 

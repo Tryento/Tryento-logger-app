@@ -57,6 +57,13 @@ code. Data recorded under the old protocol is kept as-is, marked `v1`. Detail:
 [docs/protocolo-16-dias.html](docs/protocolo-16-dias.html) and
 [docs/LAB_SPEC.md](docs/LAB_SPEC.md).
 
+**Feed (Alimento)** — every delivery is a `recepcion_alimento`; each batch of
+fermented feed is an `ensilaje` that moves armado → sellado → listo → en uso →
+agotado, with temperature readings. Each load names the batch in use
+(`alimentacion.ensilaje_id`) and takes its planned kilos from it, so stock and
+consumption come from the loads themselves: nothing is typed twice. Migration
+`0008_alimento.sql`.
+
 To connect it to Supabase, fill in [`app-config.js`](app-config.js) and apply
 the migrations in [`supabase/migrations/`](supabase/migrations/) in order.
 

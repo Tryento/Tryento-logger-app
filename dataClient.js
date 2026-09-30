@@ -37,13 +37,15 @@ export const NOMBRES_INSECTARIO = [];
 export const TIPO_INICIADOR = [];
 export const TIPO_ALIMENTO = [];
 export const QC_COLOR_DORADO = [];
+export const MATERIALES_ALIMENTO = [];
 export const EVENTO_TIPOS = ['alimentacion', 'ayuno', 'revision', 'separacion'];
 
 const CATALOGOS = {
   nombre_insectario: NOMBRES_INSECTARIO,
   tipo_iniciador: TIPO_INICIADOR,
   tipo_alimento: TIPO_ALIMENTO,
-  qc_color_dorado: QC_COLOR_DORADO
+  qc_color_dorado: QC_COLOR_DORADO,
+  material_alimento: MATERIALES_ALIMENTO
 };
 
 /** Values the operation already used, seeded only when the table is empty so a
@@ -54,6 +56,8 @@ const CATALOGO_DEFAULTS = {
   tipo_iniciador: ['Bagazo', 'Afrecho', 'Yogurt', 'Otro'],
   tipo_alimento: ['Bagazo', 'Yogurt', 'Afrecho', 'Mezcla'],
   qc_color_dorado: ['Blando', 'Poco Crujiente', 'Muy Crujiente', 'Tostado'],
+  // Mirrors 0008_alimento.sql.
+  material_alimento: ['Bagazo de cerveza (BSG)', 'Desecho de panadería', 'Desecho de fruta', 'Otro'],
   // The registered roster. Mirrors 0003_seed.sql so the name screen is usable
   // before the first sync, and on a device with no backend at all.
   operario: ['Maria', 'Ricardo']
@@ -203,6 +207,17 @@ export const distribuirIncubadora = guard(writes.distribuirIncubadora, { isWrite
 export const logCarga = guard(writes.logCarga, { isWrite: true });
 export const logAyunoGrupal = guard(writes.logAyunoGrupal, { isWrite: true });
 
+/* ── alimento: recepción, ensilaje, stock ─────────────────────────────── */
+
+export const listRecepciones = guard(reads.listRecepciones);
+export const listEnsilajes = guard(reads.listEnsilajes);
+export const getEnsilajeDetail = guard(reads.getEnsilajeDetail);
+export const getStockAlimento = guard(reads.getStockAlimento);
+export const createRecepcion = guard(writes.createRecepcion, { isWrite: true });
+export const createEnsilaje = guard(writes.createEnsilaje, { isWrite: true });
+export const avanzarEnsilaje = guard(writes.avanzarEnsilaje, { isWrite: true });
+export const logLecturaEnsilaje = guard(writes.logLecturaEnsilaje, { isWrite: true });
+
 /** Farm-calendar helpers for the screens, so a preview never disagrees with
  *  what is saved (the UI's own date math read date-only strings as UTC). */
 export const fechas = { farmDay, ddmm, toNaiveLocal, addDays };
@@ -249,6 +264,8 @@ const api = {
   logAyunoFin, listAyunosAbiertos, rechazarLote, rememberOperator, setOperator,
   getProtocolo, listIncubadoras, getIncubadoraDetail, createRecoleccionV2,
   distribuirIncubadora, logCarga, logAyunoGrupal, fechas,
+  MATERIALES_ALIMENTO, listRecepciones, listEnsilajes, getEnsilajeDetail, getStockAlimento,
+  createRecepcion, createEnsilaje, avanzarEnsilaje, logLecturaEnsilaje,
   getSyncStatus, onChange, statusLabel, sync,
   listConflicts, resolveConflict,
   capturePhoto, localPhotoUrl, attachPhotoToRow,

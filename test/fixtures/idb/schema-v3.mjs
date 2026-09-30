@@ -1,3 +1,7 @@
+// FROZEN FIXTURE — src/data/idb/schema.js exactly as committed for Release 1 (5923baf, DB v3).
+// Used to build a local database the way a phone running that build has it.
+// Never edit: the point is that it matches what will really be on devices.
+
 /**
  * schema.js — IndexedDB stores, indexes and versioned migrations.
  *
@@ -40,10 +44,6 @@ export const SYNCED_STORES = [
   'insectario',
   'recoleccion',
   'incubadora',
-  'recepcion_alimento',
-  'ensilaje',
-  'ensilaje_insumo',
-  'ensilaje_lectura',
   'bandeja',
   'alimentacion',
   'ayuno',
@@ -75,12 +75,6 @@ export const STORE_DEFS = {
                      ['by_recoleccion', 'recoleccion_id'],
                      ['by_estado', 'estado'],
                      ['by_updated', 'updated_at']] },
-  // Food (0008): material received, fermented batches, their inputs and
-  // temperature readings.
-  recepcion_alimento: { keyPath: 'id', indexes: [['by_fecha', 'fecha'], ['by_updated', 'updated_at']] },
-  ensilaje:      { keyPath: 'id', indexes: [['by_estado', 'estado'], ['by_updated', 'updated_at']] },
-  ensilaje_insumo:  { keyPath: 'id', indexes: [['by_ensilaje', 'ensilaje_id'], ['by_updated', 'updated_at']] },
-  ensilaje_lectura: { keyPath: 'id', indexes: [['by_ensilaje', 'ensilaje_id'], ['by_updated', 'updated_at']] },
   bandeja:       { keyPath: 'id', indexes: [
                      ['by_recoleccion', 'recoleccion_id'],
                      ['by_estado', 'estado'],
@@ -89,8 +83,7 @@ export const STORE_DEFS = {
   alimentacion:  { keyPath: 'id', indexes: [
                      ['by_bandeja', 'bandeja_id'],
                      ['by_grupal', 'grupal_id'],
-                     ['by_updated', 'updated_at'],
-                     ['by_ensilaje', 'ensilaje_id']] },
+                     ['by_updated', 'updated_at']] },
   ayuno:         { keyPath: 'id', indexes: [
                      ['by_bandeja', 'bandeja_id'],
                      ['by_abierto', '_abierto'],        // 1 = no peso_final yet
@@ -236,16 +229,6 @@ const V3_STORES = {
                                          ['by_updated', 'updated_at']] }
 };
 
-/* ── v4, the food module (0008) ───────────────────────────────────────────── */
-
-/** Stores v4 adds, as they were defined at v4. */
-const V4_STORES = {
-  recepcion_alimento: { keyPath: 'id', indexes: [['by_fecha', 'fecha'], ['by_updated', 'updated_at']] },
-  ensilaje:           { keyPath: 'id', indexes: [['by_estado', 'estado'], ['by_updated', 'updated_at']] },
-  ensilaje_insumo:    { keyPath: 'id', indexes: [['by_ensilaje', 'ensilaje_id'], ['by_updated', 'updated_at']] },
-  ensilaje_lectura:   { keyPath: 'id', indexes: [['by_ensilaje', 'ensilaje_id'], ['by_updated', 'updated_at']] }
-};
-
 /**
  * Append-only list of upgrade steps. Index N implements version N+1.
  * Each step is (db, tx) => void | Promise<void>.
@@ -335,20 +318,6 @@ export const MIGRATIONS = [
     const bandeja = tx.objectStore('bandeja');
     if (!bandeja.indexNames.contains('by_incubadora')) {
       bandeja.createIndex('by_incubadora', 'incubadora_id', { unique: false });
-    }
-  },
-
-  // ── v4: alimento (0008_alimento.sql) ────────────────────────────────────
-  //
-  // Only ADDS: four stores and one index, so a feeding can be traced to the
-  // ensilaje it was taken from.
-  (db, tx) => {
-    for (const [name, def] of Object.entries(V4_STORES)) {
-      if (!db.objectStoreNames.contains(name)) createStore(db, name, def);
-    }
-    const alim = tx.objectStore('alimentacion');
-    if (!alim.indexNames.contains('by_ensilaje')) {
-      alim.createIndex('by_ensilaje', 'ensilaje_id', { unique: false });
     }
   }
 ];

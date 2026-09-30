@@ -35,7 +35,9 @@ export const PROTOCOLO_DEFAULTS = Object.freeze({
   individuos_por_bandeja: 25000,
   reserva_cria_pct: 2,
   letras_insectario: { ICA: 'A', ICB: 'B', ICC: 'C', JN3A: 'J' },
-  fecha_corte: null
+  fecha_corte: null,
+  // PROVISIONAL until the lab says how long a sealed ensilaje takes (0008).
+  dias_fermentacion: 14
 });
 
 /** What v2 feeding records as the food, so NOT NULL and existing views hold. */
@@ -56,7 +58,8 @@ const VALIDATORS = {
   individuos_por_bandeja: v => isNum(v) && v >= 0,
   reserva_cria_pct: v => isNum(v) && v >= 0 && v <= 100,
   letras_insectario: v => v && typeof v === 'object' && !Array.isArray(v),
-  fecha_corte: v => v === null || isDay(v)
+  fecha_corte: v => v === null || isDay(v),
+  dias_fermentacion: v => isNum(v) && v >= 0 && v <= 365
 };
 
 /**
@@ -135,6 +138,35 @@ export function pasoIncubadora(inc, cfg = PROTOCOLO_DEFAULTS, hoy = farmDay()) {
   const dia = diaCiclo(inc.fecha_inicio, hoy);
   if (dia === null) return null;
   return { paso: 'distribucion', ...timing(dia, cfg.dias_incubacion) };
+}
+
+/** An ensilaje's state from its own stamps — the same rule as the generated
+ *  column in 0008, so a phone and the server never disagree. */
+export function ensilajeEstado(e) {
+  if (e?.agotado_at) return 'agotado';
+  if (e?.en_uso_at) return 'en_uso';
+  if (e?.listo_at) return 'listo';
+  if (e?.sellado_at) return 'fermentando';
+  return 'armado';
+}
+
+/**
+ * Kilos of ensilaje the v2 trays will need within `dias` days (loads already
+ * late included). What the monitor compares with the stock at hand.
+ *   trays: [{ dia_ciclo, cargas_dadas, tiene_ayuno, cosechada }]
+ */
+export function kgCargasProximas(trays, cfg = PROTOCOLO_DEFAULTS, dias = 3) {
+  let kg = 0;
+  for (const t of trays || []) {
+    if (!t || t.cosechada || t.tiene_ayuno || t.dia_ciclo === null || t.dia_ciclo === undefined) continue;
+    if (t.dia_ciclo >= cfg.dia_inicio_ayuno) continue;
+    const dadas = new Set((t.cargas_dadas || []).map(Number));
+    for (const c of cfg.cargas) {
+      if (dadas.has(c.n) || c.dia >= cfg.dia_inicio_ayuno) continue;
+      if (c.dia - t.dia_ciclo <= dias) kg += c.kg;
+    }
+  }
+  return Math.round(kg * 100) / 100;
 }
 
 /** Short Spanish label for a step, e.g. "Carga 2 · 2 kg". */

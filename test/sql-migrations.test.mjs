@@ -15,22 +15,34 @@ const MIG = n => readSql(`supabase/migrations/${n}`);
 const R0005 = '0005_renombrar_lote.sql';
 const R0006 = '0006_sobrecargas.sql';
 const R0007 = '0007_protocolo_v2.sql';
+const R0008 = '0008_alimento.sql';
 
 /** Functions the app calls; each must exist exactly once. */
 const APP_FUNCTIONS = [
   'marcar_atractante', 'marcar_cierre', 'cerrar_ayuno', 'actualizar_qc_lote',
   'marcar_empacado', 'marcar_despachado', 'rechazar_lote', 'crear_lote',
-  'log_alimentacion_grupal', 'crear_recoleccion_v2', 'distribuir_incubadora'
+  'log_alimentacion_grupal', 'crear_recoleccion_v2', 'distribuir_incubadora',
+  'crear_ensilaje', 'avanzar_ensilaje'
 ];
+/** Added by a given migration, so earlier states are not expected to have them. */
+const ADDED_BY = {
+  crear_recoleccion_v2: R0007, distribuir_incubadora: R0007,
+  crear_ensilaje: R0008, avanzar_ensilaje: R0008
+};
 const VIEWS = [
   'v_rendimiento_bandeja', 'v_fcr_bandeja', 'v_tiempos_ciclo',
   'v_productividad_insectario', 'v_rendimiento_lote', 'v_actividad_operario',
   'v_consumo_alimento', 'v_calidad_datos', 'v_bandejas_activas',
   'v_insectarios_activos', 'v_lotes_activos', 'v_estado_drift', 'v_nombres_registrados',
-  'v_incubadoras_activas'
+  'v_incubadoras_activas', 'v_stock_material', 'v_stock_ensilaje', 'v_consumo_ensilaje_diario'
 ];
+const VIEWS_0008 = ['v_stock_material', 'v_stock_ensilaje', 'v_consumo_ensilaje_diario'];
 
-/** Production as it will be once the user runs the pending files, in order. */
+/**
+ * Production as it will be once the user runs the pending files, in order.
+ * 0005 and 0006 are already applied there (confirmed with check-sql-applied on
+ * 2026-09-29); the replica still starts from the migrations as first applied.
+ */
 async function productionAfterRelease1() {
   const db = await liveReplica();
   await db.exec(await MIG(R0005));
@@ -39,8 +51,16 @@ async function productionAfterRelease1() {
   return db;
 }
 
+async function productionAfterRelease2() {
+  const db = await productionAfterRelease1();
+  await db.exec(await MIG(R0008));
+  return db;
+}
+
 /** What exists once 0005 + 0006 ran, before 0007 adds the v2 functions. */
-const LOTE_FUNCTIONS = APP_FUNCTIONS.filter(f => !['crear_recoleccion_v2', 'distribuir_incubadora'].includes(f));
+const LOTE_FUNCTIONS = APP_FUNCTIONS.filter(f => !ADDED_BY[f]);
+/** What exists after 0007, before 0008. */
+const V2_FUNCTIONS = APP_FUNCTIONS.filter(f => ADDED_BY[f] !== R0008);
 
 async function assertOneOverloadEach(db, fns = APP_FUNCTIONS) {
   for (const fn of fns) {
@@ -173,7 +193,7 @@ test('0005 + 0006 on the live replica: data kept, names changed, functions work'
   const fresh = await runLoteLifecycle(db, sep2, 'CO-NEW');
   assert.equal(fresh.estado, 'despachado');
 
-  await assertViewsQueryable(db, VIEWS.filter(v => v !== 'v_incubadoras_activas'));
+  await assertViewsQueryable(db, VIEWS.filter(v => v !== 'v_incubadoras_activas' && !VIEWS_0008.includes(v)));
   const cols = await db.query(`select column_name from information_schema.columns
                                 where table_schema = 'app' and table_name = 'v_tiempos_ciclo'`);
   assert.ok(cols.rows.some(r => r.column_name === 'dias_separacion_a_lote'));
@@ -189,12 +209,13 @@ test('after 0006, calls WITHOUT p_por work again (older phones)', async () => {
   await db.query(`select app.marcar_empacado($1::uuid, null::date)`, [NOBODY]);
 });
 
-test('0005, 0006 and 0007 are safe to run twice', async () => {
+test('0005, 0006, 0007 and 0008 are safe to run twice', async () => {
   const db = await liveReplica();
   for (let i = 0; i < 2; i++) {
     await db.exec(await MIG(R0005));
     await db.exec(await MIG(R0006));
     await db.exec(await MIG(R0007));
+    await db.exec(await MIG(R0008));
   }
   await assertOneOverloadEach(db);
   await assertViewsQueryable(db);
@@ -250,7 +271,7 @@ async function v2Chain(db, { codigo = 'F7AR9', recolecta = '9', nombre = 'ICA' }
   return { ins, rec, inc, bandejas, distribucion, carga1 };
 }
 
-test('0007 on production: existing rows become v1 without being re-downloaded', async () => {
+test('0007 and 0008 on production: existing rows become v1 without being re-downloaded', async () => {
   const db = await liveReplica();
   const { ins, rec, ban, sep } = await seedChain(db, 'OLD');
   const alim = uid(), ay = uid();
@@ -268,6 +289,7 @@ test('0007 on production: existing rows become v1 without being re-downloaded', 
   await db.exec(await MIG(R0005));
   await db.exec(await MIG(R0006));
   await db.exec(await MIG(R0007));
+  await db.exec(await MIG(R0008));
 
   assert.deepEqual(await stamp(), before, 'agregar columnas no debe tocar updated_at: los teléfonos bajarían todo otra vez');
   for (const [t, id] of [['recoleccion', rec], ['bandeja', ban], ['alimentacion', alim], ['ayuno', ay], ['separacion', sep]]) {
@@ -350,7 +372,9 @@ test('0007: the full v2 cycle, with attribution, on production after Release 1',
 
   const ciclo = await one(db, `select dia_ciclo_cosecha, protocolo from app.v_tiempos_ciclo where bandeja_id = $1`, [tray]);
   assert.equal(ciclo.dia_ciclo_cosecha, 16, 'la cosecha cae en el día 16 del ciclo');
-  await assertViewsQueryable(db);
+  // Release 1 must stand on its own, without 0008.
+  await assertOneOverloadEach(db, V2_FUNCTIONS);
+  await assertViewsQueryable(db, VIEWS.filter(v => !VIEWS_0008.includes(v)));
 });
 
 test('0007: a v1 fast still needs its weights', async () => {
@@ -484,5 +508,127 @@ test('fresh install: SETUP_COMPLETO runs the v2 cycle and seeds the protocol set
   }
   const cargas = (await one(db, `select valor from app.parametro where clave = 'cargas'`)).valor;
   assert.deepEqual(cargas.map(x => [x.dia, x.kg]), [[7, 1.5], [10, 2], [13, 2]]);
+  assert.ok(keys.includes('dias_fermentacion'), '0008 también va en la instalación nueva');
   await assertOneOverloadEach(db);
+});
+
+/* ── 0008: alimento ────────────────────────────────────────────────────── */
+
+/** A reception, and a batch of ensilaje made from part of it. */
+async function ensilaje(db, { kgRecibido = 100, kgInsumo = 80, kgInicial = 95 } = {}) {
+  const rec = uid(), ens = uid();
+  await db.query(`insert into app.recepcion_alimento (id, fecha, material, kg, proveedor, registrado_por)
+                  values ($1, now(), 'Bagazo de cerveza (BSG)', $2, 'Cervecería X', 'Maria')`, [rec, kgRecibido]);
+  await db.query(`select app.crear_ensilaje($1::jsonb, $2::jsonb)`, [
+    JSON.stringify({ id: ens, codigo: 'ENS-' + ens.slice(0, 4), silo: 'Silo 1', fecha_armado: T0,
+                     kg_inicial: kgInicial, registrado_por: 'Maria' }),
+    JSON.stringify([{ id: uid(), material: 'Bagazo de cerveza (BSG)', kg: kgInsumo, recepcion_id: rec }])
+  ]);
+  return { rec, ens };
+}
+
+test('0008: a batch of ensilaje goes through its steps, in order, attributed', async () => {
+  const db = await productionAfterRelease2();
+  const { ens } = await ensilaje(db);
+  const estado = async () => (await one(db, `select estado from app.ensilaje where id = $1`, [ens])).estado;
+  assert.equal(await estado(), 'armado');
+
+  // Out of order is a no-op: nothing is used before it was sealed.
+  await db.query(`select app.avanzar_ensilaje($1, 'en_uso', now(), 'Ricardo')`, [ens]);
+  assert.equal(await estado(), 'armado');
+
+  await db.query(`select app.avanzar_ensilaje($1, 'sellado', '2026-09-01T12:00:00Z', 'Maria')`, [ens]);
+  assert.equal(await estado(), 'fermentando');
+  await db.query(`insert into app.ensilaje_lectura (id, ensilaje_id, fecha, temperatura_c, registrado_por)
+                  values ($1, $2, now(), 31.5, 'Maria')`, [uid(), ens]);
+  // Using it also marks it ready, if nobody did.
+  await db.query(`select app.avanzar_ensilaje($1, 'en_uso', now(), 'Ricardo')`, [ens]);
+  const r = await one(db, `select estado, sellado_por, listo_at, en_uso_por from app.ensilaje where id = $1`, [ens]);
+  assert.equal(r.estado, 'en_uso');
+  assert.equal(r.sellado_por, 'Maria');
+  assert.ok(r.listo_at);
+  assert.equal(r.en_uso_por, 'Ricardo');
+
+  // First stamp wins; a replay changes nothing.
+  await db.query(`select app.avanzar_ensilaje($1, 'sellado', now(), 'Otro')`, [ens]);
+  assert.equal((await one(db, `select sellado_por from app.ensilaje where id = $1`, [ens])).sellado_por, 'Maria');
+
+  const s = await one(db, `select dia_sellado, listo_previsto, ultima_temperatura_c from app.v_stock_ensilaje where id = $1`, [ens]);
+  assert.equal(Number(s.ultima_temperatura_c), 31.5);
+  assert.equal(new Date(s.listo_previsto).toISOString().slice(0, 10), '2026-09-15', 'sellado + 14 días (provisional)');
+
+  await assert.rejects(db.query(`select app.avanzar_ensilaje($1, 'otro', now(), null)`, [ens]), err => err.code === '22023');
+});
+
+test('0008: each carga is taken from the ensilaje in use; stock and consumption add up', async () => {
+  const db = await productionAfterRelease2();
+  const { ens } = await ensilaje(db);
+  await db.query(`select app.avanzar_ensilaje($1, 'sellado', now(), 'Maria')`, [ens]);
+  await db.query(`select app.avanzar_ensilaje($1, 'en_uso', now(), 'Maria')`, [ens]);
+
+  const c = await v2Chain(db);   // carga 1 (3 × 1.5) + carga 2 (3 × 2), no ensilaje yet
+  const carga3 = c.bandejas.map(b => ({ id: uid(), bandeja_id: b.id, fecha: new Date().toISOString(),
+    tipo_alimento: 'Ensilaje', cantidad_kg: 2.0, carga: 3, grupal_id: uid(), ensilaje_id: ens }));
+  await db.query(`select app.log_alimentacion_grupal($1::jsonb)`, [JSON.stringify(carga3)]);
+
+  const st = await one(db, `select kg_inicial, consumido_kg, disponible_kg, n_cargas from app.v_stock_ensilaje where id = $1`, [ens]);
+  assert.equal(Number(st.consumido_kg), 6, '3 bandejas × 2 kg');
+  assert.equal(Number(st.disponible_kg), 89);
+  assert.equal(Number(st.n_cargas), 3);
+
+  const m = await one(db, `select recibido_kg, usado_kg, disponible_kg from app.v_stock_material where material = 'Bagazo de cerveza (BSG)'`);
+  assert.deepEqual([Number(m.recibido_kg), Number(m.usado_kg), Number(m.disponible_kg)], [100, 80, 20]);
+
+  const d = (await db.query(`select sum(kg) kg, sum(n_sin_ensilaje) sin from app.v_consumo_ensilaje_diario`)).rows[0];
+  assert.equal(Number(d.kg), 4.5 + 6 + 6, 'las tres cargas de las tres bandejas');
+  assert.equal(Number(d.sin), 6, 'las cargas 1 y 2 se dieron antes de haber ensilaje en uso');
+  await assertViewsQueryable(db);
+});
+
+test('0008: the day-7 distribución records which ensilaje carga 1 came from', async () => {
+  const db = await productionAfterRelease2();
+  const { ens } = await ensilaje(db);
+  const ins = uid(), rec = uid(), inc = uid(), b = uid(), f = uid();
+  await db.query(`insert into app.insectario (id, codigo, nombre_insectario, fecha_inicio) values ($1, 'ICC-X', 'ICC', '2026-08-01')`, [ins]);
+  await db.query(`select app.crear_recoleccion_v2($1::jsonb, $2::jsonb)`, [
+    JSON.stringify({ id: rec, insectario_id: ins, recolecta: '1', fecha: T0 }),
+    JSON.stringify({ id: inc, codigo: 'F1CR1', fecha_inicio: '2026-09-01' })]);
+  await db.query(`select app.distribuir_incubadora($1::jsonb, $2::jsonb, $3::jsonb)`, [
+    JSON.stringify({ incubadora_id: inc }),
+    JSON.stringify([{ id: b, no_bandeja: 1, id_bandeja: 'F1CR1-01' }]),
+    JSON.stringify([{ id: f, bandeja_id: b, cantidad_kg: 1.5, carga: 1, ensilaje_id: ens }])]);
+  assert.equal((await one(db, `select ensilaje_id from app.alimentacion where id = $1`, [f])).ensilaje_id, ens);
+});
+
+test('0008: calls from phones on Release 1 (no ensilaje yet) keep working', async () => {
+  const db = await productionAfterRelease2();
+  const c = await v2Chain(db);    // Release-1 payloads: no ensilaje_id anywhere
+  assert.equal(Number((await one(db, `select count(*) n from app.alimentacion a join app.bandeja b on b.id = a.bandeja_id
+                                      where b.incubadora_id = $1 and a.ensilaje_id is null`, [c.inc])).n), 6);
+  await assertOneOverloadEach(db);
+});
+
+test('views count days on the farm\'s calendar, never the server\'s (UTC) date', async () => {
+  // current_date is the server's day: in Caracas it is already "tomorrow" from
+  // 20:00 to midnight, so day counts and the "10 days" flag were one day off
+  // every evening. Checked on the definitions, so it fails at any hour.
+  for (const db of [await productionAfterRelease1(), await productionAfterRelease2()]) {
+    const bad = (await db.query(`select viewname from pg_views
+                                  where schemaname = 'app' and definition ilike '%current_date%'`)).rows;
+    assert.deepEqual(bad.map(v => v.viewname), [], 'usa app.dia_local(now())');
+  }
+  const db = await productionAfterRelease2();
+  const { ens } = await ensilaje(db);
+  await db.query(`select app.avanzar_ensilaje($1, 'sellado', now() - interval '3 days', 'Maria')`, [ens]);
+  const s = await one(db, `select dias_fermentando, app.dia_local(now()) - app.dia_local(now() - interval '3 days') esperado
+                             from app.v_stock_ensilaje where id = $1`, [ens]);
+  assert.equal(Number(s.dias_fermentando), Number(s.esperado));
+});
+
+test('0008: new functions validate before writing (safe to probe)', async () => {
+  const db = await productionAfterRelease2();
+  await assert.rejects(db.query(`select app.crear_ensilaje('{}'::jsonb, '[]'::jsonb)`), err => err.code === '22023');
+  assert.equal(Number((await one(db, `select count(*) n from app.ensilaje`)).n), 0);
+  const nobody = '00000000-0000-4000-8000-000000000000';
+  await db.query(`select app.avanzar_ensilaje($1::uuid, 'sellado', null, null)`, [nobody]);
 });

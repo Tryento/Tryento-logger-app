@@ -15,9 +15,10 @@ import { metaGet } from './idb/tx.js';
 import { ayunoAbierto } from './idb/schema.js';
 import { allRows, rowById, rowsByIndex } from './store.js';
 import { allCache, getCache } from './cache.js';
-import { daysBetween, farmDay } from './time.js';
+import { daysBetween, farmDay, addDays } from './time.js';
 import {
-  mergeProtocolo, v2Vigente, diaCiclo, siguientePaso, pasoIncubadora, pasoLabel, cuandoLabel
+  mergeProtocolo, v2Vigente, diaCiclo, siguientePaso, pasoIncubadora, pasoLabel, cuandoLabel,
+  ensilajeEstado, kgCargasProximas
 } from './protocolo.js';
 
 /** The protocol settings this device has, over the built-in defaults. */
@@ -254,6 +255,154 @@ export async function listIncubadoras(filters = {}) {
   rows.sort((a, b) => String(b.fecha_inicio).localeCompare(String(a.fecha_inicio)) ||
                       String(a.codigo).localeCompare(String(b.codigo)));
   return ok(rows);
+}
+
+/* ── alimento ───────────────────────────────────────────────────────────── */
+
+const round2 = v => Math.round(Number(v || 0) * 100) / 100;
+
+export async function listRecepciones(filters = {}) {
+  const db = await openDb();
+  let rows = (await allRows(db, 'recepcion_alimento'))
+    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  if (filters.limit) rows = rows.slice(0, filters.limit);
+  return ok(deepCopy(rows));
+}
+
+/** Everything the food screens derive, from stored rows only. */
+async function alimentoIndex(db) {
+  const [ens, insumos, lecturas, feeds, parametros] = await Promise.all([
+    allRows(db, 'ensilaje'), allRows(db, 'ensilaje_insumo'), allRows(db, 'ensilaje_lectura'),
+    allRows(db, 'alimentacion'), allRows(db, 'parametro')
+  ]);
+  const consumo = new Map();
+  for (const a of feeds) {
+    if (!a.ensilaje_id) continue;
+    const c = consumo.get(a.ensilaje_id) || { kg: 0, n: 0 };
+    c.kg += Number(a.cantidad_kg) || 0; c.n += 1;
+    consumo.set(a.ensilaje_id, c);
+  }
+  const ultimas = new Map();
+  for (const l of lecturas) {
+    const prev = ultimas.get(l.ensilaje_id);
+    if (!prev || String(l.fecha) > String(prev.fecha)) ultimas.set(l.ensilaje_id, l);
+  }
+  return { ens, insumos, lecturas, feeds, consumo, ultimas, cfg: mergeProtocolo(parametros), hoy: farmDay() };
+}
+
+function decorateEnsilaje(e, idx) {
+  const estado = ensilajeEstado(e);
+  const diaSellado = e.sellado_at ? farmDay(e.sellado_at) : null;
+  const listoPrevisto = diaSellado ? addDays(diaSellado, idx.cfg.dias_fermentacion) : null;
+  const c = idx.consumo.get(e.id) || { kg: 0, n: 0 };
+  const ult = idx.ultimas.get(e.id) || null;
+  return Object.assign(deepCopy(e), {
+    estado,
+    dias_fermentando: diaSellado ? daysBetween(diaSellado, idx.hoy) : null,
+    listo_previsto: listoPrevisto,
+    // Days until it should be ready: negative once that date has passed.
+    listo_en: listoPrevisto && !e.listo_at ? daysBetween(idx.hoy, listoPrevisto) : null,
+    kg_consumido: round2(c.kg),
+    n_cargas: c.n,
+    kg_disponible: e.kg_inicial == null ? null : round2(Number(e.kg_inicial) - c.kg),
+    ultima_temperatura_c: ult ? ult.temperatura_c : null,
+    ultima_lectura: ult ? ult.fecha : null
+  });
+}
+
+export async function listEnsilajes(filters = {}) {
+  const db = await openDb();
+  const idx = await alimentoIndex(db);
+  const orden = { en_uso: 0, listo: 1, fermentando: 2, armado: 3, agotado: 4 };
+  let rows = idx.ens.map(e => decorateEnsilaje(e, idx));
+  if (filters.activos) rows = rows.filter(r => r.estado !== 'agotado');
+  rows.sort((a, b) => (orden[a.estado] - orden[b.estado]) ||
+                      String(b.fecha_armado).localeCompare(String(a.fecha_armado)));
+  return ok(rows);
+}
+
+export async function getEnsilajeDetail(id) {
+  const db = await openDb();
+  const row = await rowById(db, 'ensilaje', id);
+  if (!row || row.deleted_at) return fail(CODES.NOT_FOUND, 'Ensilaje no encontrado.');
+  const idx = await alimentoIndex(db);
+  const porDia = new Map();
+  for (const a of idx.feeds.filter(f => f.ensilaje_id === id)) {
+    const d = farmDay(a.fecha);
+    porDia.set(d, round2((porDia.get(d) || 0) + (Number(a.cantidad_kg) || 0)));
+  }
+  return ok({
+    ensilaje: decorateEnsilaje(row, idx),
+    insumos: deepCopy(idx.insumos.filter(i => i.ensilaje_id === id)),
+    lecturas: deepCopy(idx.lecturas.filter(l => l.ensilaje_id === id)
+      .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))),
+    consumo_por_dia: [...porDia].sort((a, b) => b[0].localeCompare(a[0])).map(([dia, kg]) => ({ dia, kg }))
+  });
+}
+
+/**
+ * The whole food picture: raw material in store, ensilaje usable now and
+ * fermenting, what the trays eat per day, how long the stock lasts, and
+ * whether it covers the loads due in the next days.
+ */
+export async function getStockAlimento({ dias = 3 } = {}) {
+  const db = await openDb();
+  const [idx, recepciones, bidx, cache] = await Promise.all([
+    alimentoIndex(db), allRows(db, 'recepcion_alimento'), buildIndex(db), allCache(db)
+  ]);
+
+  const mats = new Map();
+  const mat = m => { if (!mats.has(m)) mats.set(m, { material: m, recibido_kg: 0, usado_kg: 0, ultima_recepcion: null }); return mats.get(m); };
+  for (const r of recepciones) {
+    const x = mat(r.material);
+    x.recibido_kg += Number(r.kg) || 0;
+    if (!x.ultima_recepcion || String(r.fecha) > String(x.ultima_recepcion)) x.ultima_recepcion = r.fecha;
+  }
+  const vivos = new Set(idx.ens.map(e => e.id));
+  for (const i of idx.insumos) if (vivos.has(i.ensilaje_id)) mat(i.material).usado_kg += Number(i.kg) || 0;
+  const materiales = [...mats.values()].map(x => ({
+    ...x, recibido_kg: round2(x.recibido_kg), usado_kg: round2(x.usado_kg),
+    disponible_kg: round2(x.recibido_kg - x.usado_kg)
+  })).sort((a, b) => a.material.localeCompare(b.material, 'es'));
+
+  const ens = idx.ens.map(e => decorateEnsilaje(e, idx));
+  const usable = ens.filter(e => e.estado === 'en_uso' || e.estado === 'listo');
+  const enUso = ens.filter(e => e.estado === 'en_uso')
+    .sort((a, b) => String(a.en_uso_at).localeCompare(String(b.en_uso_at)))[0] || null;
+  const disponible = round2(usable.reduce((s, e) => s + Math.max(0, e.kg_disponible || 0), 0));
+  const fermentando = round2(ens.filter(e => e.estado === 'fermentando' || e.estado === 'armado')
+    .reduce((s, e) => s + (Number(e.kg_inicial) || 0), 0));
+
+  // What the new-protocol trays actually ate in the last 7 farm days.
+  const desde = addDays(idx.hoy, -6);
+  const consumo7 = round2(idx.feeds
+    .filter(a => (a.protocolo || 'v1') === 'v2' && farmDay(a.fecha) >= desde)
+    .reduce((s, a) => s + (Number(a.cantidad_kg) || 0), 0));
+  const diario = round2(consumo7 / 7);
+
+  // And what they will need soon, from the plan.
+  const trays = (await allRows(db, 'bandeja')).filter(b => b.protocolo === 'v2' && !b.cerrada_admin_at)
+    .map(b => {
+      const c = cache.get(b.id);
+      const inc = bidx.incubadoraById.get(b.incubadora_id);
+      const estado = c?.estado ?? b.estado;
+      return { dia_ciclo: inc ? diaCiclo(inc.fecha_inicio, bidx.hoy) : null, cargas_dadas: c?.cargas_dadas || [],
+               tiene_ayuno: Boolean(c?.tiene_ayuno) || estado === 'en_ayuno', cosechada: estado === 'cosechada' };
+    });
+  const proximas = kgCargasProximas(trays, idx.cfg, dias);
+
+  return ok({
+    materiales,
+    ensilaje_en_uso: enUso,
+    ensilaje_disponible_kg: disponible,
+    ensilaje_fermentando_kg: fermentando,
+    consumo_7d_kg: consumo7,
+    consumo_diario_kg: diario,
+    dias_restantes: diario > 0 ? Math.floor(disponible / diario) : null,
+    kg_cargas_proximas: proximas,
+    dias_prevision: dias,
+    alcanza: disponible >= proximas
+  });
 }
 
 export async function getIncubadoraDetail(id) {

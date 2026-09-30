@@ -81,7 +81,8 @@ const { openDb, __closeDb } = await import('../src/data/idb/open.js');
 const { outboxStats, listStuck } = await import('../src/data/outbox.js');
 const { DB_NAME } = await import('../src/data/idb/schema.js');
 
-const ids = { insectario: [], recoleccion: [], incubadora: [], bandeja: [], ayuno: [], separacion: [], lote: [] };
+const ids = { insectario: [], recoleccion: [], incubadora: [], bandeja: [], ayuno: [], separacion: [], lote: [],
+              ensilaje_lectura: [], ensilaje_insumo: [], ensilaje: [], recepcion_alimento: [] };
 const OP = 'Maria';
 
 try {
@@ -127,7 +128,10 @@ try {
 
   // Protocolo v2, only if the server has 0007 (otherwise say so plainly).
   const tieneV2 = !(await db.from('parametro').select('clave').limit(1)).error;
+  // Alimento, only if it also has 0008.
+  const tieneAlimento = !(await db.from('ensilaje').select('id').limit(0)).error;
   let v2 = null;
+  let food = null;
   if (tieneV2) {
     const r = await api.createRecoleccionV2({ insectario_id: ins.data.id, peso_ovipositores_g: 320,
                                              atrayente_cambiado: true, starter_kg: 2, operator_name: OP });
@@ -138,8 +142,32 @@ try {
     if (!d.ok) throw new Error('distribuirIncubadora: ' + d.error.message);
     const trays = d.data.bandejas.map(b => b.id);
     ids.bandeja.push(...trays);
+    // A reception and a batch put in use BEFORE carga 2, so the load is taken
+    // from a batch — all of it still queued, as on a phone with no signal.
+    if (tieneAlimento) {
+      const rc = await api.createRecepcion({ material: 'ZZTEST material', kg: 25, proveedor: 'check-sync', operator_name: OP });
+      if (!rc.ok) throw new Error('createRecepcion: ' + rc.error.message);
+      const en = await api.createEnsilaje({ silo: 'ZZTEST', operator_name: OP,
+        insumos: [{ material: 'ZZTEST material', kg: 25, recepcion_id: rc.data.id }] });
+      if (!en.ok) throw new Error('createEnsilaje: ' + en.error.message);
+      const pasos = [await api.avanzarEnsilaje(en.data.id, 'sellado', { operator_name: OP }),
+                     await api.logLecturaEnsilaje(en.data.id, { temperatura_c: '30,5', operator_name: OP }),
+                     await api.avanzarEnsilaje(en.data.id, 'en_uso', { operator_name: OP })];
+      const fallo = pasos.find(p => !p.ok);
+      if (fallo) throw new Error('ensilaje: ' + fallo.error.message);
+      food = { rec: rc.data.id, ens: en.data.id, lectura: pasos[1].data.id };
+      ids.recepcion_alimento.push(rc.data.id);
+      ids.ensilaje.push(en.data.id);
+      ids.ensilaje_insumo.push(...en.data.insumos.map(i => i.id));
+      ids.ensilaje_lectura.push(pasos[1].data.id);
+    } else {
+      console.log('  --    alimento (0008): todavía no aplicado; se revisa cuando corras 0008_alimento.sql');
+    }
     const c2 = await api.logCarga({ bandeja_ids: trays, carga: 2, tamizado: true, operator_name: OP });
     if (!c2.ok) throw new Error('logCarga: ' + c2.error.message);
+    // A real batch in use since before this run is older, so the load names it.
+    // That is right for the app; the cleanup below takes the load back out.
+    if (food) food.cargaEns = c2.data.ensilaje ? c2.data.ensilaje.id : null;
     const ay2 = await api.logAyunoGrupal({ bandeja_ids: trays, operator_name: OP });
     if (!ay2.ok) throw new Error('logAyunoGrupal: ' + ay2.error.message);
     ids.ayuno.push(...ay2.data.rows.map(a => a.id));
@@ -269,6 +297,26 @@ try {
     else bad('protocolo v2: 2 % al laboratorio', JSON.stringify(sep));
   }
 
+  if (food) {
+    const rec = (await db.from('recepcion_alimento').select('kg, registrado_por').eq('id', food.rec).single()).data;
+    const ens = (await db.from('ensilaje').select('estado, sellado_por, en_uso_por, listo_at').eq('id', food.ens).single()).data;
+    const insu = (await db.from('ensilaje_insumo').select('kg, recepcion_id').eq('ensilaje_id', food.ens)).data || [];
+    const lec = (await db.from('ensilaje_lectura').select('temperatura_c, registrado_por').eq('id', food.lectura).single()).data;
+    const c2s = (await db.from('alimentacion').select('ensilaje_id').in('bandeja_id', v2.trays).eq('carga', 2)).data || [];
+    if (rec && Number(rec.kg) === 25 && rec.registrado_por === OP) ok('alimento: recepción', '25 kg, por ' + OP);
+    else bad('alimento: recepción', JSON.stringify(rec));
+    if (ens && ens.estado === 'en_uso' && ens.listo_at && ens.sellado_por === OP && ens.en_uso_por === OP &&
+        insu.length === 1 && insu[0].recepcion_id === food.rec) {
+      ok('alimento: ensilaje, su material y sus pasos', 'sellado → en uso, atribuidos, en orden');
+    } else bad('alimento: ensilaje, su material y sus pasos', JSON.stringify({ ens, insu }));
+    if (lec && Number(lec.temperatura_c) === 30.5 && lec.registrado_por === OP) ok('alimento: lectura de temperatura', '"30,5" llegó como 30.5 °C');
+    else bad('alimento: lectura de temperatura', JSON.stringify(lec));
+    if (food.cargaEns && c2s.length === 2 && c2s.every(f => f.ensilaje_id === food.cargaEns)) {
+      ok('alimento: la carga dice de qué ensilaje salió',
+         food.cargaEns === food.ens ? 'del ensilaje de prueba' : 'de un ensilaje real en uso (la limpieza la retira)');
+    } else bad('alimento: la carga dice de qué ensilaje salió', JSON.stringify({ esperado: food.cargaEns, c2s }));
+  }
+
   /* ── a second device: wipe everything local and pull from scratch ─────── */
   // Settle first. Every write called nudge(), so a background pass may still be
   // touching the database; wiping it underneath one throws InvalidStateError.
@@ -320,7 +368,8 @@ try {
       await db.from('alimentacion').update({ deleted_at: now }).in('bandeja_id', ids.bandeja);
       await db.from('revision').update({ deleted_at: now }).in('bandeja_id', ids.bandeja);
     }
-    for (const t of ['lote', 'separacion', 'ayuno', 'bandeja', 'incubadora', 'recoleccion', 'insectario']) {
+    for (const t of ['lote', 'separacion', 'ayuno', 'bandeja', 'incubadora', 'recoleccion', 'insectario',
+                     'ensilaje_lectura', 'ensilaje_insumo', 'ensilaje', 'recepcion_alimento']) {
       if (ids[t] && ids[t].length) await db.from(t).update({ deleted_at: now }).in('id', ids[t]);
     }
     const left = await db.from('insectario').select('id').in('id', ids.insectario).is('deleted_at', null);

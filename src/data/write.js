@@ -31,14 +31,14 @@ import { ayunoAbierto } from './idb/schema.js';
 import { commitWrite, rowById, allRows, rowsByIndex } from './store.js';
 import {
   uuid, uuidFromString, deviceId, insectarioCodigo, bandejaLabel, loteCodigo,
-  nextRecolectaOrdinal, incubadoraCodigo, bandejaV2Codigo
+  nextRecolectaOrdinal, incubadoraCodigo, bandejaV2Codigo, shortCode
 } from './ids.js';
-import { nowIso, utcIso, farmDay, addDays } from './time.js';
+import { nowIso, utcIso, farmDay, addDays, ddmm as ddmmFarm } from './time.js';
 import { currentUserId } from './session.js';
 import { metaGet, metaSet } from './idb/tx.js';
 import { attachPhoto } from './photo.js';
 import { OVEN_CAPACITY } from './config.js';
-import { mergeProtocolo, cargaDef, ALIMENTO_V2 } from './protocolo.js';
+import { mergeProtocolo, cargaDef, ALIMENTO_V2, ensilajeEstado } from './protocolo.js';
 
 /** The protocol settings this device has, over the built-in defaults. */
 async function protocolo(db) {
@@ -46,6 +46,18 @@ async function protocolo(db) {
 }
 
 const esV2 = row => (row?.protocolo || 'v1') === 'v2';
+
+/**
+ * The ensilaje each v2 load is taken from: the batch in use, the oldest one
+ * if more than one was started. Null when none is in use — the load is still
+ * recorded (the trays were fed), it just deducts from no stock.
+ */
+async function ensilajeEnUso(db) {
+  const enUso = (await allRows(db, 'ensilaje'))
+    .filter(e => e.en_uso_at && !e.agotado_at)
+    .sort((a, b) => String(a.en_uso_at).localeCompare(String(b.en_uso_at)));
+  return enUso[0] || null;
+}
 
 /** Tray labels for a message, never raw ids. */
 const etiquetas = (trays, ids) =>
@@ -947,6 +959,7 @@ export async function distribuirIncubadora(id, data = {}) {
 
   const c1 = cargaDef(cfg, 1);
   const grupal = uuid();
+  const ens = await ensilajeEnUso(db);
   const cargas = data.carga1 === false || !c1 ? [] : bandejas.map(b => ({
     id: uuid(),
     bandeja_id: b.id,
@@ -957,6 +970,8 @@ export async function distribuirIncubadora(id, data = {}) {
     grupal_id: grupal,
     carga: 1,
     tamizado: false,
+    // Only when there is one: a Release-1 server has no such column.
+    ...(ens ? { ensilaje_id: ens.id } : {}),
     notas: '',
     foto_key: null,
     protocolo: 'v2',
@@ -987,8 +1002,9 @@ export async function distribuirIncubadora(id, data = {}) {
         p_bandejas: bandejas,
         p_cargas: cargas
       },
-      // Waits for the recolecta + incubadora if they are still queued.
-      dependsOn: [inc.id],
+      // Waits for the recolecta + incubadora if they are still queued, and for
+      // the ensilaje the loads come from.
+      dependsOn: ens && cargas.length ? [inc.id, ens.id] : [inc.id],
       createdBy: prov.created_by, dispositivoId: prov.dispositivo_id
     },
     refreshTrays: bandejas.map(b => b.id)
@@ -1038,6 +1054,8 @@ export async function logCarga(data) {
   const fecha = isoOrNow(data.fecha);
   const prov = await provenance(data.operator_name);
   const grupal = ids.length > 1 ? uuid() : null;
+  // Each load comes out of the ensilaje in use: that is what the stock counts.
+  const ens = await ensilajeEnUso(db);
   const rows = ids.map(bandeja_id => ({
     id: uuid(),
     bandeja_id,
@@ -1048,6 +1066,7 @@ export async function logCarga(data) {
     grupal_id: grupal,
     carga: def.n,
     tamizado: Boolean(data.tamizado),
+    ...(ens ? { ensilaje_id: ens.id } : {}),
     notas: str(data.notas),
     foto_key: null,
     protocolo: 'v2',
@@ -1061,9 +1080,154 @@ export async function logCarga(data) {
 
   await commitWrite(db, {
     writes: rows.map(row => ({ store: 'alimentacion', row })),
-    outbox: { ...outbox, dependsOn: ids, createdBy: prov.created_by, dispositivoId: prov.dispositivo_id },
+    // The ensilaje too: made on this phone and still queued, the loads that
+    // name it must not reach the server before it does.
+    outbox: { ...outbox, dependsOn: ens ? [...ids, ens.id] : ids,
+              createdBy: prov.created_by, dispositivoId: prov.dispositivo_id },
     refreshTrays: ids
   });
 
-  return ok({ carga: def.n, kg: def.kg, created: rows.length, rows: deepCopy(rows) });
+  return ok({ carga: def.n, kg: def.kg, created: rows.length, rows: deepCopy(rows),
+              ensilaje: ens ? { id: ens.id, codigo: ens.codigo } : null });
+}
+
+/* ── alimento: recepción, ensilaje, lecturas ───────────────────────────── */
+
+/** Material that arrived at the lab: what, how many kilos, when. */
+export async function createRecepcion(data) {
+  const material = str(data?.material);
+  if (!material) return fail(CODES.VALIDATION, 'Elige el material.');
+  const kg = num(data.kg);
+  if (kg === null || kg <= 0) return fail(CODES.VALIDATION, 'Los kg recibidos son obligatorios.');
+
+  const db = await openDb();
+  const prov = await provenance(data.operator_name);
+  const row = {
+    id: uuid(),
+    fecha: isoOrNow(data.fecha),
+    material,
+    kg,
+    proveedor: str(data.proveedor) || null,
+    notas: str(data.notas),
+    deleted_at: null,
+    ...prov
+  };
+  await commitWrite(db, {
+    writes: [{ store: 'recepcion_alimento', row }],
+    outbox: { op: 'upsert', table: 'recepcion_alimento', rowId: row.id, payload: row,
+              createdBy: prov.created_by, dispositivoId: prov.dispositivo_id }
+  });
+  return ok(deepCopy(row));
+}
+
+const PASOS_ENSILAJE = ['sellado', 'listo', 'en_uso', 'agotado'];
+
+/**
+ * A batch of fermented feed, with the materials that went into it. One save,
+ * one server call: a batch can never land without its inputs.
+ */
+export async function createEnsilaje(data) {
+  const insumos = (Array.isArray(data?.insumos) ? data.insumos : [])
+    .map(i => ({ material: str(i?.material), kg: num(i?.kg), recepcion_id: i?.recepcion_id || null }))
+    .filter(i => i.material || i.kg !== null);
+  if (!insumos.length) return fail(CODES.VALIDATION, 'Agrega al menos un material con sus kg.');
+  if (insumos.some(i => !i.material || i.kg === null || i.kg <= 0)) {
+    return fail(CODES.VALIDATION, 'Cada material necesita sus kg.');
+  }
+  const kgInicial = num(data.kg_inicial) ?? insumos.reduce((s, i) => s + i.kg, 0);
+  if (kgInicial < 0) return fail(CODES.VALIDATION, 'Los kg del ensilaje no pueden ser negativos.');
+
+  const db = await openDb();
+  const fecha = isoOrNow(data.fecha_armado || data.fecha);
+  const prov = await provenance(data.operator_name);
+  const ensilaje = {
+    id: uuid(),
+    codigo: `ENS-${ddmmFarm(fecha)}-${shortCode(3)}`,
+    silo: str(data.silo),
+    fecha_armado: fecha,
+    kg_inicial: Math.round(kgInicial * 100) / 100,
+    notas: str(data.notas),
+    sellado_at: null, sellado_por: null,
+    listo_at: null, listo_por: null,
+    en_uso_at: null, en_uso_por: null,
+    agotado_at: null, agotado_por: null,
+    estado: 'armado',
+    deleted_at: null,
+    ...prov
+  };
+  const rows = insumos.map(i => ({
+    id: uuid(), ensilaje_id: ensilaje.id, material: i.material, kg: i.kg,
+    recepcion_id: i.recepcion_id, deleted_at: null, ...prov
+  }));
+  await commitWrite(db, {
+    writes: [{ store: 'ensilaje', row: ensilaje }, ...rows.map(row => ({ store: 'ensilaje_insumo', row }))],
+    outbox: { op: 'rpc', rpc: 'crear_ensilaje', rowId: ensilaje.id,
+              payload: { p_ensilaje: ensilaje, p_insumos: rows },
+              dependsOn: [...new Set(rows.map(r => r.recepcion_id).filter(Boolean))],
+              createdBy: prov.created_by, dispositivoId: prov.dispositivo_id }
+  });
+  return ok({ ...deepCopy(ensilaje), insumos: deepCopy(rows) });
+}
+
+/**
+ * Move a batch one step: sellado → listo → en uso → agotado. Each step is a
+ * stamp with who and when; the first to reach the server wins. Using a batch
+ * also marks it ready if nobody did.
+ */
+export async function avanzarEnsilaje(id, paso, data = {}) {
+  if (!PASOS_ENSILAJE.includes(paso)) return fail(CODES.VALIDATION, 'Paso desconocido.');
+  const db = await openDb();
+  const row = await rowById(db, 'ensilaje', id);
+  if (!row || row.deleted_at) return fail(CODES.NOT_FOUND, 'Ensilaje no encontrado.');
+
+  const at = data.fecha ? isoOrNow(data.fecha) : nowIso();
+  const por = str(data.operator_name) || (await getCurrentOperator());
+  const next = { ...row };
+  if (paso === 'sellado') {
+    if (row.sellado_at) return ok(deepCopy(row));
+    Object.assign(next, { sellado_at: at, sellado_por: por });
+  } else if (paso === 'listo') {
+    if (!row.sellado_at) return fail(CODES.VALIDATION, 'Primero hay que sellarlo.');
+    if (row.listo_at) return ok(deepCopy(row));
+    Object.assign(next, { listo_at: at, listo_por: por });
+  } else if (paso === 'en_uso') {
+    if (!row.sellado_at) return fail(CODES.VALIDATION, 'Primero hay que sellarlo.');
+    if (row.agotado_at) return fail(CODES.CONFLICT, 'Este ensilaje ya se terminó.');
+    if (row.en_uso_at) return ok(deepCopy(row));
+    Object.assign(next, { en_uso_at: at, en_uso_por: por,
+                          listo_at: row.listo_at || at, listo_por: row.listo_por || por });
+  } else {
+    if (row.agotado_at) return ok(deepCopy(row));
+    Object.assign(next, { agotado_at: at, agotado_por: por });
+  }
+  next.estado = ensilajeEstado(next);
+  next.updated_at = nowIso();
+
+  await commitWrite(db, {
+    writes: [{ store: 'ensilaje', row: next }],
+    outbox: { op: 'cas', rpc: 'avanzar_ensilaje', rowId: id,
+              payload: { p_id: id, p_paso: paso, p_at: at, p_por: por },
+              createdBy: currentUserId(), dispositivoId: deviceId() }
+  });
+  return ok(deepCopy(next));
+}
+
+/** A temperature reading of a fermenting batch. */
+export async function logLecturaEnsilaje(id, data = {}) {
+  const t = num(data.temperatura_c);
+  if (t === null || t < -10 || t > 90) return fail(CODES.VALIDATION, 'Escribe la temperatura en °C.');
+  const db = await openDb();
+  const ens = await rowById(db, 'ensilaje', id);
+  if (!ens || ens.deleted_at) return fail(CODES.NOT_FOUND, 'Ensilaje no encontrado.');
+  const prov = await provenance(data.operator_name);
+  const row = {
+    id: uuid(), ensilaje_id: id, fecha: isoOrNow(data.fecha), temperatura_c: t,
+    notas: str(data.notas), deleted_at: null, ...prov
+  };
+  await commitWrite(db, {
+    writes: [{ store: 'ensilaje_lectura', row }],
+    outbox: { op: 'upsert', table: 'ensilaje_lectura', rowId: row.id, payload: row,
+              dependsOn: [id], createdBy: prov.created_by, dispositivoId: prov.dispositivo_id }
+  });
+  return ok(deepCopy(row));
 }

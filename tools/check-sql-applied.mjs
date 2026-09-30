@@ -77,7 +77,22 @@ const checks = [
   ['0007', 'crear_recoleccion_v2(...)',                  () => rpc('crear_recoleccion_v2', { p_recoleccion: {}, p_incubadora: {} })],
   ['0007', 'distribuir_incubadora(...)',                 () => rpc('distribuir_incubadora', { p_distribucion: {}, p_bandejas: [], p_cargas: [] })],
   ['0007', 'cerrar_ayuno(p_id, p_peso, p_at, p_por)',    () => rpcUnambiguous('cerrar_ayuno', { p_id: NOBODY, p_peso: null, p_at: null, p_por: null })],
-  ['0007', 'cerrar_ayuno sin p_por (teléfonos viejos)',  () => rpcUnambiguous('cerrar_ayuno', { p_id: NOBODY, p_peso: null, p_at: null })]
+  ['0007', 'cerrar_ayuno sin p_por (teléfonos viejos)',  () => rpcUnambiguous('cerrar_ayuno', { p_id: NOBODY, p_peso: null, p_at: null })],
+  // Alimento. crear_ensilaje rejects an empty batch and avanzar_ensilaje an
+  // unknown step (22023) before touching anything.
+  ['0008', 'tabla recepcion_alimento',                   () => table('recepcion_alimento')],
+  ['0008', 'tabla ensilaje',                             () => table('ensilaje')],
+  ['0008', 'tabla ensilaje_insumo',                      () => table('ensilaje_insumo')],
+  ['0008', 'tabla ensilaje_lectura',                     () => table('ensilaje_lectura')],
+  ['0008', 'columna alimentacion.ensilaje_id',           () => column('alimentacion', 'ensilaje_id')],
+  ['0008', 'vista v_stock_ensilaje',                     () => table('v_stock_ensilaje')],
+  ['0008', 'vista v_stock_material',                     () => table('v_stock_material')],
+  ['0008', 'crear_ensilaje(...)',                        () => rpc('crear_ensilaje', { p_ensilaje: {}, p_insumos: [] })],
+  ['0008', 'avanzar_ensilaje(p_id, p_paso, p_at, p_por)', () => rpcUnambiguous('avanzar_ensilaje', { p_id: NOBODY, p_paso: 'ninguno', p_at: null, p_por: null })],
+  ['0008', 'parámetro dias_fermentacion',                async () => {
+      const { data, error } = await db.from('parametro').select('clave').eq('clave', 'dias_fermentacion');
+      return !error && data.length === 1;
+    }]
 ];
 
 let bad = 0;

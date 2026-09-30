@@ -20,6 +20,10 @@
  *   3. the v2 protocol screens, driven like a person would: feed carga 2 from
  *      the plan, register a recolecta, distribute its incubadora — then read
  *      IndexedDB to confirm what was stored
+ *   4. a phone on the Release-1 build (database v3, a queued carga) opening
+ *      this build: the food stores arrive, nothing it had moves
+ *   5. the food screens: a reception, an ensilaje of two materials, a
+ *      temperature reading, ready → in use, a carga taken from it, agotado
  */
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -33,6 +37,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, 'dist');
 const { DB_VERSION } = await import('../src/data/idb/schema.js');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'idb', 'schema-v1-antes-del-renombrado.mjs');
+const FIXTURE_V3 = path.join(ROOT, 'test', 'fixtures', 'idb', 'schema-v3.mjs');
 
 if (!existsSync(path.join(DIST, 'index.html'))) {
   console.log('Falta dist/. Corre primero: npm run build');
@@ -65,6 +70,7 @@ const server = http.createServer(async (req, res) => {
   if (rel === '/app-config.js') return send('window.__TRYENTO_CONFIG__ = { authMode: "none" };', 'text/javascript');
   if (rel === '/__setup.html') return send('<!doctype html><title>setup</title>', 'text/html');
   if (rel === '/__fixture.mjs') return send(await readFile(FIXTURE, 'utf8'), 'text/javascript');
+  if (rel === '/__fixture_v3.mjs') return send(await readFile(FIXTURE_V3, 'utf8'), 'text/javascript');
   const file = path.join(DIST, rel === '/' ? 'index.html' : rel);
   if (!path.normalize(file).startsWith(DIST)) { res.writeHead(403); return res.end(); }
   try {
@@ -469,6 +475,234 @@ console.log('\nEscenario 3 — pantallas del protocolo nuevo');
     check(errs.length === 0, 'sin errores en la consola', errs.slice(0, 3).join(' | '));
   } catch (e) {
     bad('escenario 3', e.message);
+  } finally {
+    await b.close();
+  }
+}
+
+/* ── scenario 4: a phone on the Release-1 build (database v3) ──────────────── */
+
+const SEED_RELEASE_1 = `(async () => {
+  const fx = await import('/__fixture_v3.mjs');
+  const T0 = '2026-09-26T13:00:00.000Z';
+  const u = () => crypto.randomUUID();
+  const ID = { ins: u(), rec: u(), inc: u(), b1: u(), b2: u(), a1: u(), a2: u(), c1: u(), c2: u(), g1: u(), g2: u(), dev: u() };
+  const prov = s => ({ registrado_por: 'Maria', created_by: null, dispositivo_id: ID.dev,
+                       created_at: T0, updated_at: T0, synced_at: s ? T0 : null, deleted_at: null });
+  const tray = (id, n) => ({ id, recoleccion_id: ID.rec, incubadora_id: ID.inc, no_bandeja: n, id_bandeja: 'F7BR3-0' + n,
+    fecha: T0, individuos: 25000, gramos_huevos: null, iniciador_g: null, tipo_iniciador: null, notas: '',
+    estado: 'en_crecimiento', cerrada_admin_at: null, cerrada_admin_motivo: null, protocolo: 'v2', ...prov(true) });
+  const carga = (id, b, n, g, s) => ({ id, bandeja_id: b, fecha: T0, tipo_alimento: 'Ensilaje', cantidad_kg: n === 1 ? 1.5 : 2,
+    origen: 'grupal', grupal_id: g, carga: n, tamizado: n === 2, notas: '', foto_key: null, protocolo: 'v2', ...prov(s) });
+  const C2 = [carga(ID.c1, ID.b1, 2, ID.g2, false), carga(ID.c2, ID.b2, 2, ID.g2, false)];
+  const rows = {
+    insectario: [{ id: ID.ins, codigo: 'ICB-0109', nombre_insectario: 'ICB', fecha_inicio: '2026-09-01', generacion_moscas: 'F7', ...prov(true) }],
+    recoleccion: [{ id: ID.rec, insectario_id: ID.ins, recolecta: '3', fecha: T0, peso_ovipositores_g: 300,
+                    atrayente_cambiado: true, protocolo: 'v2', ...prov(true) }],
+    incubadora: [{ id: ID.inc, recoleccion_id: ID.rec, codigo: 'F7BR3', fecha_inicio: '2026-09-19', starter_kg: 1.2,
+                   individuos_total: 50000, notas: '', distribuida_at: T0, distribuida_por: 'Maria', estado: 'distribuida', ...prov(true) }],
+    bandeja: [tray(ID.b1, 1), tray(ID.b2, 2)],
+    alimentacion: [carga(ID.a1, ID.b1, 1, ID.g1, true), carga(ID.a2, ID.b2, 1, ID.g1, true), ...C2],
+    bandeja_cache: [ID.b1, ID.b2].map(bandeja_id => ({ bandeja_id, estado: 'en_crecimiento', last_evento_tipo: 'alimentacion',
+      last_evento_fecha: T0, n_alimentaciones: 2, kg_alimento_total: 3.5, n_revisiones: 0, cargas_dadas: [1, 2], tiene_ayuno: 0,
+      tiene_ayuno_abierto: 0, ayuno_abierto_id: null, separacion_id: null, larva_limpia_g: null, lote_id: null, updated_at: T0 })),
+    outbox: [{ id: u(), seq: 1, op: 'rpc', table: null, rpc: 'log_alimentacion_grupal', row_id: ID.g2, row_ids: [ID.g2, ID.c1, ID.c2],
+               undo: { created: C2.map(c => ({ store: 'alimentacion', key: c.id })), changed: [] }, payload: { p_rows: C2 },
+               depends_on: [ID.b1, ID.b2], blob_ids: [], created_at: T0, created_by: null, dispositivo_id: ID.dev,
+               attempts: 0, next_attempt_at: 0, status: 'pending', last_error: null }],
+    meta: [{ key: 'outbox_seq', value: 1 }, { key: 'operador_actual', value: 'Maria' }, { key: 'pull_cursor:alimentacion', value: T0 }]
+  };
+  await new Promise((res, rej) => {
+    const r = indexedDB.open('tryento', fx.DB_VERSION);
+    r.onupgradeneeded = ev => {
+      (async () => { for (let v = ev.oldVersion || 0; v < fx.DB_VERSION; v++) await fx.MIGRATIONS[v](r.result, r.transaction); })()
+        .catch(e => { try { r.transaction.abort(); } catch (x) {} rej(e); });
+    };
+    r.onsuccess = () => {
+      const db = r.result;
+      const tx = db.transaction(Object.keys(rows), 'readwrite');
+      for (const [s, list] of Object.entries(rows)) for (const row of list) tx.objectStore(s).put(row);
+      tx.oncomplete = () => { db.close(); res(); };
+      tx.onerror = () => rej(tx.error);
+    };
+    r.onerror = () => rej(r.error);
+  });
+  localStorage.setItem('tryento.operator', 'Maria');
+  return { ID, outbox: rows.outbox[0] };
+})()`;
+
+console.log('\nEscenario 4 — teléfono con la base de la versión 1 del protocolo nuevo (v3)');
+{
+  const b = await launch();
+  try {
+    await b.navigate(`${ORIGIN}/__setup.html`);
+    const seeded = await b.evaluate(SEED_RELEASE_1);
+    await b.navigate(`${ORIGIN}/index.html`);
+    const booted = await waitFor(b, `(async () => { const a = window.__BSF_DATA_CLIENT__; if (!a) return null; await a.ready(); return 'ok'; })()`);
+    check(booted === 'ok', 'la app arranca sobre la base v3', booted || 'no respondió');
+    const d = await b.evaluate(`(async () => {
+      const db = await new Promise((res, rej) => { const r = indexedDB.open('tryento'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+      const all = s => new Promise(res => { const q = db.transaction(s, 'readonly').objectStore(s).getAll(); q.onsuccess = () => res(q.result); });
+      const names = [...db.objectStoreNames];
+      const out = { version: db.version, stores: names, outbox: await all('outbox'), alimentacion: await all('alimentacion'),
+                    bandeja: await all('bandeja'), meta: await all('meta') };
+      db.close();
+      return out;
+    })()`);
+    check(d.version === DB_VERSION, 'versión local', 'v' + d.version + ' (esperada v' + DB_VERSION + ')');
+    check(['recepcion_alimento', 'ensilaje', 'ensilaje_insumo', 'ensilaje_lectura'].every(s => d.stores.includes(s)),
+          'almacenes del módulo de alimento creados');
+    check(JSON.stringify(d.outbox) === JSON.stringify([seeded.outbox]), 'la carga encolada sigue idéntica, lista para enviarse');
+    check(d.alimentacion.length === 4 && d.bandeja.length === 2, 'bandejas y cargas intactas', d.bandeja.length + ' bandejas, ' + d.alimentacion.length + ' cargas');
+    check((d.meta.find(m => m.key === 'pull_cursor:alimentacion') || {}).value === '2026-09-26T13:00:00.000Z', 'cursores conservados');
+    await b.evaluate(click('Bandejas'));
+    const lista = await waitFor(b, bodyHas('F7BR3-01'));
+    check(Boolean(lista) && lista.includes('F7BR3-02'), 'las bandejas aparecen en la lista');
+    const errs = b.logs.filter(l => !/service worker|sin conexión|backend/i.test(l));
+    check(errs.length === 0, 'sin errores en la consola', errs.slice(0, 3).join(' | '));
+  } catch (e) {
+    bad('escenario 4', e.message);
+  } finally {
+    await b.close();
+  }
+}
+
+/* ── scenario 5: the food screens ─────────────────────────────────────────── */
+
+/** Click the LAST visible button whose text starts with `label`: a dialog's
+ *  button comes after the page's own in the document. */
+const clickLast = label => `(() => {
+  const els = [...document.querySelectorAll('button')].filter(b => b.offsetParent !== null && b.textContent.trim().startsWith(${JSON.stringify(label)}));
+  const el = els[els.length - 1];
+  if (el) el.click();
+  return !!el;
+})()`;
+
+console.log('\nEscenario 5 — pantallas de alimento');
+{
+  const b = await launch();
+  try {
+    await b.navigate(`${ORIGIN}/index.html`);
+    const api = `window.__BSF_DATA_CLIENT__`;
+    const booted = await waitFor(b, `(async () => { const a = ${api}; if (!a) return null; await a.ready(); return 'ok'; })()`);
+    check(booted === 'ok', 'la app arranca en una base nueva', booted || 'no respondió');
+    await waitFor(b, bodyHas('Maria'));
+    await b.evaluate(click('Maria'));
+
+    // Two trays on día 10: carga 1 given (no ensilaje in use yet), carga 2 due.
+    const setup = await b.evaluate(`(async () => {
+      const a = ${api};
+      const ins = await a.createInsectario({ nombre_insectario: 'ICA', fecha_inicio: a.fechas.addDays(a.fechas.farmDay(), -30), generacion_moscas: 'F7' });
+      const rec = await a.createRecoleccionV2({ insectario_id: ins.data.id, peso_ovipositores_g: 350, atrayente_cambiado: true,
+                                                fecha_inicio: a.fechas.addDays(a.fechas.farmDay(), -10) });
+      const dis = await a.distribuirIncubadora(rec.data.incubadora.id, { n_bandejas: 2 });
+      return { ok: ins.ok && rec.ok && dis.ok, trays: dis.data.bandejas.map(x => x.id) };
+    })()`);
+    check(setup.ok, 'preparación: 2 bandejas en el día 10');
+
+    await b.navigate(`${ORIGIN}/index.html`);
+    await waitFor(b, bodyHas('Alimento'));
+    check(await b.evaluate(click('Alimento')), 'botón Alimento en el inicio');
+    check(Boolean(await waitFor(b, bodyHas('Ningún ensilaje en uso'))), 'Alimento: sin ensilaje en uso todavía');
+    await b.shot('8-alimento-vacio');
+
+    // A reception, typed with a decimal comma as a Spanish phone does.
+    check(await b.evaluate(click('+ Recepción')), 'botón + Recepción');
+    await waitFor(b, bodyHas('KILOS RECIBIDOS'));
+    await b.evaluate(click('Bagazo de cerveza (BSG)'));
+    check(await b.evaluate(type('input[inputmode=decimal]', '120,5', 0)), 'escribir 120,5 kg');
+    check(Boolean(await waitFor(b, bodyHas('Registrar 120,5 kg'), 3000)), 'el botón lee la coma decimal');
+    await b.evaluate(type('input:not([inputmode]):not([type])', 'Cervecería del valle', 0));
+    await b.shot('9-recepcion');
+    await b.evaluate(click('Registrar 120,5 kg'));
+    const trasRecepcion = await waitFor(b, bodyHas('MATERIA PRIMA EN BODEGA'));
+    check(Boolean(trasRecepcion) && trasRecepcion.includes('120,5 kg'), 'vuelve a Alimento con 120,5 kg en bodega');
+
+    // An ensilaje of two materials, sealed in the same save.
+    check(await b.evaluate(click('+ Ensilaje')), 'botón + Ensilaje');
+    await waitFor(b, bodyHas('KILOS DE ESTE MATERIAL'));
+    await b.evaluate(type('input[inputmode=decimal]', '80', 0));
+    check(await b.evaluate(click('+ Otro material')), 'agregar un segundo material');
+    await b.evaluate(click('Desecho de fruta'));
+    await b.evaluate(type('input[inputmode=decimal]', '20', 0));
+    check(Boolean(await waitFor(b, bodyHas('Total del ensilaje: 100 kg (2 materiales)'), 3000)), 'suma los materiales: 100 kg');
+    await b.shot('10-nuevo-ensilaje');
+    await b.evaluate(click('Guardar ensilaje'));
+    const det = await waitFor(b, bodyHas('Marcar listo para usar'));
+    check(Boolean(det) && det.includes('FERMENTANDO'), 'queda sellado y fermentando');
+
+    // A temperature reading through the in-app dialog.
+    check(await b.evaluate(click('Registrar temperatura')), 'botón Registrar temperatura');
+    await waitFor(b, bodyHas('Medida dentro del ensilaje'));
+    await b.evaluate(type('input[inputmode=decimal]', '31,5', 0));
+    await b.evaluate(clickLast('Guardar'));
+    const conTemp = await waitFor(b, bodyHas('TEMPERATURAS · 1'));
+    check(Boolean(conTemp) && conTemp.includes('31,5 °C'), 'lectura de 31,5 °C guardada y en la lista');
+
+    await b.evaluate(click('Marcar listo para usar'));
+    check(Boolean(await waitFor(b, bodyHas('Empezar a usarlo'))), 'listo → ofrece empezar a usarlo');
+    await b.evaluate(click('Empezar a usarlo'));
+    const enUso = await waitFor(b, bodyHas('QUEDAN'));
+    check(Boolean(enUso) && /EN USO/.test(enUso) && enUso.includes('100 kg'), 'en uso, con los 100 kg');
+    await b.shot('11-ensilaje-en-uso');
+
+    // The carga now says where its kilos come from, and takes them.
+    await b.navigate(`${ORIGIN}/index.html`);
+    await waitFor(b, bodyHas('Alimentar'));
+    await b.evaluate(click('Alimentar'));
+    const aviso = await waitFor(b, bodyHas('Sale de ENS-'));
+    check(Boolean(aviso) && aviso.includes('quedan 100 kg'), 'Alimentar dice de qué ensilaje sale', aviso ? (aviso.match(/Sale de[^\n]*/) || [''])[0] : '');
+    await b.shot('12-alimentar-con-ensilaje');
+    await b.evaluate(click('Dar carga 2'));
+    await waitFor(b, bodyHas('Carga 2 registrada'));
+    await b.navigate(`${ORIGIN}/index.html`);
+    await waitFor(b, bodyHas('Alimento'));
+    await b.evaluate(click('Alimento'));
+    const trasCarga = await waitFor(b, bodyHas('quedan 96 kg'));
+    check(Boolean(trasCarga), 'Alimento descuenta la carga: quedan 96 kg');
+    await b.shot('13-alimento-stock');
+
+    // Agotado: a yes/no question, no field to fill.
+    await b.evaluate(click('ENS-'));
+    await waitFor(b, bodyHas('Marcar agotado'));
+    await b.evaluate(click('Marcar agotado'));
+    const pregunta = await waitFor(b, bodyHas('Ya no queda alimento de esta tanda'));
+    const sinCampo = await b.evaluate(`[...document.querySelectorAll('input')].filter(e => e.offsetParent !== null).length === 0`);
+    check(Boolean(pregunta) && sinCampo, 'agotado pide confirmación, sin campo que llenar');
+    await b.evaluate(clickLast('Marcar agotado'));
+    check(Boolean(await waitFor(b, bodyHas('AGOTADO'))), 'marcado agotado');
+
+    const d = await b.evaluate(`(async () => {
+      const db = await new Promise((res, rej) => { const r = indexedDB.open('tryento'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+      const all = s => new Promise(res => { const q = db.transaction(s, 'readonly').objectStore(s).getAll(); q.onsuccess = () => res(q.result); });
+      const [recs, ens, ins, lec, feeds, outbox] = await Promise.all([all('recepcion_alimento'), all('ensilaje'), all('ensilaje_insumo'),
+        all('ensilaje_lectura'), all('alimentacion'), all('outbox')]);
+      db.close();
+      const e = ens[0] || {};
+      return {
+        rec: recs.map(r => [r.material, r.kg, r.proveedor, r.registrado_por].join('|')),
+        ens: [ens.length, e.kg_inicial, !!e.sellado_at, !!e.listo_at, !!e.en_uso_at, !!e.agotado_at, e.sellado_por, e.en_uso_por].join('|'),
+        insumos: ins.map(i => i.material + ':' + i.kg).sort().join(','),
+        lecturas: lec.map(l => l.temperatura_c + ':' + l.registrado_por).join(','),
+        carga2: feeds.filter(f => f.carga === 2).map(f => f.ensilaje_id === e.id).join(','),
+        carga1: feeds.filter(f => f.carga === 1).map(f => f.ensilaje_id === undefined).join(','),
+        rpcs: outbox.map(i => i.rpc || i.table)
+      };
+    })()`);
+    check(d.rec.join() === 'Bagazo de cerveza (BSG)|120.5|Cervecería del valle|Maria', 'IndexedDB: la recepción, con proveedor y quién', d.rec.join());
+    check(d.ens === '1|100|true|true|true|true|Maria|Maria', 'IndexedDB: el ensilaje pasó por sellado, listo, en uso y agotado', d.ens);
+    check(d.insumos === 'Bagazo de cerveza (BSG):80,Desecho de fruta:20', 'IndexedDB: sus dos materiales', d.insumos);
+    check(d.lecturas === '31.5:Maria', 'IndexedDB: la lectura de temperatura', d.lecturas);
+    check(d.carga2 === 'true,true', 'IndexedDB: la carga 2 apunta al ensilaje en uso', d.carga2);
+    check(d.carga1 === 'true,true', 'IndexedDB: la carga 1 (antes de tener ensilaje) no apunta a ninguno', d.carga1);
+    const want = ['recepcion_alimento', 'crear_ensilaje', 'avanzar_ensilaje', 'ensilaje_lectura', 'log_alimentacion_grupal'];
+    check(want.every(x => d.rpcs.includes(x)) && d.rpcs.filter(x => x === 'avanzar_ensilaje').length === 4,
+          'cola de envío: recepción, ensilaje, 4 pasos, lectura, carga', d.rpcs.join(', '));
+
+    const errs = b.logs.filter(l => !/service worker|sin conexión|backend/i.test(l));
+    check(errs.length === 0, 'sin errores en la consola', errs.slice(0, 3).join(' | '));
+  } catch (e) {
+    bad('escenario 5', e.message);
   } finally {
     await b.close();
   }

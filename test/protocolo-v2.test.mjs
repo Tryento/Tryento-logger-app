@@ -28,7 +28,7 @@ const { farmDay, addDays } = await import('../src/data/time.js');
 
 const MIG = f => readSql(`supabase/migrations/${f}`);
 const pg = await liveReplica();
-for (const f of ['0005_renombrar_lote.sql', '0006_sobrecargas.sql', '0007_protocolo_v2.sql']) {
+for (const f of ['0005_renombrar_lote.sql', '0006_sobrecargas.sql', '0007_protocolo_v2.sql', '0008_alimento.sql']) {
   await pg.exec(await MIG(f));
 }
 const server = pgClient(pg);

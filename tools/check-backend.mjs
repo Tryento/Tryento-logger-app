@@ -33,7 +33,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PREFIX = 'ZZTEST-';
 
 let pass = 0, fail = 0;
-const created = { lote: [], separacion: [], ayuno: [], revision: [], alimentacion: [], bandeja: [], incubadora: [], recoleccion: [], insectario: [] };
+const created = { lote: [], separacion: [], ayuno: [], revision: [], alimentacion: [], bandeja: [], incubadora: [], recoleccion: [], insectario: [],
+                  ensilaje_lectura: [], ensilaje_insumo: [], ensilaje: [], recepcion_alimento: [] };
 
 function ok(label, extra = '') { pass++; console.log(`  ok    ${label}${extra ? '   ' + extra : ''}`); }
 function bad(label, why, fix) {
@@ -322,6 +323,7 @@ async function main() {
   }
 
   /* 10 ── protocolo v2 (0007) ────────────────────────────────────────────── */
+  let v2Tray = null;
   {
     const par = await db.from('parametro').select('clave, valor');
     if (par.error) {
@@ -355,6 +357,7 @@ async function main() {
           const { data: a } = await db.from('alimentacion').select('protocolo, carga').eq('id', f1).single();
           if (t?.protocolo === 'v2' && a?.protocolo === 'v2' && a?.carga === 1) {
             ok('protocolo v2: distribución', 'bandeja v2 con su carga 1');
+            v2Tray = b2;
           } else {
             bad('protocolo v2: distribución', `bandeja ${t?.protocolo}, carga ${a?.protocolo}/${a?.carga}`);
           }
@@ -363,10 +366,62 @@ async function main() {
     }
   }
 
-  /* 11 ── clean up ───────────────────────────────────────────────────────── */
+  /* 11 ── alimento (0008) ───────────────────────────────────────────────── */
+  {
+    const probe = await db.from('ensilaje').select('id').limit(0);
+    if (probe.error) {
+      // Release 1 runs without it: say so, without failing the check.
+      console.log('  --    alimento (0008): todavía no aplicado; se revisa cuando corras 0008_alimento.sql');
+    } else {
+      const rec = uuid(), ens = uuid(), ins = uuid(), lec = uuid();
+      const material = PREFIX + 'material';
+      const r = await db.from('recepcion_alimento').insert({ id: rec, fecha: new Date().toISOString(), material, kg: 10,
+                                                             registrado_por: 'check-backend' });
+      if (r.error) bad('alimento: recepción', r.error.message, 'Ejecuta 0008_alimento.sql.');
+      else { created.recepcion_alimento.push(rec); ok('alimento: recepción'); }
+
+      const e = await db.rpc('crear_ensilaje', {
+        p_ensilaje: { id: ens, codigo: PREFIX + 'ENS' + Date.now(), fecha_armado: new Date().toISOString(), kg_inicial: 10,
+                      registrado_por: 'check-backend' },
+        p_insumos: [{ id: ins, material, kg: 10, recepcion_id: r.error ? null : rec }]
+      });
+      if (e.error) bad('alimento: ensilaje con sus materiales', e.error.message);
+      else {
+        created.ensilaje.push(ens); created.ensilaje_insumo.push(ins);
+        const s1 = await db.rpc('avanzar_ensilaje', { p_id: ens, p_paso: 'sellado', p_at: null, p_por: 'check-backend' });
+        const s2 = await db.rpc('avanzar_ensilaje', { p_id: ens, p_paso: 'en_uso', p_at: null, p_por: 'check-backend' });
+        const l = await db.from('ensilaje_lectura').insert({ id: lec, ensilaje_id: ens, fecha: new Date().toISOString(),
+                                                             temperatura_c: 30, registrado_por: 'check-backend' });
+        if (!l.error) created.ensilaje_lectura.push(lec);
+        const est = await db.from('ensilaje').select('estado, listo_at, sellado_por').eq('id', ens).single();
+        if (s1.error || s2.error || l.error) bad('alimento: pasos del ensilaje', (s1.error || s2.error || l.error).message);
+        else if (est.data?.estado === 'en_uso' && est.data.listo_at && est.data.sellado_por === 'check-backend') {
+          ok('alimento: pasos del ensilaje', 'sellado → en uso (y listo), con quién, y una lectura de temperatura');
+        } else bad('alimento: pasos del ensilaje', `estado ${est.data?.estado}`);
+
+        if (v2Tray) {
+          const f2 = uuid();
+          const g = await db.rpc('log_alimentacion_grupal', { p_rows: [{
+            id: f2, bandeja_id: v2Tray, fecha: new Date().toISOString(), tipo_alimento: 'Ensilaje', cantidad_kg: 2,
+            carga: 2, ensilaje_id: ens, grupal_id: uuid(), registrado_por: 'check-backend' }] });
+          if (g.error) bad('alimento: la carga descuenta del ensilaje', g.error.message);
+          else {
+            created.alimentacion.push(f2);
+            const v = await db.from('v_stock_ensilaje').select('consumido_kg, disponible_kg').eq('id', ens).single();
+            if (Number(v.data?.consumido_kg) === 2 && Number(v.data?.disponible_kg) === 8) {
+              ok('alimento: la carga descuenta del ensilaje', 'v_stock_ensilaje: 2 kg consumidos, quedan 8');
+            } else bad('alimento: la carga descuenta del ensilaje', JSON.stringify(v.data || v.error));
+          }
+        }
+      }
+    }
+  }
+
+  /* 12 ── clean up ───────────────────────────────────────────────────────── */
   {
     // Children first. Soft delete: see the note at the top of this file.
-    const order = ['lote', 'separacion', 'ayuno', 'revision', 'alimentacion', 'bandeja', 'incubadora', 'recoleccion', 'insectario'];
+    const order = ['lote', 'separacion', 'ayuno', 'revision', 'alimentacion', 'bandeja', 'incubadora', 'recoleccion', 'insectario',
+                   'ensilaje_lectura', 'ensilaje_insumo', 'ensilaje', 'recepcion_alimento'];
     const now = new Date().toISOString();
     let left = 0;
     for (const table of order) {

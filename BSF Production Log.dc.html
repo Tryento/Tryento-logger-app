@@ -775,6 +775,15 @@ a:hover{color:#4ADE80}
           </sc-if>
         </div>
 
+        <!-- Which batch the kilos come out of, so nobody feeds from the stock
+             without knowing it is not being counted. -->
+        <sc-if value="{{ showEnsNotice }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:10px;background:{{ ensNoticeBg }};border:1px solid {{ ensNoticeBd }};border-radius:12px;padding:10px 8px 10px 14px">
+            <div style="flex:1;min-width:0;font-size:14.5px;font-weight:600;color:{{ ensNoticeFg }}">{{ ensNotice }}</div>
+            <button onClick="{{ onOpenAlimento }}" style="flex:none;min-height:44px;padding:0 10px;border:none;background:none;color:#22C55E;font-size:14.5px;font-weight:700;white-space:nowrap;cursor:pointer">Alimento &#8250;</button>
+          </div>
+        </sc-if>
+
         <sc-if value="{{ showTamizado }}" hint-placeholder-val="{{ false }}">
           <button onClick="{{ onToggleTamizado }}" style="display:flex;align-items:center;gap:12px;width:100%;min-height:60px;padding:0 16px;border-radius:12px;border:1.5px solid {{ tamizadoBd }};background:{{ tamizadoBg }};color:{{ tamizadoFg }};font-size:16.5px;font-weight:700;text-align:left;cursor:pointer">
             <span style="width:24px;height:24px;flex:none;border-radius:6px;border:2px solid {{ tamizadoFg }};display:flex;align-items:center;justify-content:center;font-size:16px">{{ tamizadoMark }}</span>
@@ -932,6 +941,266 @@ a:hover{color:#4ADE80}
                   <div style="font-size:14px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ b.line2 }}</div>
                 </div>
               </button>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <!-- Alimento: what came into the lab, the batches of fermented feed, and
+         how long what is ready will last at the pace the trays eat. -->
+    <sc-if value="{{ isAlimento }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="background:#141C16;border:1px solid #1D2A21;border-radius:14px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:14px 15px;background:{{ al.headBg }};color:#061308">
+            <div style="flex:1;min-width:0;font-size:16.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ al.headline }}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#1F3A29">
+            <sc-for list="{{ al.facts }}" as="x" hint-placeholder-count="4">
+              <div style="background:#141C16;padding:12px 15px;display:flex;flex-direction:column;gap:3px">
+                <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:#7FA189;white-space:nowrap">{{ x.label }}</div>
+                <div style="font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis">{{ x.value }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="padding:11px 15px;border-top:1px solid #1F3A29;font-size:14.5px;font-weight:600;color:{{ al.alcanzaFg }}">{{ al.alcanzaLine }}</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <button onClick="{{ onNuevaRecepcion }}" style="min-height:60px;border-radius:12px;border:1.5px dashed #2A4030;background:#141C16;font-size:16.5px;font-weight:700;color:#EAF7EC;cursor:pointer">+ Recepción</button>
+          <button onClick="{{ onNuevoEnsilaje }}" style="min-height:60px;border-radius:12px;border:1.5px dashed #2A4030;background:#141C16;font-size:16.5px;font-weight:700;color:#EAF7EC;cursor:pointer">+ Ensilaje</button>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">{{ al.ensilajesLabel }}</div>
+          <sc-if value="{{ al.noEnsilajes }}" hint-placeholder-val="{{ false }}">
+            <div style="background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:16px;font-size:15px;color:#9FB8A6">Todavía no hay ensilajes. Registra el primero con «+ Ensilaje».</div>
+          </sc-if>
+          <sc-for list="{{ al.ensilajes }}" as="e" hint-placeholder-count="3">
+            <button onClick="{{ e.onOpen }}" style="display:flex;flex-direction:column;gap:7px;width:100%;text-align:left;background:#141C16;border:1px solid #1D2A21;border-radius:13px;padding:13px 15px;cursor:pointer;color:#EAF7EC">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:17px;font-weight:600">{{ e.codigo }}</span>
+                <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;padding:3px 7px;border-radius:5px;background:{{ e.estadoBg }};color:#061308">{{ e.estadoLabel }}</span>
+                <span style="flex:1"></span>
+                <span style="color:#4E6B58;font-size:22px">&#8250;</span>
+              </div>
+              <div style="font-size:14px;color:#9FB8A6">{{ e.line2 }}</div>
+              <div style="font-size:14px;font-weight:700;color:{{ e.pasoFg }}">{{ e.paso }}</div>
+            </button>
+          </sc-for>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">MATERIA PRIMA EN BODEGA</div>
+          <sc-if value="{{ al.noMateriales }}" hint-placeholder-val="{{ false }}">
+            <div style="background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:16px;font-size:15px;color:#9FB8A6">Sin recepciones registradas. Cada entrega que llega al laboratorio se anota con «+ Recepción».</div>
+          </sc-if>
+          <sc-for list="{{ al.materiales }}" as="m" hint-placeholder-count="2">
+            <div style="display:flex;align-items:center;gap:12px;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px 14px">
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                <div style="font-size:15.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.material }}</div>
+                <div style="font-size:13px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.sub }}</div>
+              </div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:17px;font-weight:600;white-space:nowrap;color:{{ m.fg }}">{{ m.kg }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ al.hasRecepciones }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">RECEPCIONES RECIENTES</div>
+            <sc-for list="{{ al.recepciones }}" as="r" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:12px;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px 14px">
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                  <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.material }}</div>
+                  <div style="font-size:13px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.sub }}</div>
+                </div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;white-space:nowrap">{{ r.kg }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isNuevaRecepcion }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="font-size:14.5px;color:#9FB8A6">Lo que llegó al laboratorio: qué material y cuántos kilos.</div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">MATERIAL</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ materialChips }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.onClick }}" style="min-height:52px;padding:0 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">KILOS RECIBIDOS</div>
+          <input inputMode="decimal" value="{{ f.kg }}" onChange="{{ h.kg }}" placeholder="0" style="width:100%;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:24px;font-weight:600" />
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">PROVEEDOR (OPCIONAL)</div>
+          <input value="{{ f.proveedor }}" onChange="{{ h.proveedor }}" placeholder="Quién lo entregó" style="width:100%;min-height:56px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:17px;font-weight:500" />
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">FECHA Y HORA</div>
+          <div style="display:flex;gap:8px">
+            <input type="datetime-local" value="{{ f.fecha }}" onChange="{{ h.fecha }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+            <button onClick="{{ onSetNow }}" style="flex:none;min-height:56px;padding:0 18px;border-radius:11px;border:1.5px solid #22C55E;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Ahora</button>
+          </div>
+        </div>
+
+        <textarea value="{{ f.notas }}" onChange="{{ h.notas }}" placeholder="Notas (opcional)" rows="2" style="width:100%;padding:13px 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500;resize:vertical"></textarea>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">REGISTRADO POR</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ operatorChips }}" as="c" hint-placeholder-count="6">
+              <button onClick="{{ c.onClick }}" style="min-height:50px;padding:0 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
+          <button onClick="{{ onSaveRecepcion }}" disabled="{{ recepcionDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ recepcionBg }};color:{{ recepcionFg }};font-size:19px;font-weight:700;cursor:pointer">{{ recepcionLabel }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isNuevoEnsilaje }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="font-size:14.5px;color:#9FB8A6">Una tanda de alimento fermentado: qué materiales lleva y cuántos kilos de cada uno.</div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">MATERIAL</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ materialChips }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.onClick }}" style="min-height:52px;padding:0 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">KILOS DE ESTE MATERIAL</div>
+          <div style="display:flex;gap:8px">
+            <input inputMode="decimal" value="{{ f.kg }}" onChange="{{ h.kg }}" placeholder="0" style="flex:1;min-width:0;min-height:58px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+            <button onClick="{{ onAddInsumo }}" disabled="{{ addInsumoDisabled }}" style="flex:none;min-height:58px;padding:0 14px;border-radius:11px;border:1.5px solid {{ addInsumoBd }};background:#141C16;color:{{ addInsumoFg }};font-size:15px;font-weight:700;white-space:nowrap;cursor:pointer">+ Otro material</button>
+          </div>
+          <div style="font-size:13.5px;color:#7FA189">{{ materialStockHint }}</div>
+        </div>
+
+        <sc-if value="{{ hasInsumos }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">YA AGREGADOS</div>
+            <sc-for list="{{ insumoRows }}" as="i" hint-placeholder-count="2">
+              <div style="display:flex;align-items:center;gap:10px;background:#141C16;border:1px solid #1D2A21;border-radius:11px;padding:8px 8px 8px 13px">
+                <div style="flex:1;min-width:0;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ i.material }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;white-space:nowrap">{{ i.kg }}</div>
+                <button onClick="{{ i.onRemove }}" style="width:44px;height:44px;flex:none;border-radius:9px;border:1px solid #26382C;background:#111A14;color:#F87171;font-size:20px;line-height:1;cursor:pointer">&#215;</button>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <div style="font-size:15.5px;font-weight:700;color:#EAF7EC">{{ ensilajeTotalLine }}</div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">SILO O RECIPIENTE (OPCIONAL)</div>
+          <input value="{{ f.silo }}" onChange="{{ h.silo }}" placeholder="Ej. Silo 1" style="width:100%;min-height:56px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:17px;font-weight:500" />
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">ARMADO EL</div>
+          <div style="display:flex;gap:8px">
+            <input type="datetime-local" value="{{ f.fecha }}" onChange="{{ h.fecha }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500" />
+            <button onClick="{{ onSetNow }}" style="flex:none;min-height:56px;padding:0 18px;border-radius:11px;border:1.5px solid #22C55E;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Ahora</button>
+          </div>
+        </div>
+
+        <button onClick="{{ onToggleSellado }}" style="display:flex;align-items:center;gap:12px;width:100%;min-height:60px;padding:0 16px;border-radius:12px;border:1.5px solid {{ selladoBd }};background:{{ selladoBg }};color:{{ selladoFg }};font-size:16.5px;font-weight:700;text-align:left;cursor:pointer">
+          <span style="width:24px;height:24px;flex:none;border-radius:6px;border:2px solid {{ selladoFg }};display:flex;align-items:center;justify-content:center;font-size:16px">{{ selladoMark }}</span>
+          <span>Ya quedó sellado (empieza la fermentación)</span>
+        </button>
+        <div style="font-size:13.5px;color:#7FA189;margin-top:-10px">{{ selladoHint }}</div>
+
+        <textarea value="{{ f.notas }}" onChange="{{ h.notas }}" placeholder="Notas (opcional)" rows="2" style="width:100%;padding:13px 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:16.5px;font-weight:500;resize:vertical"></textarea>
+
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">REGISTRADO POR</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ operatorChips }}" as="c" hint-placeholder-count="6">
+              <button onClick="{{ c.onClick }}" style="min-height:50px;padding:0 13px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="position:sticky;bottom:0;background:linear-gradient(to bottom,rgba(10,10,10,0),#0A0A0A 22%);padding:14px 0 10px">
+          <button onClick="{{ onSaveEnsilaje }}" disabled="{{ ensilajeDisabled }}" style="width:100%;min-height:64px;border-radius:12px;border:none;background:{{ ensilajeBg }};color:{{ ensilajeFg }};font-size:19px;font-weight:700;cursor:pointer">{{ ensilajeLabel }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isEnsilajeDetalle }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="background:#141C16;border:1px solid #1D2A21;border-radius:14px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:14px 15px;background:{{ en.estadoBg }};color:#061308">
+            <div style="flex:1;font-family:'IBM Plex Mono',monospace;white-space:nowrap;font-size:21px;font-weight:600">{{ en.codigo }}</div>
+            <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;flex:none">{{ en.estadoLabel }}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#1F3A29">
+            <sc-for list="{{ en.facts }}" as="x" hint-placeholder-count="6">
+              <div style="background:#141C16;padding:12px 15px;display:flex;flex-direction:column;gap:3px">
+                <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:#7FA189;white-space:nowrap">{{ x.label }}</div>
+                <div style="font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis">{{ x.value }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="padding:11px 15px;border-top:1px solid #1F3A29;font-size:14.5px;color:#9FB8A6">{{ en.notesLine }}</div>
+        </div>
+
+        <sc-if value="{{ en.showPaso }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ en.onPaso }}" style="width:100%;min-height:62px;border-radius:12px;border:none;background:#22C55E;color:#061308;font-size:18px;font-weight:700;cursor:pointer">{{ en.pasoLabel }}</button>
+        </sc-if>
+        <sc-if value="{{ en.showLectura }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ en.onLectura }}" style="width:100%;min-height:58px;border-radius:12px;border:1.5px solid #1E4A2F;background:#111A14;color:#EAF7EC;font-size:16.5px;font-weight:700;cursor:pointer">Registrar temperatura</button>
+        </sc-if>
+        <sc-if value="{{ en.showAgotar }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ en.onAgotar }}" style="width:100%;min-height:54px;border-radius:12px;border:1.5px solid #64748B;background:#141C16;color:#9FB8A6;font-size:15.5px;font-weight:700;cursor:pointer">Marcar agotado</button>
+        </sc-if>
+
+        <sc-if value="{{ en.hasLecturas }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">{{ en.lecturasLabel }}</div>
+            <sc-for list="{{ en.lecturas }}" as="l" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:12px;background:#141C16;border:1px solid #1D2A21;border-radius:11px;padding:11px 14px">
+                <div style="flex:1;min-width:0;font-size:14.5px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ l.sub }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:17px;font-weight:600;white-space:nowrap">{{ l.temp }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">MATERIALES</div>
+          <sc-for list="{{ en.insumos }}" as="i" hint-placeholder-count="2">
+            <div style="display:flex;align-items:center;gap:12px;background:#141C16;border:1px solid #1D2A21;border-radius:11px;padding:11px 14px">
+              <div style="flex:1;min-width:0;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ i.material }}</div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;white-space:nowrap">{{ i.kg }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ en.hasConsumo }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap">CONSUMO POR DÍA</div>
+            <sc-for list="{{ en.consumo }}" as="c" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:12px;background:#141C16;border:1px solid #1D2A21;border-radius:11px;padding:11px 14px">
+                <div style="flex:1;font-size:14.5px;color:#9FB8A6">{{ c.dia }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;white-space:nowrap">{{ c.kg }}</div>
+              </div>
             </sc-for>
           </div>
         </sc-if>
@@ -1192,7 +1461,9 @@ a:hover{color:#4ADE80}
         <sc-if value="{{ askHasHint }}" hint-placeholder-val="{{ true }}">
           <div style="font-size:14.5px;color:#9FB8A6">{{ askHint }}</div>
         </sc-if>
-        <input inputMode="{{ askInputMode }}" value="{{ f.ask_value }}" onChange="{{ h.ask_value }}" placeholder="{{ askPlaceholder }}" style="width:100%;min-height:62px;padding:0 16px;border:1.5px solid #26382C;border-radius:12px;background:#0A0A0A;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:600" />
+        <sc-if value="{{ askHasInput }}" hint-placeholder-val="{{ true }}">
+          <input inputMode="{{ askInputMode }}" value="{{ f.ask_value }}" onChange="{{ h.ask_value }}" placeholder="{{ askPlaceholder }}" style="width:100%;min-height:62px;padding:0 16px;border:1.5px solid #26382C;border-radius:12px;background:#0A0A0A;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:600" />
+        </sc-if>
         <sc-if value="{{ askHasError }}" hint-placeholder-val="{{ false }}">
           <div style="font-size:14px;color:#F87171">{{ askError }}</div>
         </sc-if>
@@ -1253,6 +1524,14 @@ const ESTADO_INCUBADORA = {
   incubando: { label: 'Incubando', bg: '#A78BFA' },
   distribuida: { label: 'Distribuida', bg: '#64748B' }
 };
+// A batch of ensilaje, from the day it is packed to the day it runs out.
+const ESTADO_ENSILAJE = {
+  armado: { label: 'Armado', bg: '#94A3B8' },
+  fermentando: { label: 'Fermentando', bg: '#FB923C' },
+  listo: { label: 'Listo', bg: '#22C55E' },
+  en_uso: { label: 'En uso', bg: '#38BDF8' },
+  agotado: { label: 'Agotado', bg: '#64748B' }
+};
 // How urgent a step is, as a colour: late, due today, coming up.
 const PASO_FG = { atrasado: '#F87171', hoy: '#22C55E', proximo: '#9FB8A6' };
 // Used only until the settings arrive from the data layer; the same values as
@@ -1260,10 +1539,12 @@ const PASO_FG = { atrasado: '#F87171', hoy: '#22C55E', proximo: '#9FB8A6' };
 const PROTOCOLO_FALLBACK = {
   cargas: [{ n: 1, dia: 7, kg: 1.5 }, { n: 2, dia: 10, kg: 2, tamizado: true }, { n: 3, dia: 13, kg: 2 }],
   dias_incubacion: 7, dia_inicio_ayuno: 14, horas_ayuno: 48, dia_cosecha: 16,
-  individuos_por_bandeja: 25000, reserva_cria_pct: 2,
+  individuos_por_bandeja: 25000, reserva_cria_pct: 2, dias_fermentacion: 14,
   letras_insectario: { ICA: 'A', ICB: 'B', ICC: 'C', JN3A: 'J' }, v2_vigente: true
 };
 const kgTxt = n => String(Math.round(Number(n) * 100) / 100).replace('.', ',');
+// What a person typed in a number field, with a decimal comma or a point.
+const numero = v => { const n = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(n) ? n : null; };
 const NEON = '#22C55E';
 const INK = '#061308';
 const CARD = '#141C16';
@@ -1277,13 +1558,14 @@ const FIELDS = ['q', 'filterInsectario', 'bandejaSearch', 'fecha', 'bandeja_id',
   'recoleccion_id', 'no_bandeja', 'gramos_huevos', 'iniciador_g', 'tipo_iniciador',
   'nombre_insectario', 'fecha_inicio', 'generacion_moscas', 'biomasa_kg', 'proyeccion_ovipositores', 'proyeccion_cierre',
   'huevos_g', 'tiempo_secado_horas', 'qc_prueba_crujiente', 'operator_input', 'ask_value',
-  'reserva_cria_g', 'peso_ovipositores_g', 'starter_kg', 'n_bandejas', 'individuos_por_bandeja'];
+  'reserva_cria_g', 'peso_ovipositores_g', 'starter_kg', 'n_bandejas', 'individuos_por_bandeja',
+  'kg', 'proveedor', 'silo'];
 
 class Component extends DCLogic {
   state = {
     screen: 'operator', prev: 'home', tab: 'home', ready: false, saving: false,
     insectarios: [], bandejas: [], recolecciones: [], lotes: [], operators: [], operator: null,
-    incubadoras: [], protocolo: null, incubadoraDetalle: null,
+    incubadoras: [], protocolo: null, incubadoraDetalle: null, alimento: null, ensilajeDetalle: null,
     bandejaDetalle: null, insectarioDetalle: null, loteDetalle: null, separacionesDisponibles: [],
     form: {}, estadoFilter: '', insFilter: '', range: 'any', toast: null,
     photoName: '', photoId: null, photoUrl: null,
@@ -1322,7 +1604,7 @@ class Component extends DCLogic {
     if (saved && api.setOperator) { try { await api.setOperator(saved); } catch (e) { /* the name still shows */ } }
 
     // Each list on its own: one that fails must not blank the other four.
-    const lists = await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'operators', 'incubadoras', 'protocolo']);
+    const lists = await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'operators', 'incubadoras', 'protocolo', 'alimento']);
     this.setState(Object.assign({ ready: true, operator: saved || null, screen: saved ? 'home' : 'operator' }, lists));
 
     // A background pull brings other people's work down; without this the
@@ -1368,7 +1650,16 @@ class Component extends DCLogic {
       lotes: () => this.api.listLotes({}),
       operators: () => this.api.listOperators(),
       incubadoras: () => (this.api.listIncubadoras ? this.api.listIncubadoras({}) : { ok: true, data: [] }),
-      protocolo: () => (this.api.getProtocolo ? this.api.getProtocolo() : { ok: true, data: null })
+      protocolo: () => (this.api.getProtocolo ? this.api.getProtocolo() : { ok: true, data: null }),
+      // Stock, batches and recent receptions: one screen's worth, read together.
+      alimento: async () => {
+        if (!this.api.getStockAlimento) return { ok: true, data: null };
+        const [st, en, re] = await Promise.all([
+          this.api.getStockAlimento(), this.api.listEnsilajes({}), this.api.listRecepciones({ limit: 15 })
+        ]);
+        const bad = [st, en, re].find(r => !r || !r.ok);
+        return bad || { ok: true, data: { stock: st.data, ensilajes: en.data, recepciones: re.data } };
+      }
     };
     const results = await Promise.allSettled(names.map(n => calls[n]()));
     const out = {}, failed = [];
@@ -1431,7 +1722,7 @@ class Component extends DCLogic {
 
   async refreshLists() {
     if (!this.api || this.state.fatal) return;
-    this.setState(await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'incubadoras', 'protocolo']));
+    this.setState(await this.loadLists(['insectarios', 'bandejas', 'recolecciones', 'lotes', 'incubadoras', 'protocolo', 'alimento']));
   }
 
   /** Read the detail page on screen again, in place (no navigation). */
@@ -1442,7 +1733,8 @@ class Component extends DCLogic {
       bandejaDetalle: ['getBandejaDetail', d => d.bandeja.id],
       insectarioDetalle: ['getInsectarioDetail', d => d.insectario.id],
       loteDetalle: ['getLoteDetail', d => d.lote.id],
-      incubadoraDetalle: ['getIncubadoraDetail', d => d.incubadora.id]
+      incubadoraDetalle: ['getIncubadoraDetail', d => d.incubadora.id],
+      ensilajeDetalle: ['getEnsilajeDetail', d => d.ensilaje.id]
     };
     const c = calls[screen], d = this.state[screen];
     if (!c || !d || !this.api[c[0]]) return;
@@ -1537,6 +1829,24 @@ class Component extends DCLogic {
 
   dueIds(list) { return list.filter(b => b.siguiente_paso.estado !== 'proximo').map(b => b.id); }
 
+  /** What a batch of ensilaje needs next, in words, and how urgent it is. */
+  ensilajePaso(e) {
+    if (e.estado === 'armado') return { text: 'Falta sellarlo', fg: '#FB923C' };
+    if (e.estado === 'fermentando') {
+      if (e.listo_en == null) return { text: 'Fermentando', fg: '#9FB8A6' };
+      if (e.listo_en > 0) {
+        return { text: 'Día ' + e.dias_fermentando + ' de fermentación · listo en ' + e.listo_en + ' día' + (e.listo_en === 1 ? '' : 's') +
+                       ' (' + this.fmt(e.listo_previsto) + ')', fg: '#9FB8A6' };
+      }
+      return { text: e.listo_en === 0 ? 'Listo hoy según el plan' : 'Listo según el plan desde el ' + this.fmt(e.listo_previsto), fg: NEON };
+    }
+    if (e.estado === 'listo') return { text: 'Listo para usar', fg: NEON };
+    if (e.estado === 'en_uso') {
+      return { text: 'Quedan ' + kgTxt(Math.max(0, e.kg_disponible || 0)) + ' kg · ' + e.n_cargas + ' carga' + (e.n_cargas === 1 ? '' : 's') + ' dada' + (e.n_cargas === 1 ? '' : 's'), fg: '#38BDF8' };
+    }
+    return { text: 'Agotado ' + this.fmt(e.agotado_at), fg: '#5F7A68' };
+  }
+
   /* -------------------------------------------------------------- navigation */
 
   go(screen, extra) { this.setState(Object.assign({ prev: this.state.screen, screen }, extra || {})); }
@@ -1624,6 +1934,57 @@ class Component extends DCLogic {
     if (!r.ok) this.toast('No se pudo abrir', r.error.message, 'error');
   };
 
+  /* alimento */
+
+  openAlimento = async () => {
+    this.goKeep('alimento');
+    this.setState(await this.loadLists(['alimento']));
+  };
+
+  materialDefault() {
+    const m = this.api ? this.api.MATERIALES_ALIMENTO : null;
+    return (m && m[0]) || '';
+  }
+
+  openNuevaRecepcion = () => this.go('nuevaRecepcion', {
+    form: { material: this.materialDefault(), kg: '', proveedor: '', fecha: this.now(), notas: '',
+            operator_name: this.state.operator || '' }
+  });
+
+  openNuevoEnsilaje = () => this.go('nuevoEnsilaje', {
+    form: { material: this.materialDefault(), kg: '', insumos: [], silo: '', fecha: this.now(), sellado: true,
+            notas: '', operator_name: this.state.operator || '' }
+  });
+
+  openEnsilajeDetalle = async id => {
+    this.goKeep('ensilajeDetalle', { ensilajeDetalle: null });
+    const r = await this.api.getEnsilajeDetail(id);
+    this.setState({ ensilajeDetalle: r.ok ? r.data : null });
+    if (!r.ok) this.toast('No se pudo abrir', r.error.message, 'error');
+  };
+
+  /** The materials of the batch being written: those added, plus the one typed. */
+  insumosDelForm(f) {
+    const list = (f.insumos || []).slice();
+    const kg = numero(f.kg);
+    if (f.material && kg > 0) list.push({ material: f.material, kg });
+    return list;
+  }
+
+  addInsumo = () => {
+    const f = this.state.form;
+    const kg = numero(f.kg);
+    if (!f.material || !(kg > 0)) return;
+    this.setState({ form: Object.assign({}, f, { insumos: (f.insumos || []).concat([{ material: f.material, kg }]), kg: '' }) });
+  };
+
+  removeInsumo = i => {
+    const f = this.state.form;
+    const arr = (f.insumos || []).slice();
+    arr.splice(i, 1);
+    this.setState({ form: Object.assign({}, f, { insumos: arr }) });
+  };
+
   openAlimentarGrupal = () => {
     this.setState({
       prev: this.state.screen, screen: 'alimentarGrupal',
@@ -1679,6 +2040,12 @@ class Component extends DCLogic {
     if (s === 'incubadoraDetalle') {
       const p = this.state.prev;
       return this.setState({ screen: p && p !== s && p !== 'nuevaRecoleccion' ? p : 'incubadoras' });
+    }
+    // A batch's page goes back to the food overview, whatever led to it.
+    if (s === 'ensilajeDetalle') return this.setState({ screen: 'alimento' });
+    if (s === 'alimento') {
+      const p = this.state.prev;
+      return this.setState({ screen: p && p !== s && p !== 'ensilajeDetalle' && p !== 'nuevaRecepcion' && p !== 'nuevoEnsilaje' ? p : 'home' });
     }
     const prev = this.state.prev;
     this.setState({ screen: prev === s ? 'home' : prev });
@@ -1875,6 +2242,87 @@ class Component extends DCLogic {
     this.openIncubadoraDetalle(d.incubadora.id);
   };
 
+  saveRecepcion = async () => {
+    const f = this.state.form;
+    this.setState({ saving: true });
+    const r = await this.api.createRecepcion({ material: f.material, kg: f.kg, proveedor: f.proveedor, fecha: f.fecha,
+                                               notas: f.notas, operator_name: f.operator_name });
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    this.toast('Recepción registrada', kgTxt(r.data.kg) + ' kg · ' + r.data.material);
+    await this.refreshLists();
+    this.setState({ screen: 'alimento', prev: 'nuevaRecepcion' });
+  };
+
+  saveEnsilaje = async () => {
+    const f = this.state.form;
+    this.setState({ saving: true });
+    const r = await this.api.createEnsilaje({ insumos: this.insumosDelForm(f), silo: f.silo, fecha_armado: f.fecha,
+                                              notas: f.notas, operator_name: f.operator_name });
+    // Packed and sealed in the same sitting is the usual case: one save.
+    const s = r.ok && f.sellado
+      ? await this.api.avanzarEnsilaje(r.data.id, 'sellado', { fecha: f.fecha, operator_name: f.operator_name })
+      : null;
+    this.setState({ saving: false });
+    if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+    if (s && !s.ok) this.toast('Ensilaje ' + r.data.codigo + ' guardado', 'Falta marcarlo sellado: ' + s.error.message, 'error');
+    else this.toast('Ensilaje ' + r.data.codigo, kgTxt(r.data.kg_inicial) + ' kg · ' + (f.sellado ? 'fermentando' : 'falta sellarlo'));
+    await this.refreshLists();
+    this.openEnsilajeDetalle(r.data.id);
+  };
+
+  /** One step of a batch: sellado → listo → en uso → agotado. */
+  pasoEnsilaje = (e, paso) => {
+    const run = async () => {
+      const r = await this.api.avanzarEnsilaje(e.id, paso, { operator_name: this.state.operator });
+      if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+      const msg = { sellado: 'Sellado · fermentando', listo: 'Listo para usar', en_uso: 'En uso', agotado: 'Agotado' };
+      this.toast(msg[paso] || 'Guardado', e.codigo);
+      await this.refreshLists();
+      this.openEnsilajeDetalle(e.id);
+    };
+    if (paso === 'agotado') {
+      return this.ask({
+        title: 'Marcar agotado · ' + e.codigo,
+        hint: 'Ya no queda alimento de esta tanda; las cargas dejan de descontarse de ella.' +
+              (e.kg_disponible > 0 ? ' El registro dice que quedan ' + kgTxt(e.kg_disponible) + ' kg.' : ''),
+        noInput: true, confirmLabel: 'Marcar agotado'
+      }, run);
+    }
+    // One batch feeds the trays at a time: starting a new one ends the one in use.
+    const otro = paso === 'en_uso'
+      ? ((this.state.alimento && this.state.alimento.ensilajes) || []).find(x => x.estado === 'en_uso' && x.id !== e.id)
+      : null;
+    if (otro) {
+      return this.ask({
+        title: 'Empezar ' + e.codigo,
+        hint: otro.codigo + ' sigue en uso' + (otro.kg_disponible > 0 ? ' (según el registro quedan ' + kgTxt(otro.kg_disponible) + ' kg)' : '') +
+              '. Al empezar ' + e.codigo + ', ' + otro.codigo + ' queda marcado como agotado.',
+        noInput: true, confirmLabel: 'Empezar ' + e.codigo
+      }, async () => {
+        const a = await this.api.avanzarEnsilaje(otro.id, 'agotado', { operator_name: this.state.operator });
+        if (!a.ok) return this.toast('No se guardó', a.error.message, 'error');
+        await run();
+      });
+    }
+    return run();
+  };
+
+  registrarTemperatura = e => {
+    this.ask({
+      title: 'Temperatura · ' + e.codigo,
+      hint: 'Medida dentro del ensilaje, en °C.',
+      placeholder: '°C', inputMode: 'decimal', confirmLabel: 'Guardar',
+      validate: v => { const n = numero(v); return n == null || n < -10 || n > 90 ? 'Escribe la temperatura en °C.' : null; }
+    }, async v => {
+      const r = await this.api.logLecturaEnsilaje(e.id, { temperatura_c: numero(v), operator_name: this.state.operator });
+      if (!r.ok) return this.toast('No se guardó', r.error.message, 'error');
+      this.toast('Temperatura guardada', kgTxt(r.data.temperatura_c) + ' °C · ' + e.codigo);
+      await this.refreshLists();
+      this.openEnsilajeDetalle(e.id);
+    });
+  };
+
   saveLote = async () => {
     const f = this.state.form;
     this.setState({ saving: true });
@@ -1944,8 +2392,8 @@ class Component extends DCLogic {
   submitAsk = async () => {
     const a = this.state.ask;
     if (!a) return;
-    const raw = (this.state.form.ask_value || '').trim();
-    if (!raw && !a.allowEmpty) return;
+    const raw = a.noInput ? '' : (this.state.form.ask_value || '').trim();
+    if (!raw && !a.allowEmpty && !a.noInput) return;
     if (a.validate) {
       const err = a.validate(raw);
       if (err) return this.setState(st => ({ ask: Object.assign({}, st.ask, { error: err }) }));
@@ -2090,7 +2538,9 @@ class Component extends DCLogic {
       lotes: 'Lotes', loteDetalle: s.loteDetalle ? s.loteDetalle.lote.codigo : 'Lote', nuevoLote: 'Nuevo lote',
       sincronizacion: 'Sincronización',
       cargas: 'Alimentar', ayunoV2: 'Iniciar ayuno', incubadoras: 'Incubadoras',
-      incubadoraDetalle: s.incubadoraDetalle ? s.incubadoraDetalle.incubadora.codigo : 'Incubadora'
+      incubadoraDetalle: s.incubadoraDetalle ? s.incubadoraDetalle.incubadora.codigo : 'Incubadora',
+      alimento: 'Alimento', nuevaRecepcion: 'Recepción', nuevoEnsilaje: 'Nuevo ensilaje',
+      ensilajeDetalle: s.ensilajeDetalle ? s.ensilajeDetalle.ensilaje.codigo : 'Ensilaje'
     };
     const bandejasActivas = s.bandejas.filter(b => BANDEJA_ACTIVA(b.estado)).length;
 
@@ -2107,6 +2557,8 @@ class Component extends DCLogic {
       isSync: screen === 'sincronizacion',
       isCargas: screen === 'cargas', isAyunoV2: screen === 'ayunoV2', isIncubadoras: screen === 'incubadoras',
       isIncubadoraDetalle: screen === 'incubadoraDetalle',
+      isAlimento: screen === 'alimento', isNuevaRecepcion: screen === 'nuevaRecepcion',
+      isNuevoEnsilaje: screen === 'nuevoEnsilaje', isEnsilajeDetalle: screen === 'ensilajeDetalle',
       showTabs: screen === 'home' || screen === 'bandejas' || screen === 'insectarios' || screen === 'lotes',
       f, h: this.handlers, ovenCapacidad: ovenCap,
       hasToast: !!s.toast, toastMsg: s.toast ? s.toast.msg : '', toastSub: s.toast ? s.toast.sub : '',
@@ -2142,13 +2594,16 @@ class Component extends DCLogic {
       { label: 'Incubadoras', bg: '#111A14', fg: TEXT, mark: '#A78BFA', onClick: this.openIncubadoras },
       { label: 'Iniciar ayuno', bg: '#111A14', fg: TEXT, mark: '#FB923C', onClick: () => this.openAyunoV2() },
       { label: 'Cosecha', bg: '#111A14', fg: TEXT, mark: '#38BDF8', onClick: () => this.openRegistrarEvento('separacion') },
+      // What came in, the ensilaje, and how long it lasts.
+      { label: 'Alimento', bg: '#111A14', fg: TEXT, mark: '#EAB308', onClick: this.openAlimento },
       // Trays that started under the old protocol finish under it.
       ...(v1Activas ? [{ label: 'Alimentar (anterior)', bg: '#111A14', fg: TEXT, mark: '#5F7A68', onClick: this.openAlimentarGrupal }] : [])
     ] : [
       { label: 'Alimentar', bg: '#111A14', fg: TEXT, mark: NEON, onClick: this.openAlimentarGrupal },
       { label: 'Separar bandeja', bg: '#111A14', fg: TEXT, mark: '#38BDF8', onClick: () => this.openRegistrarEvento('separacion') },
       { label: 'Registrar ayuno', bg: '#111A14', fg: TEXT, mark: '#FB923C', onClick: () => this.openRegistrarEvento('ayuno') },
-      { label: 'Nueva bandeja', bg: NEON, fg: INK, mark: INK, onClick: () => this.openNuevaBandeja() }
+      { label: 'Nueva bandeja', bg: NEON, fg: INK, mark: INK, onClick: () => this.openNuevaBandeja() },
+      { label: 'Alimento', bg: '#111A14', fg: TEXT, mark: '#EAB308', onClick: this.openAlimento }
     ];
     vals.recentBandejas = s.bandejas.slice(0, 4).map(b => this.bandejaRow(b));
     // The handler existed as a class field but was never published into vals,
@@ -2274,7 +2729,9 @@ class Component extends DCLogic {
     vals.askConfirmLabel = ask ? (ask.confirmLabel || 'Guardar') : 'Guardar';
     vals.askError = ask ? (ask.error || '') : '';
     vals.askHasError = !!(ask && ask.error);
-    const askOk = !!askVal || !!(ask && ask.allowEmpty);
+    // A plain yes/no question has no field to fill.
+    vals.askHasInput = !(ask && ask.noInput);
+    const askOk = !!askVal || !!(ask && (ask.allowEmpty || ask.noInput));
     vals.askDisabled = !askOk;
     vals.askBg = askOk ? NEON : DISABLED_BG;
     vals.askFg = askOk ? INK : DISABLED_FG;
@@ -2560,6 +3017,22 @@ class Component extends DCLogic {
       : !nSel ? 'Elige las bandejas'
       : 'Dar carga ' + defCarga.n + ' a ' + nSel + ' bandeja' + (nSel === 1 ? '' : 's') + ' · ' + kgTxt(defCarga.kg * nSel) + ' kg';
     vals.onSaveCargas = this.saveCargas;
+    // Which batch the kilos come out of. Without one in use the trays are still
+    // fed and recorded; only the stock does not move, and the screen says so.
+    const stC = s.alimento ? s.alimento.stock : null;
+    const usoC = stC ? stC.ensilaje_en_uso : null;
+    const kgSel = defCarga ? defCarga.kg * nSel : 0;
+    const quedanC = usoC ? Math.max(0, usoC.kg_disponible || 0) : 0;
+    const faltaC = !!usoC && kgSel > quedanC;
+    vals.showEnsNotice = !!stC;
+    vals.ensNotice = !stC ? ''
+      : !usoC ? 'Ningún ensilaje está marcado en uso: esta carga no descontará del stock.'
+      : 'Sale de ' + usoC.codigo + ' · quedan ' + kgTxt(quedanC) + ' kg' + (faltaC ? ' y esta carga usa ' + kgTxt(kgSel) + ' kg' : '');
+    const avisoC = !usoC || faltaC;
+    vals.ensNoticeFg = avisoC ? '#FB923C' : '#9FB8A6';
+    vals.ensNoticeBg = avisoC ? '#1F1710' : '#141C16';
+    vals.ensNoticeBd = avisoC ? '#5A3A18' : '#1D2A21';
+    vals.onOpenAlimento = this.openAlimento;
 
     /* iniciar ayuno (v2) */
     const candAyuno = this.ayunoCandidatas();
@@ -2636,6 +3109,145 @@ class Component extends DCLogic {
     }
     vals.distribuirBg = vals.distribuirDisabled ? DISABLED_BG : NEON; vals.distribuirFg = vals.distribuirDisabled ? DISABLED_FG : INK;
     vals.onDistribuir = this.distribuir;
+
+    /* alimento */
+    const alim = s.alimento;
+    const st = alim ? alim.stock : null;
+    const enUso = st ? st.ensilaje_en_uso : null;
+    const ensRow = e => {
+      const m = ESTADO_ENSILAJE[e.estado] || ESTADO_ENSILAJE.armado;
+      const p = this.ensilajePaso(e);
+      return {
+        codigo: e.codigo, estadoLabel: m.label, estadoBg: m.bg,
+        line2: [e.silo || null, kgTxt(e.kg_inicial) + ' kg',
+                e.ultima_temperatura_c != null ? kgTxt(e.ultima_temperatura_c) + ' °C' : null].filter(Boolean).join('  ·  '),
+        paso: p.text, pasoFg: p.fg,
+        onOpen: () => this.openEnsilajeDetalle(e.id)
+      };
+    };
+    const todosEns = alim ? alim.ensilajes : [];
+    // The finished batches are history: only the last few, after the live ones.
+    const ensVisibles = todosEns.filter(e => e.estado !== 'agotado')
+      .concat(todosEns.filter(e => e.estado === 'agotado').slice(0, 3));
+    const enBodega = st ? st.materiales.reduce((a, m) => a + Math.max(0, m.disponible_kg), 0) : 0;
+    vals.al = {
+      headline: !st ? 'Cargando…'
+        : enUso ? 'En uso: ' + enUso.codigo + ' · quedan ' + kgTxt(Math.max(0, enUso.kg_disponible || 0)) + ' kg'
+        : 'Ningún ensilaje en uso',
+      headBg: enUso ? '#38BDF8' : '#FB923C',
+      facts: st ? [
+        { label: 'LISTO PARA USAR', value: kgTxt(st.ensilaje_disponible_kg) + ' kg' },
+        { label: 'FERMENTANDO', value: kgTxt(st.ensilaje_fermentando_kg) + ' kg' },
+        { label: 'CONSUMO 7 DÍAS', value: kgTxt(st.consumo_7d_kg) + ' kg' },
+        { label: 'PROMEDIO DIARIO', value: kgTxt(st.consumo_diario_kg) + ' kg' },
+        { label: 'ALCANZA PARA', value: st.dias_restantes == null ? '—' : st.dias_restantes + ' día' + (st.dias_restantes === 1 ? '' : 's') },
+        { label: 'MATERIA PRIMA', value: kgTxt(enBodega) + ' kg' }
+      ] : [],
+      alcanzaLine: !st ? ''
+        : !(st.kg_cargas_proximas > 0) ? 'Ninguna carga del plan en los próximos ' + st.dias_prevision + ' días.'
+        : 'Cargas de los próximos ' + st.dias_prevision + ' días: ' + kgTxt(st.kg_cargas_proximas) + ' kg. ' +
+          (st.alcanza ? 'Alcanza.' : 'Hay ' + kgTxt(st.ensilaje_disponible_kg) + ' kg listos: NO alcanza.'),
+      alcanzaFg: st && !st.alcanza ? '#F87171' : '#9FB8A6',
+      ensilajesLabel: (n => 'ENSILAJES · ' + n + (n === 1 ? ' ACTIVO' : ' ACTIVOS'))(todosEns.filter(e => e.estado !== 'agotado').length),
+      noEnsilajes: todosEns.length === 0,
+      ensilajes: ensVisibles.map(ensRow),
+      noMateriales: !st || st.materiales.length === 0,
+      materiales: (st ? st.materiales : []).map(m => ({
+        material: m.material,
+        sub: 'Recibido ' + kgTxt(m.recibido_kg) + ' · usado ' + kgTxt(m.usado_kg) + (m.ultima_recepcion ? ' · última ' + this.fmt(m.ultima_recepcion) : ''),
+        kg: kgTxt(m.disponible_kg) + ' kg',
+        // More used than received: a reception was never written down.
+        fg: m.disponible_kg < 0 ? '#F87171' : TEXT
+      })),
+      hasRecepciones: !!(alim && alim.recepciones.length),
+      recepciones: (alim ? alim.recepciones : []).map(r => ({
+        material: r.material,
+        sub: [this.fmt(r.fecha), r.proveedor, r.registrado_por].filter(Boolean).join(' · '),
+        kg: kgTxt(r.kg) + ' kg'
+      }))
+    };
+    vals.onNuevaRecepcion = this.openNuevaRecepcion;
+    vals.onNuevoEnsilaje = this.openNuevoEnsilaje;
+
+    /* recepción y nuevo ensilaje: the same material picker */
+    const mats = this.api ? this.api.MATERIALES_ALIMENTO : [];
+    vals.materialChips = mats.map(m => this.chip(m, f.material === m, () => this.setField('material', m)));
+    const kgTyped = numero(f.kg);
+    vals.recepcionDisabled = s.saving || !f.material || !(kgTyped > 0);
+    vals.recepcionBg = vals.recepcionDisabled ? DISABLED_BG : NEON; vals.recepcionFg = vals.recepcionDisabled ? DISABLED_FG : INK;
+    vals.recepcionLabel = s.saving ? 'Guardando…' : !f.material ? 'Elige el material'
+      : !(kgTyped > 0) ? 'Escribe los kilos' : 'Registrar ' + kgTxt(kgTyped) + ' kg';
+    vals.onSaveRecepcion = this.saveRecepcion;
+
+    const insList = this.insumosDelForm(f);
+    const totalEns = insList.reduce((a, x) => a + x.kg, 0);
+    vals.addInsumoDisabled = !f.material || !(kgTyped > 0);
+    vals.addInsumoBd = vals.addInsumoDisabled ? BORDER : NEON; vals.addInsumoFg = vals.addInsumoDisabled ? DISABLED_FG : NEON;
+    vals.onAddInsumo = this.addInsumo;
+    vals.hasInsumos = (f.insumos || []).length > 0;
+    vals.insumoRows = (f.insumos || []).map((x, i) => ({ material: x.material, kg: kgTxt(x.kg) + ' kg', onRemove: () => this.removeInsumo(i) }));
+    vals.ensilajeTotalLine = insList.length
+      ? 'Total del ensilaje: ' + kgTxt(totalEns) + ' kg' + (insList.length > 1 ? ' (' + insList.length + ' materiales)' : '')
+      : 'Escribe los kilos del material.';
+    const matSt = st && f.material ? st.materiales.find(m => m.material === f.material) : null;
+    vals.materialStockHint = !f.material ? ''
+      : matSt ? 'En bodega: ' + kgTxt(matSt.disponible_kg) + ' kg de ' + f.material + '.'
+      : 'No hay recepciones de ' + f.material + ' registradas.';
+    const sell = !!f.sellado;
+    vals.onToggleSellado = () => this.toggleField('sellado');
+    vals.selladoBg = sell ? '#0E2415' : CARD; vals.selladoFg = sell ? '#4ADE80' : TEXT;
+    vals.selladoBd = sell ? NEON : BORDER; vals.selladoMark = sell ? '✓' : '';
+    const diasF = cfg.dias_fermentacion || 14;
+    const F = this.fechas();
+    const diaArmado = String(f.fecha || '').slice(0, 10) || this.today();
+    vals.selladoHint = sell
+      ? 'Según el plan estará listo en ' + diasF + ' días' + (F ? ' (' + this.fmt(F.addDays(diaArmado, diasF)) + ')' : '') + '.'
+      : 'Sin sellar todavía: se marca sellado desde su página.';
+    vals.ensilajeDisabled = s.saving || !insList.length;
+    vals.ensilajeBg = vals.ensilajeDisabled ? DISABLED_BG : NEON; vals.ensilajeFg = vals.ensilajeDisabled ? DISABLED_FG : INK;
+    vals.ensilajeLabel = s.saving ? 'Guardando…' : !insList.length ? 'Agrega los materiales' : 'Guardar ensilaje · ' + kgTxt(totalEns) + ' kg';
+    vals.onSaveEnsilaje = this.saveEnsilaje;
+
+    /* ensilaje detalle */
+    const enD = s.ensilajeDetalle;
+    if (enD) {
+      const e = enD.ensilaje;
+      const m = ESTADO_ENSILAJE[e.estado] || ESTADO_ENSILAJE.armado;
+      const por = (at, who) => at ? this.fmt(at) + (who ? ' · ' + who : '') : '—';
+      const next = { armado: ['sellado', 'Sellar · empieza la fermentación'], fermentando: ['listo', 'Marcar listo para usar'],
+                     listo: ['en_uso', 'Empezar a usarlo'] }[e.estado] || null;
+      vals.en = {
+        codigo: e.codigo, estadoLabel: m.label, estadoBg: m.bg,
+        facts: [
+          { label: 'SILO', value: e.silo || '—' },
+          { label: 'KG INICIALES', value: kgTxt(e.kg_inicial) + ' kg' },
+          { label: 'ARMADO', value: por(e.fecha_armado, e.registrado_por) },
+          { label: 'SELLADO', value: por(e.sellado_at, e.sellado_por) },
+          { label: 'LISTO', value: e.listo_at ? por(e.listo_at, e.listo_por) : e.listo_previsto ? 'previsto ' + this.fmt(e.listo_previsto) : '—' },
+          { label: 'EN USO', value: por(e.en_uso_at, e.en_uso_por) },
+          { label: 'CONSUMIDO', value: kgTxt(e.kg_consumido) + ' kg' },
+          { label: 'QUEDAN', value: e.kg_disponible == null ? '—' : kgTxt(e.kg_disponible) + ' kg' }
+        ].concat(e.agotado_at ? [{ label: 'AGOTADO', value: por(e.agotado_at, e.agotado_por) }] : []),
+        notesLine: e.notas || this.ensilajePaso(e).text,
+        showPaso: !!next, pasoLabel: next ? next[1] : '',
+        onPaso: () => { if (next) this.pasoEnsilaje(e, next[0]); },
+        showLectura: e.estado !== 'agotado' && e.estado !== 'armado',
+        onLectura: () => this.registrarTemperatura(e),
+        showAgotar: e.estado !== 'agotado',
+        onAgotar: () => this.pasoEnsilaje(e, 'agotado'),
+        hasLecturas: enD.lecturas.length > 0,
+        lecturasLabel: 'TEMPERATURAS · ' + enD.lecturas.length,
+        lecturas: enD.lecturas.map(l => ({ sub: [this.fmt(l.fecha), l.registrado_por].filter(Boolean).join(' · '),
+                                           temp: kgTxt(l.temperatura_c) + ' °C' })),
+        insumos: enD.insumos.map(i => ({ material: i.material, kg: kgTxt(i.kg) + ' kg' })),
+        hasConsumo: enD.consumo_por_dia.length > 0,
+        consumo: enD.consumo_por_dia.slice(0, 14).map(c => ({ dia: this.fmt(c.dia), kg: kgTxt(c.kg) + ' kg' }))
+      };
+    } else {
+      vals.en = { codigo: '', estadoLabel: '', estadoBg: '#1D2A21', facts: [], notesLine: 'Cargando…', showPaso: false, pasoLabel: '',
+                  onPaso: () => {}, showLectura: false, onLectura: () => {}, showAgotar: false, onAgotar: () => {},
+                  hasLecturas: false, lecturasLabel: '', lecturas: [], insumos: [], hasConsumo: false, consumo: [] };
+    }
 
     /* lotes */
     vals.loteRows = s.lotes.map(l => ({
