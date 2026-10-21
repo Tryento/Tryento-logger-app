@@ -16,6 +16,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { setupFiles } from './migrations.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = path.join(ROOT, 'supabase', 'migrations');
@@ -61,13 +62,12 @@ try {
   const stmts = ast?.stmts ?? ast?.parse_tree?.stmts ?? [];
   console.log(`  ok    SETUP_COMPLETO.sql  (${stmts.length} statements)`);
 
-  for (const f of files) {
-    const body = await readFile(path.join(DIR, f), 'utf8');
-    // Repair scripts are deliberately left out of the fresh-install file.
-    if (/@setup-skip/.test(body.slice(0, 400))) continue;
+  // Only what a fresh install runs: the history before the baseline and the
+  // repair scripts are deliberately left out of the file.
+  for (const { file, body } of await setupFiles()) {
     if (!combined.includes(body.trim())) {
       failed++;
-      console.log(`  FAIL  SETUP_COMPLETO.sql está desactualizado: ${f} cambió`);
+      console.log(`  FAIL  SETUP_COMPLETO.sql está desactualizado: ${file} cambió`);
       console.log('        corre: npm run setup:sql');
       break;
     }

@@ -21,21 +21,14 @@ import {
 import { recordConflict } from '../conflicts.js';
 import { currentUserId, isTokenExpired } from '../session.js';
 import { PUSH_BATCH_SIZE } from '../config.js';
-import { rowById } from '../store.js';
 import { uploadBlobsFor } from './blobs.js';
 
 /**
  * Columns that must never be sent, for EVERY table.
  *
- * Three groups:
- *
- *  - GENERATED ALWAYS columns (`merma_pct`, `rendimiento_pct`,
- *    `poblacion_estimada`, the deviations) plus `estado`, which is either
- *    generated (insectario, lote) or trigger-owned (bandeja). Postgres
- *    rejects an INSERT that supplies a generated column.
- *
- *  - Read-side conveniences that are not a column on ANY table
- *    (`insectario_nombre`, `last_evento`, `n_bandejas`, …).
+ *  - `estado`, which the SERVER owns: generated on jaula, kept by trigger on
+ *    incubadora, caja and cochada from their registries (0010). The phone works
+ *    it out from the same registries, so it never needs to send it.
  *
  *  - `updated_at` / `synced_at`, which the SERVER must own. This one matters:
  *    the pull cursor is a range over `updated_at`. A device offline for two
@@ -44,20 +37,11 @@ import { uploadBlobsFor } from './blobs.js';
  *    server default them makes a late arrival land ahead of every cursor.
  *    `created_at` is kept: it is genuinely "when the operator entered this".
  *
- *  - `protocolo`, which the SERVER decides: new columns default to v1, and an
- *    event takes its tray's protocol by trigger (0007). Never sending it keeps
- *    the old flows working even before 0007 is applied, and means an old
- *    cached build cannot label v2 work as v1.
+ *  - Local index mirrors (`_resuelto`).
  */
 const STRIP_ALWAYS = new Set([
-  '_abierto', '_resuelto',
-  'estado', 'merma_pct', 'rendimiento_pct', 'poblacion_estimada',
-  'desviacion_cierre_dias', 'desviacion_ovipositores_dias',
-  'n_bandejas', 'despachado', 'empacado', 'last_evento', 'separacion',
-  'insectario_nombre', 'insectario_codigo',
-  'tiene_ayuno_abierto', 'ayuno_abierto_id',
-  'kg_alimento_total', 'n_alimentaciones', 'abierto',
-  'protocolo',
+  '_resuelto',
+  'estado',
   'updated_at', 'synced_at'
 ]);
 
@@ -66,18 +50,18 @@ const STRIP_ALWAYS = new Set([
  * column somewhere else.
  *
  * This exists because of a bug worth remembering: `insectario_id` and
- * `recolecta` are joined onto bandeja rows for display, but they are genuine
- * NOT NULL columns on `recoleccion`. Stripping them globally made every
- * recolección fail with "null value in column insectario_id violates not-null
- * constraint" — and since the failure was terminal, every tray and event
- * behind it was blocked too. One over-eager entry in a shared deny-list broke
- * the entire sync chain below the first table.
+ * `recolecta` were joined onto tray rows for display, but they were genuine
+ * NOT NULL columns of another table. Stripping them globally made every
+ * collection fail with a not-null violation — and since the failure was
+ * terminal, everything behind it was blocked too. One over-eager entry in a
+ * shared deny-list broke the entire sync chain below the first table.
  */
 const STRIP_PER_TABLE = {
-  // `lote_id` used to be in STRIP_ALWAYS, but it is a real column of
-  // lote_separacion — the same trap as insectario_id above, just not sprung yet.
-  bandeja: new Set(['insectario_id', 'recolecta', 'lote_id', 'incubadora_codigo',
-                    'dia_ciclo', 'siguiente_paso', 'cargas_dadas', 'n_cargas'])
+  // GENERATED ALWAYS: Postgres rejects an insert that supplies them.
+  separacion: new Set(['coccion_kg', 'retorno_kg']),
+  // Kept by the server from the cage's ingresos, cierres and limpiezas. Not
+  // `generacion` everywhere: it is a real column of incubadora and ingreso.
+  jaula: new Set(['fase', 'generacion', 'ciclo_desde'])
 };
 
 export function toWire(table, row) {
@@ -99,9 +83,9 @@ export function toWire(table, row) {
 async function execute(client, item) {
   if (item.op === 'upsert') {
     // onConflict:'id' + ignoreDuplicates makes a replayed item a no-op, while
-    // a DIFFERENT unique index (separacion.bandeja_id, lote_separacion.
-    // separacion_id) still raises 23505 — which is exactly what we want it to
-    // do, because that means two devices recorded the same physical event.
+    // a DIFFERENT unique index (one separación per caja, one chequeo per day,
+    // an incubadora code) still raises 23505 — which is exactly what we want it
+    // to do, because that means two devices recorded the same physical event.
     const { error } = await client
       .from(item.table)
       .upsert(toWire(item.table, item.payload), { onConflict: 'id', ignoreDuplicates: true });
@@ -110,12 +94,8 @@ async function execute(client, item) {
   }
 
   if (item.op === 'rpc' || item.op === 'cas') {
-    const payload = item.rpc === 'log_alimentacion_grupal'
-      ? { p_rows: (item.payload.p_rows || []).map(r => toWire('alimentacion', r)) }
-      : item.rpc === 'crear_lote'
-        ? { p_lote: toWire('lote', item.payload.p_lote), p_separacion_ids: item.payload.p_separacion_ids }
-        : item.payload;
-    const { error } = await client.rpc(item.rpc, payload);
+    // The calls read each field they need by name, so the payload goes as built.
+    const { error } = await client.rpc(item.rpc, item.payload);
     if (error) throw toError(error);
     return;
   }

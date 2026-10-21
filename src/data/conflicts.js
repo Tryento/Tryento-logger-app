@@ -6,91 +6,93 @@
  * and nothing surfaces that, the app has lied — and the operator has no way to
  * find out, which is strictly worse than the AppSheet behaviour being replaced.
  *
- * Two genuine cases produce conflicts, both physical:
- *   - the same tray was separated on two devices
- *   - the same harvest was pooled into two different oven runs
- * In both the database is right and something already went wrong on the floor,
- * so the resolution is a human decision, never an automatic merge.
+ * The genuine cases are physical, and happen when two phones record the same
+ * thing offline:
+ *   - the same caja separated, or the same incubadora distributed, twice
+ *   - two recolectas given the same code
+ *   - a cage repopulated from two phones
+ * In all of them the database is right and something already went wrong on the
+ * floor, so the resolution is a human decision, never an automatic merge.
  */
 import { reqToPromise, withTx, getAllByIndex } from './idb/tx.js';
 import { withIndexMirrors } from './idb/schema.js';
 import { uuid } from './ids.js';
 import { requeue, discard, rowsOf, STATUS, OPEN_STATUSES, STUCK_STATUSES } from './outbox.js';
-import { refreshMany } from './cache.js';
 import { ok, fail, CODES } from './envelope.js';
 
+/** What a queued item saves, with its article, for sentences. */
 const LABELS = {
-  insectario: 'insectario',
-  recoleccion: 'recolección',
-  incubadora: 'incubadora',
-  bandeja: 'bandeja',
-  alimentacion: 'alimentación',
-  ayuno: 'ayuno',
-  revision: 'revisión',
-  separacion: 'separación',
-  lote: 'lote',
-  lote_separacion: 'lote',
-  log_alimentacion_grupal: 'alimentación grupal',
-  crear_lote: 'lote',
-  crear_recoleccion_v2: 'recolecta',
-  distribuir_incubadora: 'distribución',
-  recepcion_alimento: 'recepción de material',
-  ensilaje: 'ensilaje',
-  ensilaje_insumo: 'ensilaje',
-  ensilaje_lectura: 'lectura de temperatura',
-  crear_ensilaje: 'ensilaje',
-  avanzar_ensilaje: 'paso del ensilaje',
-  cerrar_ayuno: 'cierre de ayuno',
-  marcar_atractante: 'atractante',
-  marcar_cierre: 'cierre de insectario',
-  marcar_empacado: 'empacado',
-  marcar_despachado: 'despacho',
-  rechazar_lote: 'rechazo de lote',
-  actualizar_qc_lote: 'control de calidad'
+  catalogo: 'el nombre',
+  rack: 'el rack',
+  contenedor: 'el contenedor',
+  jaula: 'la jaula',
+  recepcion: 'la recepción de material',
+  ensilado: 'el ensilado',
+  ensilado_insumo: 'el ensilado',
+  incubadora: 'la recolecta',
+  distribucion: 'la distribución',
+  caja: 'la caja de engorde',
+  chequeo: 'el chequeo',
+  alimentacion: 'la carga de alimento',
+  separacion: 'la separación',
+  cochada: 'la cochada',
+  cochada_origen: 'la cochada',
+  cochada_lectura: 'la lectura del horno',
+  ingreso: 'el ingreso al insectario',
+  bandeja_pupacion: 'la bandeja de pupación',
+  jaula_evento: 'el cierre o la limpieza de la jaula',
+  movimiento: 'el cambio de rack',
+  distribuir: 'la distribución',
+  crear_cochada: 'la cochada',
+  ingresar: 'el ingreso al insectario',
+  crear_ensilado: 'el ensilado',
+  abrir_ensilado: 'la apertura del ensilado',
+  cerrar_objeto: 'el cierre',
+  editar: 'la corrección',
+  marcar_revisado: 'la revisión'
 };
+
+const codigoDe = item =>
+  item.payload?.codigo || item.payload?.p_cochada?.codigo || item.payload?.p_ensilado?.codigo || '';
 
 /** Plain-language explanation. The operator is standing in a shed, not reading
  *  a SQLSTATE. */
 export function explain(item, err) {
-  const what = LABELS[item.table] || LABELS[item.rpc] || 'registro';
+  const what = LABELS[item.table] || LABELS[item.rpc] || 'el registro';
   const code = err?.code || null;
   const msg = String(err?.message || '');
 
   if (code === '23505') {
-    if (item.table === 'separacion') {
-      return `Otra persona ya registró la separación de esta bandeja. Sólo puede haber una.`;
+    // The calls word their own refusals for the operator.
+    if (item.rpc === 'distribuir') return msg || 'Esta incubadora ya fue distribuida desde otro teléfono.';
+    if (item.table === 'incubadora') {
+      return `Ya existe una incubadora ${codigoDe(item) || 'con ese código'}. Otro teléfono registró esa recolecta: revisa cuál corresponde y descarta la otra.`;
     }
-    if (item.rpc === 'crear_lote' || item.table === 'lote_separacion') {
-      return `Al menos una de esas separaciones ya fue usada en otro lote. Revisa cuál corresponde.`;
+    if (item.table === 'separacion') return 'Otra persona ya registró la separación de esta caja. Sólo puede haber una.';
+    if (item.table === 'chequeo') return 'Ese chequeo ya fue registrado desde otro teléfono. Sólo hay uno por día del plan.';
+    if (item.table === 'alimentacion') return 'Esa carga ya fue registrada desde otro teléfono.';
+    if (item.table === 'cochada_lectura') return 'Esa lectura del horno ya fue registrada desde otro teléfono.';
+    if (item.rpc === 'crear_cochada') {
+      return `Ya existe una cochada ${codigoDe(item)}. Descarta esta y vuelve a crearla: tendrá el número siguiente.`;
     }
-    if (item.rpc === 'crear_recoleccion_v2') {
-      const rec = item.payload?.p_recoleccion?.recolecta;
-      const cod = item.payload?.p_incubadora?.codigo;
-      if (/ux_incubadora_codigo/.test(msg)) {
-        return `Ya existe una incubadora ${cod || 'con ese código'}. Otro teléfono registró esa recolecta: revisa cuál corresponde y descarta la otra.`;
-      }
-      return `Otro teléfono ya registró la recolecta ${rec || ''} de este insectario. Revisa cuál corresponde y descarta la otra.`;
+    if (item.rpc === 'crear_ensilado') {
+      return `Ya existe el ensilado ${codigoDe(item)}: ese contenedor ya se llenó ese día.`;
     }
-    if (item.rpc === 'distribuir_incubadora') {
-      return msg || 'Esta incubadora ya fue distribuida desde otro teléfono.';
-    }
-    if (item.table === 'bandeja') {
-      return `Ya existe una bandeja con ese número en la misma recolección.`;
-    }
-    if (item.table === 'insectario') {
-      return `Ya existe un insectario con ese código.`;
-    }
-    return `Ya existe un registro de ${what} igual en el servidor.`;
+    if (item.rpc === 'ingresar') return 'Ya existe una bandeja de pupación con ese código. Descarta este ingreso y vuelve a registrarlo.';
+    if (item.table === 'rack' || item.table === 'contenedor') return `Ya existe ${what} con ese código.`;
+    if (item.table === 'jaula') return 'Ya existe una jaula con ese nombre o esa letra.';
+    return `Ya hay en el servidor un registro igual: ${what}.`;
   }
-  if (code === '23503') return `La ${what} depende de un registro que no existe en el servidor.`;
-  if (code === '23514') return `La ${what} no cumple una regla del proceso (por ejemplo, despachar sin empacar).`;
-  if (code === '42501' || err?.status === 403) return `No tienes permiso para guardar esta ${what}.`;
-  if (err?.status === 401) return `Tu sesión expiró. Inicia sesión otra vez para sincronizar.`;
+  if (code === '23514' && item.rpc === 'ingresar' && msg) return msg;
+  if (code === '23503') return `No se pudo guardar ${what}: depende de un registro que no existe en el servidor.`;
+  if (code === '23514') return `No se pudo guardar ${what}: no cumple una regla del proceso.`;
+  if (code === '42501' || err?.status === 403) return `No tienes permiso para guardar ${what}.`;
+  if (err?.status === 401) return 'Tu sesión expiró. Inicia sesión otra vez para sincronizar.';
   if (err?.status === 424) return err.message;
   if (code === 'PGRST202' || err?.status === 404) {
-    return `El servidor todavía no tiene la actualización para guardar esta ${what}. Avisa a quien administra la base de datos.`;
+    return `El servidor todavía no tiene la actualización para guardar ${what}. Avisa a quien administra la base de datos.`;
   }
-  return `No se pudo guardar la ${what}: ${err?.message || 'error desconocido'}`;
+  return `No se pudo guardar ${what}: ${err?.message || 'error desconocido'}`;
 }
 
 export async function recordConflict(db, item, err, reason) {
@@ -145,11 +147,9 @@ function createdIdsOf(item) {
  *   - rows it created are marked deleted, so they stop showing as real data;
  *   - fields it changed go back to their previous value, but only where
  *     nothing else changed them since.
- * Returns the trays whose rollup must be recomputed and the rows whose true
- * value should be fetched from the server again.
+ * Returns the rows whose true value should be fetched from the server again.
  */
 async function undoLocal(db, item) {
-  const trays = new Set();
   const refetch = [];
   const now = new Date().toISOString();
 
@@ -159,28 +159,20 @@ async function undoLocal(db, item) {
     if (item.table && item.row_id && item.op !== 'cas') {
       await withTx(db, item.table, 'readwrite', async s => {
         const local = await reqToPromise(s[item.table].get(item.row_id));
-        if (local && !local.deleted_at) {
-          await reqToPromise(s[item.table].put({ ...local, deleted_at: now }));
-          if (local.bandeja_id) trays.add(local.bandeja_id);
-          if (item.table === 'bandeja') trays.add(local.id);
-        }
+        if (local && !local.deleted_at) await reqToPromise(s[item.table].put({ ...local, deleted_at: now }));
       }).catch(() => { /* store may not hold this row; nothing to clean up */ });
     }
-    return { trays, refetch };
+    return { refetch };
   }
 
   const stores = [...new Set([...u.created, ...u.changed].map(c => c.store))];
-  if (!stores.length) return { trays, refetch };
-  const sepIds = [];
+  if (!stores.length) return { refetch };
 
-  await withTx(db, [...new Set([...stores, 'separacion'])], 'readwrite', async s => {
+  await withTx(db, stores, 'readwrite', async s => {
     for (const c of u.created) {
       const row = await reqToPromise(s[c.store].get(c.key));
       if (!row || row.deleted_at) continue;
       await reqToPromise(s[c.store].put(withIndexMirrors(c.store, { ...row, deleted_at: now })));
-      if (row.bandeja_id) trays.add(row.bandeja_id);
-      if (c.store === 'bandeja') trays.add(row.id);
-      if (c.store === 'lote_separacion') sepIds.push(row.separacion_id);
     }
     for (const c of u.changed) {
       const row = await reqToPromise(s[c.store].get(c.key));
@@ -192,16 +184,10 @@ async function undoLocal(db, item) {
       }
       if (!touched) continue;
       await reqToPromise(s[c.store].put(withIndexMirrors(c.store, next)));
-      if (row.bandeja_id) trays.add(row.bandeja_id);
-      if (c.store === 'bandeja') trays.add(row.id);
       if (typeof c.key === 'string') refetch.push({ store: c.store, id: c.key });
     }
-    for (const id of sepIds) {
-      const sep = await reqToPromise(s.separacion.get(id));
-      if (sep?.bandeja_id) trays.add(sep.bandeja_id);
-    }
   });
-  return { trays, refetch };
+  return { refetch };
 }
 
 async function markResolved(db, outboxId, resolucion) {
@@ -217,16 +203,16 @@ async function markResolved(db, outboxId, resolucion) {
 
 /**
  * Discard an item AND everything that could only exist because of it: work
- * queued against the rows it created. A tray created by a discarded
- * distribución takes its feedings with it; otherwise they would sit in the
- * queue failing forever against a tray the server never got.
+ * queued against the rows it created. The cajas of a discarded distribución
+ * take their chequeos, cargas and separación with them; otherwise those would
+ * sit in the queue failing forever against cajas the server never got.
  */
 async function discardCascade(db, item, seen = new Set()) {
-  if (!item || seen.has(item.id)) return { trays: new Set(), refetch: [], n: 0 };
+  if (!item || seen.has(item.id)) return { refetch: [], n: 0 };
   seen.add(item.id);
 
   await discard(db, item.id);
-  const { trays, refetch } = await undoLocal(db, item);
+  const { refetch } = await undoLocal(db, item);
   let n = 1;
 
   const created = new Set(createdIdsOf(item));
@@ -239,13 +225,12 @@ async function discardCascade(db, item, seen = new Set()) {
       .sort((a, b) => a.seq - b.seq);
     for (const dep of dependents) {
       const r = await discardCascade(db, dep, seen);
-      for (const t of r.trays) trays.add(t);
       refetch.push(...r.refetch);
       n += r.n;
       await markResolved(db, dep.id, 'discard');
     }
   }
-  return { trays, refetch, n };
+  return { refetch, n };
 }
 
 /** Items parked only because this one had not landed ("dependencia"): work
@@ -290,7 +275,6 @@ export async function resolveConflict(db, id, action) {
   } else if (item) {
     const r = await discardCascade(db, item);
     afectados = r.n - 1;
-    await refreshMany(db, [...r.trays]);
     // What another phone saved may differ from what this phone had before;
     // bring the server's copy back for rows whose change was taken back.
     if (r.refetch.length) {

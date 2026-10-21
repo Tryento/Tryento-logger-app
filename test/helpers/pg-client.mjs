@@ -74,6 +74,48 @@ export function pgClient(db, { schema = 'app' } = {}) {
           return b;
         },
 
+        /** insert(row | rows): only the columns present, like PostgREST. */
+        async insert(row) {
+          calls.push({ kind: 'insert', table, row });
+          try {
+            for (const r of Array.isArray(row) ? row : [row]) {
+              const cols = Object.keys(r).map(ident);
+              await db.query(
+                `insert into ${ident(schema)}.${ident(table)} (${cols.join(', ')})
+                 select ${cols.join(', ')} from jsonb_populate_record(null::${ident(schema)}.${ident(table)}, $1::jsonb)`,
+                [JSON.stringify(r)]);
+            }
+            return { data: null, error: null };
+          } catch (e) {
+            return { data: null, error: pgErr(e) };
+          }
+        },
+
+        /** update(values).eq(…) / .in(…), awaited like supabase-js. */
+        update(values) {
+          const where = [], params = [JSON.stringify(values)];
+          const run = async () => {
+            calls.push({ kind: 'update', table, values });
+            try {
+              const sets = Object.keys(values).map(c => `${ident(c)} = r.${ident(c)}`).join(', ');
+              await db.query(
+                `update ${ident(schema)}.${ident(table)} t set ${sets}
+                   from jsonb_populate_record(null::${ident(schema)}.${ident(table)}, $1::jsonb) r
+                  where ${where.join(' and ') || 'false'}`, params);
+              return { data: null, error: null };
+            } catch (e) {
+              return { data: null, error: pgErr(e) };
+            }
+          };
+          const b = {
+            eq(c, v) { params.push(v); where.push(`t.${ident(c)} = $${params.length}`); return b; },
+            in(c, vs) { params.push(vs.map(String)); where.push(`t.${ident(c)}::text = any($${params.length}::text[])`); return b; },
+            is(c, v) { if (v === null) where.push(`t.${ident(c)} is null`); return b; },
+            then(ok, ko) { return run().then(ok, ko); }
+          };
+          return b;
+        },
+
         // push.js always sends ignoreDuplicates: true, so only `do nothing` is modelled.
         async upsert(row, { onConflict = 'id' } = {}) {
           calls.push({ kind: 'upsert', table, row });
@@ -131,8 +173,9 @@ export function pgClient(db, { schema = 'app' } = {}) {
 
     auth: {
       async getSession() { return { data: { session: null } }; },
-      async refreshSession() { return { data: { session: null }, error: null }; }
+      async refreshSession() { return { data: { session: null }, error: null }; },
+      onAuthStateChange() { return { data: { subscription: { unsubscribe() {} } } }; }
     },
-    storage: { from: () => ({ upload: async () => ({ error: null }) }) }
+    storage: { from: () => ({ upload: async () => ({ error: null }), remove: async () => ({ error: null }) }) }
   };
 }

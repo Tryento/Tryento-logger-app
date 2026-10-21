@@ -70,6 +70,4 @@ export const CLOCK_SKEW_WARN_MS = cfg.clockSkewWarnMs ?? 5 * 60 * 1000;
 export const PHOTO_MAX_EDGE = cfg.photoMaxEdge ?? 1600;
 export const PHOTO_QUALITY = cfg.photoQuality ?? 0.8;
 
-export const OVEN_CAPACITY = cfg.ovenCapacidad ?? 8;
-
 export const isBackendConfigured = () => Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);

@@ -2,17 +2,15 @@
  * dataClient.js — the single data access layer for the TryEnto production app.
  * Every screen calls through here; no screen touches storage directly.
  *
- * This file used to be an in-memory mock. It is now a thin barrel over
- * `src/data/*`, which is offline-first: reads are served from IndexedDB, writes
- * apply locally and queue for Supabase, and a background loop reconciles the
- * two. The PUBLIC SURFACE IS UNCHANGED — same 28 names, same
- * `{ok,data}` / `{ok,error:{code,message}}` envelope — so the UI template did
- * not have to be rewritten around the new backend.
+ * A thin barrel over `src/data/*`, which is offline-first: reads are served
+ * from IndexedDB, writes apply locally and queue for Supabase, and a background
+ * loop reconciles the two. Every function answers with the same envelope:
+ * `{ ok: true, data }` or `{ ok: false, error: { code, message } }`.
  *
- * New names are additive: sync status, the conflict inbox, photo capture, and
- * `logAyunoFin` (closing a fast, which the mock had no way to express at all).
+ * The protocols of October 2026 (docs/protocolo.html) replaced every domain
+ * function; the sync machinery under them did not change.
  */
-import { openDb, requestPersistentStorage } from './src/data/idb/open.js';
+import { openDb, requestPersistentStorage, deleteLegacyDbs } from './src/data/idb/open.js';
 import { putLocal, allRows } from './src/data/store.js';
 import { loadCachedSession } from './src/data/session.js';
 import { uuidFromString } from './src/data/ids.js';
@@ -23,65 +21,45 @@ import { refreshStatus, getSyncStatus, onChange, statusLabel } from './src/data/
 import * as reads from './src/data/read.js';
 import * as writes from './src/data/write.js';
 import { listConflicts as _listConflicts, resolveConflict as _resolveConflict } from './src/data/conflicts.js';
-import { capturePhoto, attachPhoto, localPhotoUrl } from './src/data/photo.js';
+import { capturePhoto, localPhotoUrl, photoUrlFor } from './src/data/photo.js';
 import { signInWithGoogle, signOut, fetchSession } from './src/data/supabase.js';
-import { openDb as _openDb } from './src/data/idb/open.js';
+import { invalidarSnapshot } from './src/data/snapshot.js';
+import { repartoSeparacion } from './src/data/protocolo.js';
+import { kgTxt, diaTxt, fechaHoraTxt, cuandoTxt } from './src/data/formato.js';
 
 /* ── catalogues ─────────────────────────────────────────────────────────────
- * The template reads these synchronously off the module (dc.html:1283-1284,
- * 1375, 1425), so they must stay plain arrays. They are populated from the
- * `catalogo` table and MUTATED IN PLACE on every refresh — a static export with
- * dynamic contents. Adding a fifth cage is then a data row, not a redeploy.
+ * The template reads this one synchronously off the module, so it stays a
+ * plain array, populated from the `catalogo` table and MUTATED IN PLACE on
+ * every refresh. Adding a material is then a data row, not a redeploy.
  */
-export const NOMBRES_INSECTARIO = [];
-export const TIPO_INICIADOR = [];
-export const TIPO_ALIMENTO = [];
-export const QC_COLOR_DORADO = [];
 export const MATERIALES_ALIMENTO = [];
-export const EVENTO_TIPOS = ['alimentacion', 'ayuno', 'revision', 'separacion'];
 
-const CATALOGOS = {
-  nombre_insectario: NOMBRES_INSECTARIO,
-  tipo_iniciador: TIPO_INICIADOR,
-  tipo_alimento: TIPO_ALIMENTO,
-  qc_color_dorado: QC_COLOR_DORADO,
-  material_alimento: MATERIALES_ALIMENTO
-};
+const CATALOGOS = { material_alimento: MATERIALES_ALIMENTO };
 
-/** Values the operation already used, seeded only when the table is empty so a
- *  brand-new or fully-offline install is still usable. The server copy wins as
- *  soon as one arrives. */
+/** Values seeded only when the table is empty so a brand-new or fully-offline
+ *  install is still usable. The server copy wins as soon as one arrives. */
 const CATALOGO_DEFAULTS = {
-  nombre_insectario: ['ICA', 'ICB', 'ICC', 'JN3A'],
-  tipo_iniciador: ['Bagazo', 'Afrecho', 'Yogurt', 'Otro'],
-  tipo_alimento: ['Bagazo', 'Yogurt', 'Afrecho', 'Mezcla'],
-  qc_color_dorado: ['Blando', 'Poco Crujiente', 'Muy Crujiente', 'Tostado'],
-  // Mirrors 0008_alimento.sql.
+  // Mirrors 0010_ciclo_nuevo.sql.
   material_alimento: ['Bagazo de cerveza (BSG)', 'Desecho de panadería', 'Desecho de fruta', 'Otro'],
-  // The registered roster. Mirrors 0003_seed.sql so the name screen is usable
-  // before the first sync, and on a device with no backend at all.
+  // The registered roster, so the name screen is usable before the first sync.
   operario: ['Maria', 'Ricardo']
 };
 
 async function seedIfEmpty(db) {
   const existing = await allRows(db, 'catalogo');
-  if (!existing.length) {
-    const rows = [];
-    for (const [tipo, valores] of Object.entries(CATALOGO_DEFAULTS)) {
-      // `_seeded` marks these as local stand-ins: the server's copy of the same
-      // value replaces them when it arrives (store.js applyServerRows).
-      valores.forEach((valor, orden) => rows.push({
-        id: uuidFromString(`seed:${tipo}:${String(valor).toLowerCase()}`),
-        tipo, valor, orden: orden + 1, activo: true,
-        created_at: nowIso(), updated_at: nowIso(), _seeded: true
-      }));
-    }
-    await putLocal(db, 'catalogo', rows);
+  if (existing.length) return;
+  const rows = [];
+  for (const [tipo, valores] of Object.entries(CATALOGO_DEFAULTS)) {
+    // `_seeded` marks these as local stand-ins: the server's copy of the same
+    // value replaces them when it arrives (store.js applyServerRows).
+    valores.forEach((valor, orden) => rows.push({
+      id: uuidFromString(`seed:${tipo}:${String(valor).toLowerCase()}`),
+      tipo, valor, orden: orden + 1, activo: true,
+      created_at: nowIso(), updated_at: nowIso(), _seeded: true
+    }));
   }
-
-  // Nothing to seed for people: `registrado_por` is plain text, so names come
-  // from whatever has been typed or from existing records. Nothing can be out
-  // of step and no write can be rejected for referencing an unknown person.
+  await putLocal(db, 'catalogo', rows);
+  invalidarSnapshot();
 }
 
 async function refreshCatalogos() {
@@ -107,10 +85,9 @@ export const initErrors = () => _initErrors.slice();
  * Boot the data layer.
  *
  * Every step is individually guarded so that refreshStatus() ALWAYS runs. If
- * start-up threw halfway — which is what a stale local database did after the
- * store rename — the status was never published, and the sync screen rendered
- * "not loaded yet" as "no hay servidor configurado". A backend problem that was
- * not one, with nothing on screen pointing at the real cause.
+ * start-up threw halfway — which is what a stale local database once did — the
+ * status was never published, and the sync screen rendered "not loaded yet" as
+ * "no hay servidor configurado": a backend problem that was not one.
  */
 async function init() {
   const db = await openDb();
@@ -122,6 +99,9 @@ async function init() {
     }
   };
 
+  // The database of the protocols before October 2026: nothing in it can sync
+  // any more (0010 rebuilt the tables). Never awaited past another tab.
+  deleteLegacyDbs().catch(() => {});
   await step('sesión', () => loadCachedSession(db));
   await step('catálogos', () => seedIfEmpty(db));
   await step('listas', () => refreshCatalogos());
@@ -148,84 +128,79 @@ function guard(fn, { isWrite = false } = {}) {
   };
 }
 
-/* ── reads (unchanged signatures) ───────────────────────────────────────── */
+/* ── reads ──────────────────────────────────────────────────────────────── */
 
-export const listInsectarios = guard(reads.listInsectarios);
-export const getInsectarioDetail = guard(reads.getInsectarioDetail);
-export const listRecolecciones = guard(reads.listRecolecciones);
-export const listBandejas = guard(reads.listBandejas);
-export const getBandejaDetail = guard(reads.getBandejaDetail);
-export const listSeparacionesDisponibles = guard(reads.listSeparacionesDisponibles);
-export const listLotes = guard(reads.listLotes);
-export const getLoteDetail = guard(reads.getLoteDetail);
+export const getInicio = guard(reads.getInicio);
+export const getProtocolo = guard(reads.getProtocolo);
 export const listOperators = guard(reads.listOperators);
+export const listRacks = guard(reads.listRacks);
+export const listContenedores = guard(reads.listContenedores);
+export const listJaulas = guard(reads.listJaulas);
+export const getJaula = guard(reads.getJaula);
+export const listIncubadoras = guard(reads.listIncubadoras);
+export const getIncubadora = guard(reads.getIncubadora);
+export const listCajas = guard(reads.listCajas);
+export const getCaja = guard(reads.getCaja);
+export const getHorno = guard(reads.getHorno);
+export const getCochada = guard(reads.getCochada);
+export const getAlimento = guard(reads.getAlimento);
+export const getEnsilado = guard(reads.getEnsilado);
+export const getRevisar = guard(reads.getRevisar);
+export const getRegistro = guard(reads.getRegistro);
 
-/* ── writes (unchanged signatures) ──────────────────────────────────────── */
+/* What each form starts from. */
+export const getFormRecolecta = guard(reads.getFormRecolecta);
+export const previewRecolecta = guard(reads.previewRecolecta);
+export const getFormChequeo = guard(reads.getFormChequeo);
+export const getFormDistribucion = guard(reads.getFormDistribucion);
+export const getFormCargas = guard(reads.getFormCargas);
+export const getFormSeparacion = guard(reads.getFormSeparacion);
+export const getFormCochada = guard(reads.getFormCochada);
+export const getFormIngreso = guard(reads.getFormIngreso);
+export const previewIngreso = guard(reads.previewIngreso);
+export const getFormEnsilado = guard(reads.getFormEnsilado);
 
-export const createInsectario = guard(writes.createInsectario, { isWrite: true });
-export const marcarAtractante = guard(writes.marcarAtractante, { isWrite: true });
-export const marcarCierre = guard(writes.marcarCierre, { isWrite: true });
-export const createRecoleccion = guard(writes.createRecoleccion, { isWrite: true });
-export const createBandeja = guard(writes.createBandeja, { isWrite: true });
-export const logAlimentacion = guard(writes.logAlimentacion, { isWrite: true });
-export const logAlimentacionGrupal = guard(writes.logAlimentacionGrupal, { isWrite: true });
-export const logAyuno = guard(writes.logAyuno, { isWrite: true });
-export const logRevision = guard(writes.logRevision, { isWrite: true });
-export const logSeparacion = guard(writes.logSeparacion, { isWrite: true });
-export const createLote = guard(writes.createLote, { isWrite: true });
-export const updateLoteQC = guard(writes.updateLoteQC, { isWrite: true });
-export const marcarEmpacado = guard(writes.marcarEmpacado, { isWrite: true });
-export const marcarDespachado = guard(writes.marcarDespachado, { isWrite: true });
+/* ── writes ─────────────────────────────────────────────────────────────── */
 
-/* ── additions ──────────────────────────────────────────────────────────── */
+const W = fn => guard(fn, { isWrite: true });
 
-/** Close a fast. Without this `merma_pct` can never be computed, because a
- *  fast is two visits and the mock only ever recorded the first. */
-export const logAyunoFin = guard(writes.logAyunoFin, { isWrite: true });
-export const listAyunosAbiertos = guard(reads.listAyunosAbiertos);
-export const rechazarLote = guard(writes.rechazarLote, { isWrite: true });
-/** Remember a typed name so it comes back as a chip. Local convenience only. */
-export const rememberOperator = guard(writes.rememberOperator);
+/** Remember a typed name so it comes back as a chip, on every phone. */
+export const rememberOperator = W(writes.rememberOperator);
 /**
- * Who is registering, for the one-tap actions (Atractante, QC, empacado…).
- * The screen keeps the chosen name across reloads; it MUST hand it back here on
- * start, or those actions record nobody. QA found exactly that: every `*_por`
- * column null although the header showed a name.
+ * Who is registering. The screen keeps the chosen name across reloads; it MUST
+ * hand it back here on start, or the one-tap actions record nobody.
  */
 export const setOperator = guard(async nombre => {
   const n = await writes.setCurrentOperator(nombre);
   return n ? { ok: true, data: { nombre: n } } : { ok: false, error: { code: 'validation_error', message: 'Nombre vacío.' } };
 });
 
-/* ── protocolo v2 ───────────────────────────────────────────────────────── */
+export const registrarRack = W(writes.registrarRack);
+export const registrarContenedor = W(writes.registrarContenedor);
+export const registrarJaula = W(writes.registrarJaula);
+export const registrarRecolecta = W(writes.registrarRecolecta);
+export const registrarChequeos = W(writes.registrarChequeos);
+export const distribuir = W(writes.distribuir);
+export const registrarCargas = W(writes.registrarCargas);
+export const registrarSeparaciones = W(writes.registrarSeparaciones);
+export const crearCochada = W(writes.crearCochada);
+export const registrarLectura = W(writes.registrarLectura);
+export const registrarIngreso = W(writes.registrarIngreso);
+export const registrarEventoJaula = W(writes.registrarEventoJaula);
+export const registrarMovimiento = W(writes.registrarMovimiento);
+export const cerrarObjeto = W(writes.cerrarObjeto);
+export const registrarRecepcion = W(writes.registrarRecepcion);
+export const crearEnsilado = W(writes.crearEnsilado);
+export const abrirEnsilado = W(writes.abrirEnsilado);
+export const editarRegistro = W(writes.editarRegistro);
+export const marcarRevisado = W(writes.marcarRevisado);
 
-export const getProtocolo = guard(reads.getProtocolo);
-export const listIncubadoras = guard(reads.listIncubadoras);
-export const getIncubadoraDetail = guard(reads.getIncubadoraDetail);
-export const createRecoleccionV2 = guard(writes.createRecoleccionV2, { isWrite: true });
-export const distribuirIncubadora = guard(writes.distribuirIncubadora, { isWrite: true });
-export const logCarga = guard(writes.logCarga, { isWrite: true });
-export const logAyunoGrupal = guard(writes.logAyunoGrupal, { isWrite: true });
+/* ── helpers for the screens ───────────────────────────────────────────── */
 
-/* ── alimento: recepción, ensilaje, stock ─────────────────────────────── */
-
-export const listRecepciones = guard(reads.listRecepciones);
-export const listEnsilajes = guard(reads.listEnsilajes);
-export const getEnsilajeDetail = guard(reads.getEnsilajeDetail);
-export const getStockAlimento = guard(reads.getStockAlimento);
-export const createRecepcion = guard(writes.createRecepcion, { isWrite: true });
-export const createEnsilaje = guard(writes.createEnsilaje, { isWrite: true });
-export const avanzarEnsilaje = guard(writes.avanzarEnsilaje, { isWrite: true });
-export const logLecturaEnsilaje = guard(writes.logLecturaEnsilaje, { isWrite: true });
-
-/* ── lo que toca hoy ───────────────────────────────────────────────────── */
-
-export const getMonitor = guard(reads.getMonitor);
-export const logTemperaturaCama = guard(writes.logTemperaturaCama, { isWrite: true });
-
-/** Farm-calendar helpers for the screens, so a preview never disagrees with
- *  what is saved (the UI's own date math read date-only strings as UTC). */
+/** Farm-calendar helpers, so a preview never disagrees with what is saved. */
 export const fechas = { farmDay, ddmm, toNaiveLocal, addDays };
+/** The same arithmetic and wording the data layer uses. */
+export const calc = { repartoSeparacion, kgTxt, diaTxt, fechaHoraTxt, cuandoTxt };
 
 export { getSyncStatus, onChange, statusLabel };
 export const sync = () => syncNow({ force: true });
@@ -238,43 +213,39 @@ export const listConflicts = guard(async opts => {
 export const resolveConflict = guard(async (id, action) => {
   const db = await openDb();
   const res = await _resolveConflict(db, id, action);
+  // "Descartar" takes rows back on this phone: the picture of the lab changed.
+  invalidarSnapshot();
   await refreshStatus();
   nudge();
   return res;
 }, { isWrite: true });
 
-export { capturePhoto, localPhotoUrl };
-export const attachPhotoToRow = guard(async (blobId, table, rowId) => {
-  const db = await openDb();
-  return { ok: true, data: { key: await attachPhoto(db, blobId, table, rowId) } };
-});
+export { capturePhoto, localPhotoUrl, photoUrlFor };
 
 export const signIn = () => signInWithGoogle();
 export const signOutUser = async () => { await signOut(); await refreshStatus(); };
 export const getSession = fetchSession;
 
 /* ── window handoff ─────────────────────────────────────────────────────────
- * `loadApi()` (dc.html:865-871) polls for this global and only falls back to a
- * dynamic import after a 2000 ms timeout. Nothing ever assigned it, so EVERY
- * launch paid the full two seconds before showing any data. Assigning it here
- * removes that entirely.
+ * The template's `loadApi()` polls for this global and only falls back to a
+ * dynamic import after a timeout; assigning it here means no launch waits.
  */
 const api = {
-  NOMBRES_INSECTARIO, TIPO_INICIADOR, TIPO_ALIMENTO, QC_COLOR_DORADO, EVENTO_TIPOS,
-  listInsectarios, getInsectarioDetail, listRecolecciones, listBandejas,
-  getBandejaDetail, listSeparacionesDisponibles, listLotes, getLoteDetail, listOperators,
-  createInsectario, marcarAtractante, marcarCierre, createRecoleccion, createBandeja,
-  logAlimentacion, logAlimentacionGrupal, logAyuno, logRevision, logSeparacion,
-  createLote, updateLoteQC, marcarEmpacado, marcarDespachado,
-  logAyunoFin, listAyunosAbiertos, rechazarLote, rememberOperator, setOperator,
-  getProtocolo, listIncubadoras, getIncubadoraDetail, createRecoleccionV2,
-  distribuirIncubadora, logCarga, logAyunoGrupal, fechas,
-  MATERIALES_ALIMENTO, listRecepciones, listEnsilajes, getEnsilajeDetail, getStockAlimento,
-  createRecepcion, createEnsilaje, avanzarEnsilaje, logLecturaEnsilaje,
-  getMonitor, logTemperaturaCama,
-  getSyncStatus, onChange, statusLabel, sync,
+  MATERIALES_ALIMENTO,
+  getInicio, getProtocolo, listOperators, listRacks, listContenedores, listJaulas, getJaula,
+  listIncubadoras, getIncubadora, listCajas, getCaja, getHorno, getCochada, getAlimento,
+  getEnsilado, getRevisar, getRegistro,
+  getFormRecolecta, previewRecolecta, getFormChequeo, getFormDistribucion, getFormCargas,
+  getFormSeparacion, getFormCochada, getFormIngreso, previewIngreso, getFormEnsilado,
+  rememberOperator, setOperator,
+  registrarRack, registrarContenedor, registrarJaula, registrarRecolecta, registrarChequeos,
+  distribuir, registrarCargas, registrarSeparaciones, crearCochada, registrarLectura,
+  registrarIngreso, registrarEventoJaula, registrarMovimiento, cerrarObjeto,
+  registrarRecepcion, crearEnsilado, abrirEnsilado, editarRegistro, marcarRevisado,
+  fechas, calc,
+  getSyncStatus, onChange, statusLabel, sync, initErrors,
   listConflicts, resolveConflict,
-  capturePhoto, localPhotoUrl, attachPhotoToRow,
+  capturePhoto, localPhotoUrl, photoUrlFor,
   signIn, signOutUser, getSession, ready
 };
 

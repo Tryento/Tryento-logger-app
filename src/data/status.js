@@ -44,6 +44,8 @@ export const markSynced = () => { _lastSyncAt = Date.now(); _lastError = null; }
  *  again when this number moves; before, another phone's work only appeared
  *  after the next save here. */
 export const markDataChanged = () => { _dataGen++; };
+/** The same number, for code that keeps a picture of the data (snapshot.js). */
+export const dataGeneration = () => _dataGen;
 export const markSyncError = e => { _lastError = e?.message || String(e || ''); };
 
 export async function getSyncStatus() {

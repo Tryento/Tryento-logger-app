@@ -1,7 +1,7 @@
 /**
  * open.js — database handle, upgrades, and durable-storage acquisition.
  */
-import { DB_NAME, DB_VERSION, MIGRATIONS } from './schema.js';
+import { DB_NAME, DB_VERSION, MIGRATIONS, LEGACY_DB_NAMES } from './schema.js';
 
 let _dbPromise = null;
 
@@ -62,6 +62,26 @@ export function openDb() {
   });
 
   return _dbPromise;
+}
+
+/**
+ * Delete the databases of earlier protocols.
+ *
+ * What they hold names tables the server no longer has (0010 rebuilt them), so
+ * none of it can sync, and keeping it only spends the phone's storage. Never
+ * waits on another tab: an old tab still holding the database open delays the
+ * deletion until it closes, and that is fine.
+ */
+export function deleteLegacyDbs() {
+  const idb = globalThis.indexedDB;
+  if (!idb?.deleteDatabase) return Promise.resolve([]);
+  return Promise.all(LEGACY_DB_NAMES.map(name => new Promise(resolve => {
+    let req;
+    try { req = idb.deleteDatabase(name); } catch { return resolve(null); }
+    req.onsuccess = () => resolve(name);
+    req.onerror = () => resolve(null);
+    req.onblocked = () => resolve(null);
+  })));
 }
 
 /**

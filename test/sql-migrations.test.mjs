@@ -1,10 +1,18 @@
 /**
  * Migrations, run in a REAL Postgres (PGlite).
  *
- * Syntax checking passed every one of these files while production was broken
- * by them. What matters is what happens when they run — against a fresh
- * database AND against a replica of the live one, built from the migrations
- * exactly as they were when they were applied (test/helpers/pg.mjs).
+ * Syntax checking passed every file that ever broke production. What matters
+ * is what happens when they run — against a fresh database AND against a
+ * replica of the live one, built from the migrations exactly as they were when
+ * they were applied (test/helpers/pg.mjs).
+ *
+ * 0010 rebuilds the schema for the lab's new protocols; 0001–0009 stay in the
+ * folder as history. So, now:
+ *   - a fresh install (SETUP_COMPLETO.sql, which starts at 0010) works;
+ *   - 0010 over production as it is today keeps the people's names and
+ *     removes everything else;
+ *   - running it again deletes nothing new;
+ *   - every trigger and call the app relies on behaves.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,686 +20,509 @@ import { randomUUID as uid } from 'node:crypto';
 import { freshPg, liveReplica, readSql, overloads, tableExists } from './helpers/pg.mjs';
 
 const MIG = n => readSql(`supabase/migrations/${n}`);
-const R0005 = '0005_renombrar_lote.sql';
-const R0006 = '0006_sobrecargas.sql';
-const R0007 = '0007_protocolo_v2.sql';
-const R0008 = '0008_alimento.sql';
-const R0009 = '0009_monitor.sql';
+const R0010 = '0010_ciclo_nuevo.sql';
+/** Run in production after the replica's starting point and before 0010. */
+const SINCE_REPLICA = ['0005_renombrar_lote.sql', '0006_sobrecargas.sql', '0007_protocolo_v2.sql',
+                       '0008_alimento.sql', '0009_monitor.sql'];
 
+const TABLES = [
+  'catalogo', 'parametro', 'rack', 'contenedor', 'jaula', 'recepcion', 'ensilado',
+  'ensilado_insumo', 'incubadora', 'distribucion', 'caja', 'chequeo', 'alimentacion',
+  'separacion', 'cochada', 'cochada_origen', 'cochada_lectura', 'ingreso',
+  'bandeja_pupacion', 'jaula_evento', 'movimiento'
+];
+const OLD_TABLES = [
+  'insectario', 'recoleccion', 'bandeja', 'ayuno', 'revision', 'lote', 'lote_separacion',
+  'ayuno_huerfano', 'migracion_log', 'recepcion_alimento', 'ensilaje', 'ensilaje_insumo',
+  'ensilaje_lectura'
+];
 /** Functions the app calls; each must exist exactly once. */
-const APP_FUNCTIONS = [
-  'marcar_atractante', 'marcar_cierre', 'cerrar_ayuno', 'actualizar_qc_lote',
-  'marcar_empacado', 'marcar_despachado', 'rechazar_lote', 'crear_lote',
-  'log_alimentacion_grupal', 'crear_recoleccion_v2', 'distribuir_incubadora',
-  'crear_ensilaje', 'avanzar_ensilaje'
-];
-/** Added by a given migration, so earlier states are not expected to have them. */
-const ADDED_BY = {
-  crear_recoleccion_v2: R0007, distribuir_incubadora: R0007,
-  crear_ensilaje: R0008, avanzar_ensilaje: R0008
-};
-const VIEWS = [
-  'v_rendimiento_bandeja', 'v_fcr_bandeja', 'v_tiempos_ciclo',
-  'v_productividad_insectario', 'v_rendimiento_lote', 'v_actividad_operario',
-  'v_consumo_alimento', 'v_calidad_datos', 'v_bandejas_activas',
-  'v_insectarios_activos', 'v_lotes_activos', 'v_estado_drift', 'v_nombres_registrados',
-  'v_incubadoras_activas', 'v_stock_material', 'v_stock_ensilaje', 'v_consumo_ensilaje_diario',
-  'v_temperatura_cama'
-];
-const VIEWS_0008 = ['v_stock_material', 'v_stock_ensilaje', 'v_consumo_ensilaje_diario'];
-const VIEWS_0009 = ['v_temperatura_cama'];
+const RPCS = ['distribuir', 'crear_cochada', 'ingresar', 'crear_ensilado', 'abrir_ensilado',
+              'cerrar_objeto', 'editar', 'marcar_revisado'];
 
-/**
- * Production as it will be once the user runs the pending files, in order.
- * 0005 and 0006 are already applied there (confirmed with check-sql-applied on
- * 2026-09-29); the replica still starts from the migrations as first applied.
- */
-async function productionAfterRelease1() {
+const one = async (db, sql, params) => (await db.query(sql, params)).rows[0];
+const count = async (db, sql, params) => (await one(db, sql, params)).n;
+const json = v => JSON.stringify(v);
+const code = c => err => err.code === c;
+
+/** Production today: the live replica plus every file run there since. */
+async function productionToday() {
   const db = await liveReplica();
-  await db.exec(await MIG(R0005));
-  await db.exec(await MIG(R0006));
-  await db.exec(await MIG(R0007));
+  for (const f of SINCE_REPLICA) await db.exec(await MIG(f));
   return db;
 }
 
-async function productionAfterRelease2() {
-  const db = await productionAfterRelease1();
-  await db.exec(await MIG(R0008));
+async function fresh() {
+  const db = await freshPg();
+  await db.exec(await readSql('supabase/SETUP_COMPLETO.sql'));
   return db;
 }
 
-async function productionAfterRelease3() {
-  const db = await productionAfterRelease2();
-  await db.exec(await MIG(R0009));
-  return db;
-}
-
-/** What exists once 0005 + 0006 ran, before 0007 adds the v2 functions. */
-const LOTE_FUNCTIONS = APP_FUNCTIONS.filter(f => !ADDED_BY[f]);
-/** What exists after 0007, before 0008. */
-const V2_FUNCTIONS = APP_FUNCTIONS.filter(f => ADDED_BY[f] !== R0008);
-
-async function assertOneOverloadEach(db, fns = APP_FUNCTIONS) {
-  for (const fn of fns) {
+async function assertOneOverloadEach(db) {
+  for (const fn of RPCS) {
     const sigs = await overloads(db, fn);
     assert.equal(sigs.length, 1, `${fn} debe existir una sola vez; hay: ${sigs.join(' | ') || '(ninguna)'}`);
   }
 }
 
-async function assertViewsQueryable(db, views = VIEWS) {
-  for (const v of views) {
-    await db.query(`select * from app.${v} limit 1`)
-      .catch(e => assert.fail(`la vista ${v} no se puede consultar: ${e.message}`));
-  }
+/* ── small builders, in the shape the app sends ─────────────────────────── */
+
+async function rack(db, codigo) {
+  const id = uid();
+  await db.query(`insert into app.rack (id, codigo) values ($1, $2)`, [id, codigo]);
+  return id;
 }
 
-/** Seed a minimal chain up to one separated tray, returning ids. */
-async function seedChain(db, prefix) {
-  const q = (s, p) => db.query(s, p);
-  const ins = (await q(`insert into app.insectario (id, codigo, nombre_insectario, fecha_inicio)
-                        values (gen_random_uuid(), $1, 'ICA', '2026-09-01') returning id`, [prefix + '-INS'])).rows[0].id;
-  const rec = (await q(`insert into app.recoleccion (id, insectario_id, recolecta, fecha)
-                        values (gen_random_uuid(), $1, '1', now()) returning id`, [ins])).rows[0].id;
-  const ban = (await q(`insert into app.bandeja (id, recoleccion_id, no_bandeja, id_bandeja, fecha)
-                        values (gen_random_uuid(), $1, 1, $2, now()) returning id`, [rec, prefix + '.1'])).rows[0].id;
-  const sep = (await q(`insert into app.separacion (id, bandeja_id, fecha, larva_limpia_g)
-                        values (gen_random_uuid(), $1, now(), 410) returning id`, [ban])).rows[0].id;
-  return { ins, rec, ban, sep };
+async function jaula(db, { letra = 'A', nombre = 'ICA', gen = 7, fase = 'activa' } = {}) {
+  const id = uid();
+  await db.query(`insert into app.jaula (id, nombre, letra, lugar, generacion_inicial, fase_inicial, registrado_por)
+                  values ($1, $2, $3, 'Galpón 1', $4, $5, 'Maria')`, [id, nombre, letra, gen, fase]);
+  return id;
 }
 
-async function runLoteLifecycle(db, sepId, codigo) {
-  const id = (await db.query(`select gen_random_uuid() as id`)).rows[0].id;
-  await db.query(`select app.crear_lote($1::jsonb, $2::uuid[])`,
-    [JSON.stringify({ id, codigo, fecha: new Date().toISOString(), peso_inicial_kg: 0.41 }), [sepId]]);
-  await db.query(`select app.actualizar_qc_lote($1, 14, 0.11, 'Muy Crujiente', 'quiebre limpio', true, null, 'Maria')`, [id]);
-  await db.query(`select app.marcar_empacado($1, null, 'Maria')`, [id]);
-  await db.query(`select app.marcar_despachado($1, 'Ricardo')`, [id]);
-  const r = (await db.query(`select estado, qc_por, empacado_por, despachado_por, qc_prueba_crujiente
-                               from app.lote where id = $1`, [id])).rows[0];
-  return { id, ...r };
+async function incubadora(db, { jaulaId, codigo = 'F7A-1', gen = 7, numero = 1,
+                                at = '2026-10-20T03:30:00Z', rackId = null } = {}) {
+  const id = uid();
+  await db.query(`insert into app.incubadora (id, codigo, jaula_id, generacion, numero, recolecta_at, rack_id,
+                    peso_inicial_g, alimento_inicial_kg, registrado_por)
+                  values ($1, $2, $3, $4, $5, $6, $7, 12.5, 2, 'Maria')`,
+                 [id, codigo, jaulaId, gen, numero, at, rackId]);
+  return id;
 }
+
+/** distribución with n cajas and their carga 1. */
+function distribucionDe(incId, n = 2, { rackId = null } = {}) {
+  const dist = { id: uid(), incubadora_id: incId, fecha: '2026-10-26T13:00:00Z',
+                 peso_total_kg: 0.9 * n, registrado_por: 'Ricardo' };
+  const cajas = Array.from({ length: n }, (_, i) => ({
+    id: uid(), codigo: `F7A-1-0${i + 1}`, numero: i + 1, rack_id: rackId, peso_inicial_kg: 0.9
+  }));
+  const cargas = cajas.map(c => ({ id: uid(), caja_id: c.id, carga: 1, fecha: dist.fecha,
+                                   kg: 1.5, kg_plan: 1.5, dia_plan: 7 }));
+  return { dist, cajas, cargas };
+}
+
+const distribuir = (db, { dist, cajas, cargas }) =>
+  db.query(`select app.distribuir($1::jsonb, $2::jsonb, $3::jsonb)`, [json(dist), json(cajas), json(cargas)]);
 
 /* ── fresh install ─────────────────────────────────────────────────────── */
 
-test('fresh install: SETUP_COMPLETO applies on an empty database', async () => {
-  const db = await freshPg();
-  await db.exec(await readSql('supabase/SETUP_COMPLETO.sql'));
-  assert.ok(await tableExists(db, 'lote'));
-  assert.ok(await tableExists(db, 'lote_separacion'));
-  assert.ok(!await tableExists(db, 'cochada'));
-});
-
-test('fresh install: every function the app calls exists exactly once', async () => {
-  const db = await freshPg();
-  await db.exec(await readSql('supabase/SETUP_COMPLETO.sql'));
+test('fresh install: SETUP_COMPLETO builds the new schema and seeds it', async () => {
+  const db = await fresh();
+  for (const t of TABLES) assert.ok(await tableExists(db, t), `falta la tabla ${t}`);
+  for (const t of OLD_TABLES) assert.ok(!(await tableExists(db, t)), `${t} es del protocolo anterior`);
   await assertOneOverloadEach(db);
-});
 
-test('fresh install: the whole lote lifecycle works, with attribution', async () => {
-  const db = await freshPg();
-  await db.exec(await readSql('supabase/SETUP_COMPLETO.sql'));
-  const { sep } = await seedChain(db, 'F');
-  const lote = await runLoteLifecycle(db, sep, 'CO-FRESH');
-  assert.equal(lote.estado, 'despachado');
-  assert.equal(lote.qc_por, 'Maria');
-  assert.equal(lote.empacado_por, 'Maria');
-  assert.equal(lote.despachado_por, 'Ricardo');
-  assert.equal(lote.qc_prueba_crujiente, 'quiebre limpio', 'las notas de la prueba crujiente se guardan');
-  await assertViewsQueryable(db);
-});
-
-test('SETUP_COMPLETO is for EMPTY databases only (never tell anyone to re-run it)', async () => {
-  // The old 0005 instructions said to re-run it on production. It fails on its
-  // first statement, which is why 0005 now recreates everything itself.
-  const db = await liveReplica();
-  await assert.rejects(db.exec(await readSql('supabase/SETUP_COMPLETO.sql')), /already exists/);
-});
-
-/* ── the live database ─────────────────────────────────────────────────── */
-
-test('live replica reproduces the production defects (so the fix is tested against them)', async () => {
-  const db = await liveReplica();
-  assert.ok(await tableExists(db, 'cochada'), 'la replica debe tener los nombres viejos');
-  assert.equal((await overloads(db, 'marcar_despachado')).length, 2, 'la replica debe tener la sobrecarga duplicada');
-  await assert.rejects(
-    db.query(`select app.marcar_despachado('00000000-0000-4000-8000-000000000000'::uuid)`),
-    /is not unique/, 'la llamada sin p_por es ambigua en producción hoy');
-});
-
-test('0005 + 0006 on the live replica: data kept, names changed, functions work', async () => {
-  const db = await liveReplica();
-
-  // Data that exists before the fix, created with the production functions.
-  const { sep } = await seedChain(db, 'L');
-  const cid = (await db.query(`select gen_random_uuid() as id`)).rows[0].id;
-  await db.query(`select app.crear_cochada($1::jsonb, $2::uuid[])`,
-    [JSON.stringify({ id: cid, codigo: 'CO-LIVE', fecha: new Date().toISOString(), peso_inicial_kg: 0.41 }), [sep]]);
-
-  await db.exec(await MIG(R0005));
-  await db.exec(await MIG(R0006));
-
-  // Names.
-  assert.ok(await tableExists(db, 'lote'));
-  assert.ok(await tableExists(db, 'lote_separacion'));
-  assert.ok(!await tableExists(db, 'cochada'));
-  assert.ok(!await tableExists(db, 'cochada_separacion'));
-
-  // Data survived and the join column was renamed.
-  const lote = (await db.query(`select codigo from app.lote where id = $1`, [cid])).rows[0];
-  assert.equal(lote.codigo, 'CO-LIVE');
-  const link = (await db.query(`select lote_id from app.lote_separacion where separacion_id = $1`, [sep])).rows[0];
-  assert.equal(link.lote_id, cid);
-
-  // Functions: exactly one of each, none left pointing at cochada.
-  await assertOneOverloadEach(db, LOTE_FUNCTIONS);
-  const stale = await db.query(`
-    select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-     where n.nspname = 'app' and (p.prosrc ilike '%cochada%' or p.proname ilike '%cochada%')`);
-  assert.deepEqual(stale.rows, [], 'ninguna función puede seguir mencionando cochada');
-
-  // The migrated lote goes through the rest of its life.
-  await db.query(`select app.actualizar_qc_lote($1, 14, 0.11, null, null, true, null, 'Maria')`, [cid]);
-  await db.query(`select app.marcar_empacado($1, null, 'Maria')`, [cid]);
-  await db.query(`select app.marcar_despachado($1, 'Ricardo')`, [cid]);
-  const after = (await db.query(`select estado, despachado_por from app.lote where id = $1`, [cid])).rows[0];
-  assert.equal(after.estado, 'despachado');
-  assert.equal(after.despachado_por, 'Ricardo');
-
-  // And new lotes can be created.
-  const { sep: sep2 } = await seedChain(db, 'L2');
-  const fresh = await runLoteLifecycle(db, sep2, 'CO-NEW');
-  assert.equal(fresh.estado, 'despachado');
-
-  await assertViewsQueryable(db, VIEWS.filter(v => v !== 'v_incubadoras_activas' &&
-                                                   !VIEWS_0008.includes(v) && !VIEWS_0009.includes(v)));
-  const cols = await db.query(`select column_name from information_schema.columns
-                                where table_schema = 'app' and table_name = 'v_tiempos_ciclo'`);
-  assert.ok(cols.rows.some(r => r.column_name === 'dias_separacion_a_lote'));
-});
-
-test('after 0006, calls WITHOUT p_por work again (older phones)', async () => {
-  const db = await liveReplica();
-  await db.exec(await MIG(R0005));
-  await db.exec(await MIG(R0006));
-  const NOBODY = '00000000-0000-4000-8000-000000000000';
-  await db.query(`select app.marcar_despachado($1::uuid)`, [NOBODY]);
-  await db.query(`select app.marcar_atractante($1::uuid, current_date)`, [NOBODY]);
-  await db.query(`select app.marcar_empacado($1::uuid, null::date)`, [NOBODY]);
-});
-
-test('0005 to 0009 are safe to run twice', async () => {
-  const db = await liveReplica();
-  for (let i = 0; i < 2; i++) {
-    await db.exec(await MIG(R0005));
-    await db.exec(await MIG(R0006));
-    await db.exec(await MIG(R0007));
-    await db.exec(await MIG(R0008));
-    await db.exec(await MIG(R0009));
-  }
-  await assertOneOverloadEach(db);
-  await assertViewsQueryable(db);
-});
-
-test('0005 run by mistake on a NEW database changes nothing and breaks nothing', async () => {
-  const db = await freshPg();
-  await db.exec(await readSql('supabase/SETUP_COMPLETO.sql'));
-  await db.exec(await MIG(R0005));
-  await db.exec(await MIG(R0006));
-  await assertOneOverloadEach(db);
-  const { sep } = await seedChain(db, 'M');
-  const lote = await runLoteLifecycle(db, sep, 'CO-MISTAKE');
-  assert.equal(lote.estado, 'despachado');
-  await assertViewsQueryable(db);
-});
-
-/* ── 0007: protocolo v2 ────────────────────────────────────────────────── */
-
-const T0 = '2026-09-01T14:00:00.000Z';
-const one = async (db, sql, params) => (await db.query(sql, params)).rows[0];
-
-/**
- * The whole v2 cycle through the functions the app calls:
- * recolecta + incubadora → distribución (3 bandejas + carga 1) → carga 2.
- */
-async function v2Chain(db, { codigo = 'F7AR9', recolecta = '9', nombre = 'ICA' } = {}) {
-  const ins = uid(), rec = uid(), inc = uid();
-  await db.query(`insert into app.insectario (id, codigo, nombre_insectario, fecha_inicio, generacion_moscas)
-                  values ($1, $2, $3, '2026-08-01', 'F7')`, [ins, `${nombre}-${codigo}`, nombre]);
-
-  await db.query(`select app.crear_recoleccion_v2($1::jsonb, $2::jsonb)`, [
-    JSON.stringify({ id: rec, insectario_id: ins, recolecta, fecha: T0, peso_ovipositores_g: 350,
-                     atrayente_cambiado: true, registrado_por: 'Maria', created_at: T0 }),
-    JSON.stringify({ id: inc, codigo, fecha_inicio: '2026-09-01', starter_kg: 2, registrado_por: 'Maria' })
+  const claves = (await db.query(`select clave from app.parametro order by clave`)).rows.map(r => r.clave);
+  assert.deepEqual(claves, [
+    'alimento_inicial_incubadora_kg', 'cargas', 'dia_chequeo_incubadora', 'dia_distribucion',
+    'dia_inicio_ayuno', 'dia_separacion', 'dias_chequeo_caja', 'dias_ciclo_jaula', 'dias_maduracion',
+    'dias_recolecta', 'horas_consumo', 'kg_bandeja_pupacion', 'pct_coccion'
   ]);
-
-  const bandejas = [1, 2, 3].map(n => ({ id: uid(), no_bandeja: n, id_bandeja: `${codigo}-0${n}`, individuos: 25000 }));
-  const grupal = uid();
-  const carga1 = bandejas.map(b => ({ id: uid(), bandeja_id: b.id, cantidad_kg: 1.5, carga: 1,
-                                      tipo_alimento: 'Ensilaje', grupal_id: grupal }));
-  const distribucion = { incubadora_id: inc, fecha: '2026-09-08T13:00:00.000Z',
-                         registrado_por: 'Ricardo', individuos_total: 75000 };
-  await db.query(`select app.distribuir_incubadora($1::jsonb, $2::jsonb, $3::jsonb)`,
-    [JSON.stringify(distribucion), JSON.stringify(bandejas), JSON.stringify(carga1)]);
-
-  const grupal2 = uid();
-  const carga2 = bandejas.map(b => ({ id: uid(), bandeja_id: b.id, fecha: '2026-09-11T13:00:00.000Z',
-    tipo_alimento: 'Ensilaje', cantidad_kg: 2.0, carga: 2, tamizado: true, grupal_id: grupal2,
-    registrado_por: 'Maria', created_at: '2026-09-11T13:00:05.000Z' }));
-  await db.query(`select app.log_alimentacion_grupal($1::jsonb)`, [JSON.stringify(carga2)]);
-
-  return { ins, rec, inc, bandejas, distribucion, carga1 };
-}
-
-test('0007, 0008 and 0009 on production: existing rows become v1 without being re-downloaded', async () => {
-  const db = await liveReplica();
-  const { ins, rec, ban, sep } = await seedChain(db, 'OLD');
-  const alim = uid(), ay = uid(), rev = uid();
-  await db.query(`insert into app.alimentacion (id, bandeja_id, fecha, tipo_alimento, cantidad_kg)
-                  values ($1, $2, now(), 'Bagazo', 1.2)`, [alim, ban]);
-  await db.query(`insert into app.ayuno (id, bandeja_id, fecha, peso_inicial_kg) values ($1, $2, now(), 3.1)`, [ay, ban]);
-  await db.query(`insert into app.revision (id, bandeja_id, fecha) values ($1, $2, now())`, [rev, ban]);
-  const stamp = async () => (await db.query(`
-    select 'r' k, updated_at from app.recoleccion where id = $1 union all
-    select 'b', updated_at from app.bandeja      where id = $2 union all
-    select 'a', updated_at from app.alimentacion where id = $3 union all
-    select 'y', updated_at from app.ayuno        where id = $4 union all
-    select 's', updated_at from app.separacion   where id = $5 union all
-    select 'v', updated_at from app.revision     where id = $6 order by 1`, [rec, ban, alim, ay, sep, rev])).rows;
-  const before = await stamp();
-
-  await db.exec(await MIG(R0005));
-  await db.exec(await MIG(R0006));
-  await db.exec(await MIG(R0007));
-  await db.exec(await MIG(R0008));
-  await db.exec(await MIG(R0009));
-
-  assert.deepEqual(await stamp(), before, 'agregar columnas no debe tocar updated_at: los teléfonos bajarían todo otra vez');
-  for (const [t, id] of [['recoleccion', rec], ['bandeja', ban], ['alimentacion', alim], ['ayuno', ay], ['separacion', sep]]) {
-    assert.equal((await one(db, `select protocolo from app.${t} where id = $1`, [id])).protocolo, 'v1', `${t} queda v1`);
-  }
-  assert.ok(ins);
-  await assertOneOverloadEach(db);
-  await assertViewsQueryable(db);
-});
-
-test('0007: the full v2 cycle, with attribution, on production after Release 1', async () => {
-  const db = await productionAfterRelease1();
-  const c = await v2Chain(db);
-
-  const rec = await one(db, `select protocolo, peso_ovipositores_g, atrayente_cambiado, huevos_g from app.recoleccion where id = $1`, [c.rec]);
-  assert.equal(rec.protocolo, 'v2');
-  assert.equal(Number(rec.peso_ovipositores_g), 350);
-  assert.equal(rec.atrayente_cambiado, true);
-  assert.equal(rec.huevos_g, null, 'en v2 no se pesan huevos');
-
-  const inc = await one(db, `select estado, distribuida_por, individuos_total, codigo from app.incubadora where id = $1`, [c.inc]);
-  assert.equal(inc.estado, 'distribuida');
-  assert.equal(inc.distribuida_por, 'Ricardo');
-  assert.equal(inc.individuos_total, 75000);
-
-  const trays = (await db.query(`select protocolo, recoleccion_id, incubadora_id, estado, individuos, registrado_por
-                                   from app.bandeja where incubadora_id = $1 order by no_bandeja`, [c.inc])).rows;
-  assert.equal(trays.length, 3);
-  for (const t of trays) {
-    assert.equal(t.protocolo, 'v2');
-    assert.equal(t.recoleccion_id, c.rec, 'la bandeja v2 sigue unida a su recolecta');
-    assert.equal(t.estado, 'en_crecimiento');
-    assert.equal(t.individuos, 25000);
-    assert.equal(t.registrado_por, 'Ricardo');
-  }
-
-  const feeds = (await db.query(`select a.carga, a.protocolo, a.cantidad_kg, a.tamizado, a.registrado_por, a.created_at
-                                   from app.alimentacion a join app.bandeja b on b.id = a.bandeja_id
-                                  where b.incubadora_id = $1 order by a.carga`, [c.inc])).rows;
-  assert.equal(feeds.length, 6);
-  assert.deepEqual(feeds.map(f => f.carga), [1, 1, 1, 2, 2, 2]);
-  assert.ok(feeds.every(f => f.protocolo === 'v2'), 'el protocolo del evento es el de su bandeja');
-  assert.ok(feeds.filter(f => f.carga === 2).every(f => f.tamizado === true));
-  assert.ok(feeds.filter(f => f.carga === 1).every(f => f.registrado_por === 'Ricardo'));
-  assert.equal(new Date(feeds[5].created_at).toISOString(), '2026-09-11T13:00:05.000Z', 'se guarda cuándo se anotó');
-
-  // Days 14–15: a one-tap fast, no scale.
-  const tray = c.bandejas[0].id;
-  const ay = uid();
-  await db.query(`insert into app.ayuno (id, bandeja_id, fecha, horas_ayuno, registrado_por)
-                  values ($1, $2, '2026-09-15T12:00:00Z', 48, 'Maria')`, [ay, tray]);
-  assert.equal((await one(db, `select estado from app.bandeja where id = $1`, [tray])).estado, 'en_ayuno');
-  const ayRow = await one(db, `select protocolo, peso_inicial_kg from app.ayuno where id = $1`, [ay]);
-  assert.equal(ayRow.protocolo, 'v2');
-  assert.equal(ayRow.peso_inicial_kg, null);
-
-  // Day 16: the harvest closes the fast, again without weights.
-  await db.query(`select app.cerrar_ayuno($1, null, '2026-09-17T12:00:00Z', 'Maria')`, [ay]);
-  const closed = await one(db, `select cerrado_at, cerrado_por, peso_final_kg from app.ayuno where id = $1`, [ay]);
-  assert.ok(closed.cerrado_at);
-  assert.equal(closed.cerrado_por, 'Maria');
-  assert.equal(closed.peso_final_kg, null);
-
-  const sep = uid();
-  await db.query(`insert into app.separacion (id, bandeja_id, fecha, larva_limpia_g, reserva_cria_g, registrado_por)
-                  values ($1, $2, '2026-09-17T12:30:00Z', 4900, 100, 'Maria')`, [sep, tray]);
-  assert.equal((await one(db, `select protocolo from app.separacion where id = $1`, [sep])).protocolo, 'v2');
-  assert.equal((await one(db, `select estado from app.bandeja where id = $1`, [tray])).estado, 'cosechada');
-
-  // The 98 % goes on to baking exactly as before.
-  const lote = await runLoteLifecycle(db, sep, 'CO-V2');
-  assert.equal(lote.estado, 'despachado');
-
-  const prod = await one(db, `select n_recolecciones_v2, peso_ovipositores_g_total, kg_larva_v2, kg_reserva_cria_total
-                                from app.v_productividad_insectario where id = $1`, [c.ins]);
-  assert.equal(Number(prod.n_recolecciones_v2), 1);
-  assert.equal(Number(prod.peso_ovipositores_g_total), 350);
-  assert.equal(Number(prod.kg_larva_v2), 4.9);
-  assert.equal(Number(prod.kg_reserva_cria_total), 0.1);
-
-  const ciclo = await one(db, `select dia_ciclo_cosecha, protocolo from app.v_tiempos_ciclo where bandeja_id = $1`, [tray]);
-  assert.equal(ciclo.dia_ciclo_cosecha, 16, 'la cosecha cae en el día 16 del ciclo');
-  // Release 1 must stand on its own, without 0008 or 0009.
-  await assertOneOverloadEach(db, V2_FUNCTIONS);
-  await assertViewsQueryable(db, VIEWS.filter(v => !VIEWS_0008.includes(v) && !VIEWS_0009.includes(v)));
-});
-
-test('0007: a v1 fast still needs its weights', async () => {
-  const db = await productionAfterRelease1();
-  const { ban } = await seedChain(db, 'W');
-  await assert.rejects(
-    db.query(`insert into app.ayuno (id, bandeja_id, fecha) values ($1, $2, now())`, [uid(), ban]),
-    /ck_ayuno_peso_v1/);
-  const ay = uid();
-  await db.query(`insert into app.ayuno (id, bandeja_id, fecha, peso_inicial_kg) values ($1, $2, now(), 3)`, [ay, ban]);
-  await assert.rejects(db.query(`select app.cerrar_ayuno($1, null, now())`, [ay]), /ck_ayuno_cierre/,
-    'cerrar un ayuno v1 exige peso final, como siempre');
-  await db.query(`select app.cerrar_ayuno($1, 2.8, now())`, [ay]);
-  assert.equal(Number((await one(db, `select merma_pct from app.ayuno where id = $1`, [ay])).merma_pct).toFixed(3), '6.667');
-});
-
-test('0007: calls from phones on the previous build keep working', async () => {
-  const db = await productionAfterRelease1();
-  const { ban } = await seedChain(db, 'OLDAPP');
-  const ay = uid();
-  await db.query(`insert into app.ayuno (id, bandeja_id, fecha, peso_inicial_kg) values ($1, $2, now(), 3)`, [ay, ban]);
-  // Three arguments, no p_por: exactly what the previous build sends.
-  await db.query(`select app.cerrar_ayuno(p_id => $1, p_peso => 2.9, p_at => now())`, [ay]);
-  assert.equal(Number((await one(db, `select peso_final_kg from app.ayuno where id = $1`, [ay])).peso_final_kg), 2.9);
-
-  const row = { id: uid(), bandeja_id: ban, fecha: new Date().toISOString(), tipo_alimento: 'Bagazo',
-                cantidad_kg: 1, grupal_id: uid(), notas: '', registrado_por: 'Maria' };
-  await db.query(`select app.log_alimentacion_grupal($1::jsonb)`, [JSON.stringify([row])]);
-  const a = await one(db, `select carga, tamizado, protocolo from app.alimentacion where id = $1`, [row.id]);
-  assert.deepEqual(a, { carga: null, tamizado: false, protocolo: 'v1' });
-});
-
-test('0007: a distribution is all-or-nothing, and happens once', async () => {
-  const db = await productionAfterRelease1();
-  const c = await v2Chain(db);
-
-  // Same call again (the phone never got the answer): nothing duplicated.
-  await db.query(`select app.distribuir_incubadora($1::jsonb, $2::jsonb, $3::jsonb)`,
-    [JSON.stringify(c.distribucion), JSON.stringify(c.bandejas), JSON.stringify(c.carga1)]);
-  assert.equal(Number((await one(db, `select count(*) n from app.bandeja where incubadora_id = $1`, [c.inc])).n), 3);
-
-  // A second phone distributing the same incubadora with its own trays.
-  const other = [{ id: uid(), no_bandeja: 1, id_bandeja: 'F7AR9-01' }];
-  await assert.rejects(
-    db.query(`select app.distribuir_incubadora($1::jsonb, $2::jsonb, '[]'::jsonb)`,
-      [JSON.stringify(c.distribucion), JSON.stringify(other)]),
-    err => err.code === '23505' && /ya fue distribuida/.test(err.message));
-
-  // A bad tray in the batch: nothing is written and the incubadora is untouched.
-  const c2 = await v2Chain(db, { codigo: 'F7AR10', recolecta: '10', nombre: 'ICB' });
-  const inc3 = uid(), rec3 = uid();
-  await db.query(`select app.crear_recoleccion_v2($1::jsonb, $2::jsonb)`, [
-    JSON.stringify({ id: rec3, insectario_id: c2.ins, recolecta: '11', fecha: T0 }),
-    JSON.stringify({ id: inc3, codigo: 'F7BR11', fecha_inicio: '2026-09-01' })]);
-  const bad = [{ id: uid(), no_bandeja: 1, id_bandeja: 'F7BR11-01' }, { id: uid(), no_bandeja: 0, id_bandeja: 'F7BR11-00' }];
-  await assert.rejects(db.query(`select app.distribuir_incubadora($1::jsonb, $2::jsonb, '[]'::jsonb)`,
-    [JSON.stringify({ incubadora_id: inc3 }), JSON.stringify(bad)]));
-  assert.equal(Number((await one(db, `select count(*) n from app.bandeja where incubadora_id = $1`, [inc3])).n), 0);
-  assert.equal((await one(db, `select estado from app.incubadora where id = $1`, [inc3])).estado, 'incubando');
-});
-
-test('0007: every new function validates before writing (safe to probe)', async () => {
-  const db = await productionAfterRelease1();
-  await assert.rejects(db.query(`select app.crear_recoleccion_v2('{}'::jsonb, '{}'::jsonb)`), err => err.code === '22023');
-  await assert.rejects(db.query(`select app.distribuir_incubadora('{}'::jsonb, '[]'::jsonb, '[]'::jsonb)`), err => err.code === '22023');
-  assert.equal(Number((await one(db, `select count(*) n from app.recoleccion`)).n), 0);
-  assert.equal(Number((await one(db, `select count(*) n from app.incubadora`)).n), 0);
-});
-
-test('0007: a recolecta number or an incubadora code cannot be used twice', async () => {
-  const db = await productionAfterRelease1();
-  const c = await v2Chain(db);
-  // Another phone, same insectario, same recolecta number.
-  await assert.rejects(db.query(`select app.crear_recoleccion_v2($1::jsonb, $2::jsonb)`, [
-    JSON.stringify({ id: uid(), insectario_id: c.ins, recolecta: '9', fecha: T0 }),
-    JSON.stringify({ id: uid(), codigo: 'F7AR9-otro', fecha_inicio: '2026-09-01' })]),
-    err => err.code === '23505' && /ux_recoleccion_ordinal/.test(err.message));
-  // Same code on a different recolecta.
-  await assert.rejects(db.query(`select app.crear_recoleccion_v2($1::jsonb, $2::jsonb)`, [
-    JSON.stringify({ id: uid(), insectario_id: c.ins, recolecta: '12', fecha: T0 }),
-    JSON.stringify({ id: uid(), codigo: 'F7AR9', fecha_inicio: '2026-09-01' })]),
-    err => err.code === '23505' && /ux_incubadora_codigo/.test(err.message));
-  // Neither attempt left half a record behind.
-  assert.equal(Number((await one(db, `select count(*) n from app.recoleccion where insectario_id = $1`, [c.ins])).n), 1);
-});
-
-test('0007: an old app cannot label v2 work as v1', async () => {
-  const db = await productionAfterRelease1();
-  const c = await v2Chain(db);
-  const id = uid();
-  await db.query(`insert into app.alimentacion (id, bandeja_id, fecha, tipo_alimento, cantidad_kg, protocolo)
-                  values ($1, $2, now(), 'Bagazo', 1, 'v1')`, [id, c.bandejas[1].id]);
-  assert.equal((await one(db, `select protocolo from app.alimentacion where id = $1`, [id])).protocolo, 'v2');
-  // And a v2 tray without its incubadora is refused outright.
-  await assert.rejects(db.query(`insert into app.bandeja (id, recoleccion_id, no_bandeja, id_bandeja, fecha, protocolo)
-                                 values ($1, $2, 9, 'X', now(), 'v2')`, [uid(), c.rec]), /ck_bandeja_v2_incubadora/);
-});
-
-test('0007: egg grams are counted once per recolecta, not once per tray', async () => {
-  const db = await productionAfterRelease1();
-  const { ins, rec } = await seedChain(db, 'FAN');
-  await db.query(`update app.recoleccion set huevos_g = 10 where id = $1`, [rec]);
-  for (const n of [2, 3]) {
-    await db.query(`insert into app.bandeja (id, recoleccion_id, no_bandeja, id_bandeja, fecha)
-                    values ($1, $2, $3, $4, now())`, [uid(), rec, n, `FAN.${n}`]);
-  }
-  const p = await one(db, `select huevos_g_total, n_bandejas from app.v_productividad_insectario where id = $1`, [ins]);
-  assert.equal(Number(p.n_bandejas), 3);
-  assert.equal(Number(p.huevos_g_total), 10, 'antes daba 30: 10 g por cada una de las 3 bandejas');
-});
-
-test('0007: the data-quality view flags a carga logged twice', async () => {
-  const db = await productionAfterRelease1();
-  const c = await v2Chain(db);
-  const again = [{ id: uid(), bandeja_id: c.bandejas[0].id, fecha: new Date().toISOString(),
-                   tipo_alimento: 'Ensilaje', cantidad_kg: 2, carga: 2, grupal_id: uid() }];
-  await db.query(`select app.log_alimentacion_grupal($1::jsonb)`, [JSON.stringify(again)]);
-  const q = await one(db, `select n from app.v_calidad_datos where problema = 'carga_repetida'`);
-  assert.equal(Number(q.n), 1);
-});
-
-test('fresh install: SETUP_COMPLETO runs the v2 cycle and seeds the protocol settings', async () => {
-  const db = await freshPg();
-  await db.exec(await readSql('supabase/SETUP_COMPLETO.sql'));
-  const c = await v2Chain(db);
-  assert.equal(Number((await one(db, `select count(*) n from app.bandeja where incubadora_id = $1`, [c.inc])).n), 3);
-  const keys = (await db.query(`select clave from app.parametro order by clave`)).rows.map(r => r.clave);
-  for (const k of ['cargas', 'dia_cosecha', 'dia_inicio_ayuno', 'dias_incubacion', 'fecha_corte',
-                   'horas_ayuno', 'individuos_por_bandeja', 'letras_insectario', 'reserva_cria_pct']) {
-    assert.ok(keys.includes(k), `falta el parámetro ${k}`);
-  }
   const cargas = (await one(db, `select valor from app.parametro where clave = 'cargas'`)).valor;
-  assert.deepEqual(cargas.map(x => [x.dia, x.kg]), [[7, 1.5], [10, 2], [13, 2]]);
-  assert.ok(keys.includes('dias_fermentacion'), '0008 también va en la instalación nueva');
-  for (const k of ['temperatura_cama_max_c', 'dias_control_temperatura', 'dias_stock_alerta']) {
-    assert.ok(keys.includes(k), `0009 también va en la instalación nueva: falta ${k}`);
-  }
+  assert.deepEqual(cargas, [{ n: 1, dia: 7, kg: 1.5 }, { n: 2, dia: 10, kg: 2 }, { n: 3, dia: 13, kg: 2 }]);
+  assert.equal((await one(db, `select valor from app.parametro where clave = 'alimento_inicial_incubadora_kg'`)).valor,
+               null, 'por definir antes del arranque');
+
+  const listas = (await db.query(`select tipo, valor from app.catalogo order by tipo, orden`)).rows;
+  assert.deepEqual(listas.map(r => `${r.tipo}:${r.valor}`), [
+    'material_alimento:Bagazo de cerveza (BSG)', 'material_alimento:Desecho de panadería',
+    'material_alimento:Desecho de fruta', 'material_alimento:Otro',
+    'operario:Maria', 'operario:Ricardo'
+  ]);
+  assert.equal(await count(db, `select count(*)::int n from storage.buckets where id = 'fotos' and public`), 1);
+  assert.equal(await count(db, `select count(*)::int n from pg_namespace where nspname = 'historico'`), 1);
+});
+
+test('SETUP_COMPLETO run again on the new schema deletes nothing and duplicates nothing', async () => {
+  const db = await fresh();
+  const ja = await jaula(db);
+  const before = await count(db, `select count(*)::int n from app.catalogo`);
+  await db.exec(await readSql('supabase/SETUP_COMPLETO.sql'));
+  assert.equal(await count(db, `select count(*)::int n from app.jaula where id = $1`, [ja]), 1);
+  assert.equal(await count(db, `select count(*)::int n from app.catalogo`), before);
+  assert.equal(await count(db, `select count(*)::int n from app.parametro`), 13);
   await assertOneOverloadEach(db);
 });
 
-/* ── 0008: alimento ────────────────────────────────────────────────────── */
+/* ── production ────────────────────────────────────────────────────────── */
 
-/** A reception, and a batch of ensilaje made from part of it. */
-async function ensilaje(db, { kgRecibido = 100, kgInsumo = 80, kgInicial = 95 } = {}) {
-  const rec = uid(), ens = uid();
-  await db.query(`insert into app.recepcion_alimento (id, fecha, material, kg, proveedor, registrado_por)
-                  values ($1, now(), 'Bagazo de cerveza (BSG)', $2, 'Cervecería X', 'Maria')`, [rec, kgRecibido]);
-  await db.query(`select app.crear_ensilaje($1::jsonb, $2::jsonb)`, [
-    JSON.stringify({ id: ens, codigo: 'ENS-' + ens.slice(0, 4), silo: 'Silo 1', fecha_armado: T0,
-                     kg_inicial: kgInicial, registrado_por: 'Maria' }),
-    JSON.stringify([{ id: uid(), material: 'Bagazo de cerveza (BSG)', kg: kgInsumo, recepcion_id: rec }])
-  ]);
-  return { rec, ens };
+/** Old-protocol rows of every kind production may hold. */
+async function seedOld(db) {
+  const q = (s, p) => db.query(s, p);
+  const ins = (await q(`insert into app.insectario (id, codigo, nombre_insectario, fecha_inicio)
+                        values (gen_random_uuid(), 'OLD-INS', 'ICA', '2026-09-01') returning id`)).rows[0].id;
+  const rec = (await q(`insert into app.recoleccion (id, insectario_id, recolecta, fecha)
+                        values (gen_random_uuid(), $1, '1', now()) returning id`, [ins])).rows[0].id;
+  const ban = (await q(`insert into app.bandeja (id, recoleccion_id, no_bandeja, id_bandeja, fecha)
+                        values (gen_random_uuid(), $1, 1, 'OLD.1', now()) returning id`, [rec])).rows[0].id;
+  await q(`insert into app.separacion (id, bandeja_id, fecha, larva_limpia_g)
+           values (gen_random_uuid(), $1, now(), 410)`, [ban]);
+  await q(`insert into app.recepcion_alimento (id, fecha, material, kg)
+           values (gen_random_uuid(), now(), 'Bagazo de cerveza (BSG)', 50)`);
 }
 
-test('0008: a batch of ensilaje goes through its steps, in order, attributed', async () => {
-  const db = await productionAfterRelease2();
-  const { ens } = await ensilaje(db);
-  const estado = async () => (await one(db, `select estado from app.ensilaje where id = $1`, [ens])).estado;
-  assert.equal(await estado(), 'armado');
+test('0010 over production: keeps the people, removes everything else', async () => {
+  const db = await productionToday();
+  const jose = uid();
+  await db.query(`insert into app.catalogo (id, tipo, valor, orden, activo) values ($1, 'operario', 'Jose', 3, false)`, [jose]);
+  const maria = (await one(db, `select id from app.catalogo where tipo = 'operario' and valor = 'Maria'`)).id;
+  await seedOld(db);
 
-  // Out of order is a no-op: nothing is used before it was sealed.
-  await db.query(`select app.avanzar_ensilaje($1, 'en_uso', now(), 'Ricardo')`, [ens]);
-  assert.equal(await estado(), 'armado');
+  await db.exec(await MIG(R0010));
 
-  await db.query(`select app.avanzar_ensilaje($1, 'sellado', '2026-09-01T12:00:00Z', 'Maria')`, [ens]);
-  assert.equal(await estado(), 'fermentando');
-  await db.query(`insert into app.ensilaje_lectura (id, ensilaje_id, fecha, temperatura_c, registrado_por)
-                  values ($1, $2, now(), 31.5, 'Maria')`, [uid(), ens]);
-  // Using it also marks it ready, if nobody did.
-  await db.query(`select app.avanzar_ensilaje($1, 'en_uso', now(), 'Ricardo')`, [ens]);
-  const r = await one(db, `select estado, sellado_por, listo_at, en_uso_por from app.ensilaje where id = $1`, [ens]);
-  assert.equal(r.estado, 'en_uso');
-  assert.equal(r.sellado_por, 'Maria');
-  assert.ok(r.listo_at);
-  assert.equal(r.en_uso_por, 'Ricardo');
+  for (const t of OLD_TABLES) assert.ok(!(await tableExists(db, t)), `${t} debió desaparecer`);
+  for (const t of TABLES) assert.ok(await tableExists(db, t), `falta la tabla ${t}`);
+  assert.equal(await count(db, `select count(*)::int n from pg_views where schemaname = 'app'`), 0,
+    'las vistas del protocolo anterior desaparecen con él');
+  assert.deepEqual(await overloads(db, 'crear_lote'), []);
+  await assertOneOverloadEach(db);
 
-  // First stamp wins; a replay changes nothing.
-  await db.query(`select app.avanzar_ensilaje($1, 'sellado', now(), 'Otro')`, [ens]);
-  assert.equal((await one(db, `select sellado_por from app.ensilaje where id = $1`, [ens])).sellado_por, 'Maria');
-
-  const s = await one(db, `select dia_sellado, listo_previsto, ultima_temperatura_c from app.v_stock_ensilaje where id = $1`, [ens]);
-  assert.equal(Number(s.ultima_temperatura_c), 31.5);
-  assert.equal(new Date(s.listo_previsto).toISOString().slice(0, 10), '2026-09-15', 'sellado + 14 días (provisional)');
-
-  await assert.rejects(db.query(`select app.avanzar_ensilaje($1, 'otro', now(), null)`, [ens]), err => err.code === '22023');
+  const personas = (await db.query(`select id, valor, orden, activo from app.catalogo
+                                     where tipo = 'operario' order by orden`)).rows;
+  assert.deepEqual(personas.map(p => p.valor), ['Maria', 'Ricardo', 'Jose']);
+  assert.equal(personas.find(p => p.valor === 'Maria').id, maria, 'mismo id que antes');
+  assert.deepEqual(personas.find(p => p.valor === 'Jose'), { id: jose, valor: 'Jose', orden: 3, activo: false });
+  assert.deepEqual((await db.query(`select distinct tipo from app.catalogo order by 1`)).rows.map(r => r.tipo),
+                   ['material_alimento', 'operario'], 'las listas viejas desaparecen');
+  assert.equal(await count(db, `select count(*)::int n from app.parametro where clave = 'dias_incubacion'`), 0);
+  assert.equal(await count(db, `select count(*)::int n from app.parametro`), 13);
 });
 
-test('0008: each carga is taken from the ensilaje in use; stock and consumption add up', async () => {
-  const db = await productionAfterRelease2();
-  const { ens } = await ensilaje(db);
-  await db.query(`select app.avanzar_ensilaje($1, 'sellado', now(), 'Maria')`, [ens]);
-  await db.query(`select app.avanzar_ensilaje($1, 'en_uso', now(), 'Maria')`, [ens]);
+test('0010 run twice over production deletes nothing new', async () => {
+  const db = await productionToday();
+  await db.exec(await MIG(R0010));
+  const ja = await jaula(db);
+  const inc = await incubadora(db, { jaulaId: ja });
+  const listas = await count(db, `select count(*)::int n from app.catalogo`);
 
-  const c = await v2Chain(db);   // carga 1 (3 × 1.5) + carga 2 (3 × 2), no ensilaje yet
-  const carga3 = c.bandejas.map(b => ({ id: uid(), bandeja_id: b.id, fecha: new Date().toISOString(),
-    tipo_alimento: 'Ensilaje', cantidad_kg: 2.0, carga: 3, grupal_id: uid(), ensilaje_id: ens }));
-  await db.query(`select app.log_alimentacion_grupal($1::jsonb)`, [JSON.stringify(carga3)]);
+  await db.exec(await MIG(R0010));
 
-  const st = await one(db, `select kg_inicial, consumido_kg, disponible_kg, n_cargas from app.v_stock_ensilaje where id = $1`, [ens]);
-  assert.equal(Number(st.consumido_kg), 6, '3 bandejas × 2 kg');
-  assert.equal(Number(st.disponible_kg), 89);
-  assert.equal(Number(st.n_cargas), 3);
-
-  const m = await one(db, `select recibido_kg, usado_kg, disponible_kg from app.v_stock_material where material = 'Bagazo de cerveza (BSG)'`);
-  assert.deepEqual([Number(m.recibido_kg), Number(m.usado_kg), Number(m.disponible_kg)], [100, 80, 20]);
-
-  const d = (await db.query(`select sum(kg) kg, sum(n_sin_ensilaje) sin from app.v_consumo_ensilaje_diario`)).rows[0];
-  assert.equal(Number(d.kg), 4.5 + 6 + 6, 'las tres cargas de las tres bandejas');
-  assert.equal(Number(d.sin), 6, 'las cargas 1 y 2 se dieron antes de haber ensilaje en uso');
-  await assertViewsQueryable(db, VIEWS.filter(v => !VIEWS_0009.includes(v)));
-});
-
-test('0008: the day-7 distribución records which ensilaje carga 1 came from', async () => {
-  const db = await productionAfterRelease2();
-  const { ens } = await ensilaje(db);
-  const ins = uid(), rec = uid(), inc = uid(), b = uid(), f = uid();
-  await db.query(`insert into app.insectario (id, codigo, nombre_insectario, fecha_inicio) values ($1, 'ICC-X', 'ICC', '2026-08-01')`, [ins]);
-  await db.query(`select app.crear_recoleccion_v2($1::jsonb, $2::jsonb)`, [
-    JSON.stringify({ id: rec, insectario_id: ins, recolecta: '1', fecha: T0 }),
-    JSON.stringify({ id: inc, codigo: 'F1CR1', fecha_inicio: '2026-09-01' })]);
-  await db.query(`select app.distribuir_incubadora($1::jsonb, $2::jsonb, $3::jsonb)`, [
-    JSON.stringify({ incubadora_id: inc }),
-    JSON.stringify([{ id: b, no_bandeja: 1, id_bandeja: 'F1CR1-01' }]),
-    JSON.stringify([{ id: f, bandeja_id: b, cantidad_kg: 1.5, carga: 1, ensilaje_id: ens }])]);
-  assert.equal((await one(db, `select ensilaje_id from app.alimentacion where id = $1`, [f])).ensilaje_id, ens);
-});
-
-test('0008: calls from phones on Release 1 (no ensilaje yet) keep working', async () => {
-  const db = await productionAfterRelease2();
-  const c = await v2Chain(db);    // Release-1 payloads: no ensilaje_id anywhere
-  assert.equal(Number((await one(db, `select count(*) n from app.alimentacion a join app.bandeja b on b.id = a.bandeja_id
-                                      where b.incubadora_id = $1 and a.ensilaje_id is null`, [c.inc])).n), 6);
+  assert.equal(await count(db, `select count(*)::int n from app.incubadora where id = $1`, [inc]), 1);
+  assert.equal(await count(db, `select count(*)::int n from app.catalogo`), listas);
+  assert.equal(await count(db, `select count(*)::int n from app.parametro`), 13);
   await assertOneOverloadEach(db);
 });
 
-test('views count days on the farm\'s calendar, never the server\'s (UTC) date', async () => {
-  // current_date is the server's day: in Caracas it is already "tomorrow" from
-  // 20:00 to midnight, so day counts and the "10 days" flag were one day off
-  // every evening. Checked on the definitions, so it fails at any hour.
-  for (const db of [await productionAfterRelease1(), await productionAfterRelease2(), await productionAfterRelease3()]) {
-    const bad = (await db.query(`select viewname from pg_views
-                                  where schemaname = 'app' and definition ilike '%current_date%'`)).rows;
-    assert.deepEqual(bad.map(v => v.viewname), [], 'usa app.dia_local(now())');
-  }
-  const db = await productionAfterRelease2();
-  const { ens } = await ensilaje(db);
-  await db.query(`select app.avanzar_ensilaje($1, 'sellado', now() - interval '3 days', 'Maria')`, [ens]);
-  const s = await one(db, `select dias_fermentando, app.dia_local(now()) - app.dia_local(now() - interval '3 days') esperado
-                             from app.v_stock_ensilaje where id = $1`, [ens]);
-  assert.equal(Number(s.dias_fermentando), Number(s.esperado));
+/* ── the larvae cycle ───────────────────────────────────────────────────── */
+
+test('recolecta: día 0 is the farm day, and only the code is unique', async () => {
+  const db = await fresh();
+  const ja = await jaula(db), jb = await jaula(db, { letra: 'B', nombre: 'ICB' });
+  // 23:30 in Caracas on the 19th is already the 20th in UTC.
+  const inc = await incubadora(db, { jaulaId: ja, at: '2026-10-20T03:30:00Z' });
+  assert.deepEqual(await one(db, `select dia0::text, estado, excepcion from app.incubadora where id = $1`, [inc]),
+                   { dia0: '2026-10-19', estado: 'activo', excepcion: false });
+
+  await assert.rejects(incubadora(db, { jaulaId: ja, codigo: 'F7A-1' }),
+    err => err.code === '23505' && /ux_incubadora_codigo/.test(err.message));
+  // Codes never change, so an incubadora corrected to another cage keeps its
+  // number, and the other cage's own #1 must not collide with it.
+  await incubadora(db, { jaulaId: jb, codigo: 'F7B-1' });
+  await db.query(`select app.editar('incubadora', $1, $2::jsonb, 'Ricardo', now())`, [inc, json({ jaula_id: jb })]);
+  assert.equal((await one(db, `select codigo from app.incubadora where id = $1`, [inc])).codigo, 'F7A-1');
 });
 
-test('0008: new functions validate before writing (safe to probe)', async () => {
-  const db = await productionAfterRelease2();
-  await assert.rejects(db.query(`select app.crear_ensilaje('{}'::jsonb, '[]'::jsonb)`), err => err.code === '22023');
-  assert.equal(Number((await one(db, `select count(*) n from app.ensilaje`)).n), 0);
-  const nobody = '00000000-0000-4000-8000-000000000000';
-  await db.query(`select app.avanzar_ensilaje($1::uuid, 'sellado', null, null)`, [nobody]);
+test('chequeo: grams in an incubadora, kilos in a caja, one per scheduled day', async () => {
+  const db = await fresh();
+  const inc = await incubadora(db, { jaulaId: await jaula(db) });
+  const chequeo = (objeto, id, dia, peso, valor, humedad = 68) => db.query(
+    `insert into app.chequeo (id, ${objeto}_id, dia, fecha, humedad_pct, temperatura_c, ${peso})
+     values ($1, $2, $3, now(), $4, 29.5, $5)`, [uid(), id, dia, humedad, valor]);
+
+  await chequeo('incubadora', inc, 3, 'peso_g', 40);
+  await assert.rejects(chequeo('incubadora', inc, 3, 'peso_g', 41), code('23505'));
+  await assert.rejects(chequeo('incubadora', inc, 4, 'peso_kg', 0.04), code('23514'), 'gramos, no kilos');
+  await assert.rejects(chequeo('incubadora', inc, 5, 'peso_g', 40, 140), code('23514'), 'humedad fuera de 0–100');
+
+  const d = distribucionDe(inc, 1);
+  await distribuir(db, d);
+  const caja = d.cajas[0].id;
+  await chequeo('caja', caja, 10, 'peso_kg', 2.3);
+  await chequeo('caja', caja, 14, 'peso_kg', 4.1);
+  await assert.rejects(chequeo('caja', caja, 12, 'peso_g', 2300), code('23514'), 'kilos, no gramos');
+  await assert.rejects(db.query(`insert into app.chequeo (id, dia, fecha, humedad_pct, temperatura_c, peso_kg)
+                                 values ($1, 10, now(), 68, 29.5, 1)`, [uid()]), code('23514'),
+    'un chequeo es de una incubadora o de una caja');
 });
 
-/* ── 0009: lo que toca hoy ─────────────────────────────────────────────── */
+test('distribución: the cajas and their carga 1 land together, once', async () => {
+  const db = await fresh();
+  const r1 = await rack(db, 'R1');
+  const inc = await incubadora(db, { jaulaId: await jaula(db) });
+  const d = distribucionDe(inc, 2, { rackId: r1 });
 
-test('0009: the bed temperature rides on a revisión; over the maximum is flagged', async () => {
-  const db = await productionAfterRelease3();
-  const c = await v2Chain(db);
-  const [b1, b2] = c.bandejas;
-  const hoy = '2026-09-12T15:00:00.000Z';   // día 11 of an incubadora started 2026-09-01
-  for (const [b, t] of [[b1.id, 34.5], [b2.id, 37.2]]) {
-    await db.query(`insert into app.revision (id, bandeja_id, fecha, temperatura_c, registrado_por)
-                    values ($1, $2, $3, $4, 'Maria')`, [uid(), b, hoy, t]);
-  }
-  const rows = (await db.query(`select id_bandeja, dia_ciclo, temperatura_c, sobre_maximo, protocolo
-                                  from app.v_temperatura_cama order by id_bandeja`)).rows;
-  assert.deepEqual(rows.map(r => [r.id_bandeja, r.dia_ciclo, Number(r.temperatura_c), r.sobre_maximo, r.protocolo]),
-                   [['F7AR9-01', 11, 34.5, false, 'v2'], ['F7AR9-02', 11, 37.2, true, 'v2']]);
+  // Validated BEFORE writing: an empty call leaves nothing behind.
+  await assert.rejects(distribuir(db, { ...d, cajas: [] }), code('22023'));
+  assert.equal(await count(db, `select count(*)::int n from app.distribucion`), 0);
 
-  // The maximum is a setting: lowering it flags more.
-  await db.query(`update app.parametro set valor = '34' where clave = 'temperatura_cama_max_c'`);
-  assert.equal(Number((await one(db, `select count(*) n from app.v_temperatura_cama where sobre_maximo`)).n), 2);
+  await distribuir(db, d);
+  await distribuir(db, d);                                   // a replay after a lost reply
+  assert.equal(await count(db, `select count(*)::int n from app.caja`), 2);
+  assert.equal(await count(db, `select count(*)::int n from app.alimentacion`), 2);
+  assert.equal((await one(db, `select estado from app.incubadora where id = $1`, [inc])).estado, 'inactivo');
+  const cajas = (await db.query(`select estado, registrado_por, rack_id from app.caja order by numero`)).rows;
+  assert.deepEqual(cajas, [
+    { estado: 'activo', registrado_por: 'Ricardo', rack_id: r1 },
+    { estado: 'activo', registrado_por: 'Ricardo', rack_id: r1 }
+  ]);
 
-  await assert.rejects(db.query(`insert into app.revision (id, bandeja_id, fecha, temperatura_c) values ($1, $2, now(), 150)`,
-                                [uid(), b1.id]), err => err.code === '23514');
-  // A revisión without a temperature is what every earlier build sends.
-  await db.query(`insert into app.revision (id, bandeja_id, fecha) values ($1, $2, now())`, [uid(), b1.id]);
-
-  const keys = (await db.query(`select clave, valor from app.parametro where clave in
-                                  ('temperatura_cama_max_c', 'dias_control_temperatura', 'dias_stock_alerta')`)).rows;
-  assert.deepEqual(Object.fromEntries(keys.map(k => [k.clave, k.valor])),
-                   { temperatura_cama_max_c: 34, dias_control_temperatura: [11, 12], dias_stock_alerta: 3 });
-  await assertViewsQueryable(db);
-  await assertOneOverloadEach(db);
+  // Another phone distributing the same incubadora.
+  const otra = distribucionDe(inc, 1);
+  otra.cajas[0].codigo = 'F7A-1-09';
+  await assert.rejects(distribuir(db, otra),
+    err => err.code === '23505' && /ya fue distribuida/.test(err.message));
 });
 
-test('0009: the data-quality view counts beds over the maximum this week', async () => {
-  const db = await productionAfterRelease3();
-  const c = await v2Chain(db);
-  await db.query(`insert into app.revision (id, bandeja_id, fecha, temperatura_c) values ($1, $2, now(), 38)`,
-                 [uid(), c.bandejas[0].id]);
-  const q = await one(db, `select n from app.v_calidad_datos where problema = 'cama_sobre_maximo_7d'`);
-  assert.equal(Number(q.n), 1);
-  const all = (await db.query(`select problema from app.v_calidad_datos`)).rows.map(r => r.problema);
-  for (const p of ['carga_repetida', 'incubadora_sin_distribuir_10d', 'ayuno_abierto_mas_48h']) {
-    assert.ok(all.includes(p), `las filas de 0007 siguen: ${p}`);
+test('separación: 98 % to the oven and 2 % back, recomputed when the weight is corrected', async () => {
+  const db = await fresh();
+  const inc = await incubadora(db, { jaulaId: await jaula(db) });
+  const d = distribucionDe(inc, 2);
+  await distribuir(db, d);
+  const sep = uid();
+  await db.query(`insert into app.separacion (id, caja_id, fecha, peso_total_kg, registrado_por)
+                  values ($1, $2, '2026-11-04T13:00:00Z', 10, 'Maria')`, [sep, d.cajas[0].id]);
+
+  const reparto = () => one(db, `select coccion_kg::text, retorno_kg::text from app.separacion where id = $1`, [sep]);
+  assert.deepEqual(await reparto(), { coccion_kg: '9.800', retorno_kg: '0.200' });
+  assert.equal((await one(db, `select estado from app.caja where id = $1`, [d.cajas[0].id])).estado, 'inactivo');
+  assert.equal((await one(db, `select estado from app.caja where id = $1`, [d.cajas[1].id])).estado, 'activo');
+
+  await db.query(`select app.editar('separacion', $1, '{"peso_total_kg": 12.5}'::jsonb, 'Ricardo', now())`, [sep]);
+  assert.deepEqual(await reparto(), { coccion_kg: '12.250', retorno_kg: '0.250' });
+
+  await assert.rejects(db.query(`insert into app.separacion (id, caja_id, fecha, peso_total_kg)
+                                 values ($1, $2, now(), 3)`, [uid(), d.cajas[0].id]), code('23505'),
+    'una separación por caja');
+});
+
+test('cochada: from several separaciones, done at the final reading', async () => {
+  const db = await fresh();
+  const inc = await incubadora(db, { jaulaId: await jaula(db) });
+  const d = distribucionDe(inc, 2);
+  await distribuir(db, d);
+  const seps = [];
+  for (const c of d.cajas) {
+    const id = uid();
+    await db.query(`insert into app.separacion (id, caja_id, fecha, peso_total_kg) values ($1, $2, now(), 10)`, [id, c.id]);
+    seps.push(id);
   }
+  const co = { id: uid(), codigo: 'H-0411-1', horno_at: '2026-11-04T15:00:00Z', peso_inicial_kg: 14.7,
+               registrado_por: 'Maria' };
+  // One separación's 98 % split across cochadas: 4.9 here, the rest later.
+  const origenes = [{ id: uid(), separacion_id: seps[0], kg: 9.8 }, { id: uid(), separacion_id: seps[1], kg: 4.9 }];
+  const crear = () => db.query(`select app.crear_cochada($1::jsonb, $2::jsonb)`, [json(co), json(origenes)]);
+
+  await assert.rejects(db.query(`select app.crear_cochada($1::jsonb, '[]'::jsonb)`, [json(co)]), code('22023'));
+  await crear();
+  await crear();
+  assert.equal(await count(db, `select count(*)::int n from app.cochada_origen where cochada_id = $1`, [co.id]), 2);
+
+  const estado = async () => (await one(db, `select estado from app.cochada where id = $1`, [co.id])).estado;
+  assert.equal(await estado(), 'activo');
+  await db.query(`insert into app.cochada_lectura (id, cochada_id, momento, fecha, temperatura_c)
+                  values ($1, $2, 'media', now(), 92)`, [uid(), co.id]);
+  assert.equal(await estado(), 'activo');
+  await assert.rejects(db.query(`insert into app.cochada_lectura (id, cochada_id, momento, fecha, temperatura_c)
+                                 values ($1, $2, 'final', now(), 105)`, [uid(), co.id]), code('23514'),
+    'la lectura final lleva el peso final');
+  await db.query(`insert into app.cochada_lectura (id, cochada_id, momento, fecha, temperatura_c, peso_kg)
+                  values ($1, $2, 'final', now(), 105, 4.1)`, [uid(), co.id]);
+  assert.equal(await estado(), 'inactivo');
+
+  // H-0411-1 is unique on its farm day: two phones giving it out the same day
+  // collide, next year's does not.
+  const otra = (horno_at, extra = {}) => db.query(`select app.crear_cochada($1::jsonb, $2::jsonb)`, [
+    json({ ...co, id: uid(), horno_at, ...extra }),
+    json([{ id: uid(), separacion_id: seps[1], kg: 1 }])]);
+  await assert.rejects(otra('2026-11-05T02:00:00Z'), code('23505'), '22:00 del 4 en la granja');
+  await otra('2027-11-04T15:00:00Z');
+});
+
+test('cerrar_objeto: early close with a written reason, nothing deleted', async () => {
+  const db = await fresh();
+  const inc = await incubadora(db, { jaulaId: await jaula(db) });
+  await assert.rejects(db.query(`select app.cerrar_objeto('incubadora', $1, '  ', null, 'Maria')`, [inc]), code('22023'));
+  await assert.rejects(db.query(`select app.cerrar_objeto('rack', $1, 'x', null, 'Maria')`, [inc]), code('22023'));
+
+  await db.query(`select app.cerrar_objeto('incubadora', $1, ' contaminación ', '2026-10-21T15:00:00Z', 'Maria')`, [inc]);
+  await db.query(`select app.cerrar_objeto('incubadora', $1, 'otra vez', now(), 'Ricardo')`, [inc]);
+  const r = await one(db, `select estado, motivo_cierre, cerrado_por, cerrado_at = '2026-10-21T15:00:00Z' as fecha_ok
+                             from app.incubadora where id = $1`, [inc]);
+  assert.deepEqual(r, { estado: 'inactivo', motivo_cierre: 'contaminación', cerrado_por: 'Maria', fecha_ok: true },
+    'el primer cierre queda; repetirlo no lo cambia');
+});
+
+/* ── the insectario ─────────────────────────────────────────────────────── */
+
+test('ingreso: only into a cage that was closed and then cleaned', async () => {
+  const db = await fresh();
+  const ja = await jaula(db, { gen: 7, fase: 'activa' });
+  const ingreso = (extra = {}) => ({ id: uid(), jaula_id: ja, fecha: '2026-11-05T14:00:00Z', kg_larvas: 1.2,
+                                     generacion: 8, registrado_por: 'Maria', ...extra });
+  const bandejas = () => [1, 2].map(n => ({ id: uid(), codigo: `F7-B0511-${n}`, numero: n, peso_kg: 4.7 }));
+  const ingresar = (i, b) => db.query(`select app.ingresar($1::jsonb, $2::jsonb)`, [json(i), json(b)]);
+  const fase = () => one(db, `select fase, estado, generacion, ciclo_desde::text from app.jaula where id = $1`, [ja]);
+  const evento = (tipo, fecha) => db.query(
+    `insert into app.jaula_evento (id, jaula_id, tipo, fecha, registrado_por) values ($1, $2, $3, $4, 'Maria')`,
+    [uid(), ja, tipo, fecha]);
+
+  await assert.rejects(ingresar(ingreso(), bandejas()),
+    err => err.code === '23514' && /ya está poblada\./.test(err.message));
+  await evento('cierre', '2026-11-03T14:00:00Z');
+  assert.deepEqual(await fase(), { fase: 'cerrada', estado: 'inactivo', generacion: 7, ciclo_desde: null });
+  await assert.rejects(ingresar(ingreso(), bandejas()),
+    err => err.code === '23514' && /falta la limpieza\./.test(err.message));
+  await evento('limpieza', '2026-11-04T14:00:00Z');
+  assert.equal((await fase()).fase, 'limpia');
+
+  await assert.rejects(ingresar(ingreso(), []), code('22023'));
+  const i = ingreso(), b = bandejas();
+  await ingresar(i, b);
+  await ingresar(i, b);                                      // a replay after a lost reply
+  assert.deepEqual(await fase(), { fase: 'activa', estado: 'activo', generacion: 8, ciclo_desde: '2026-11-05' });
+  const trays = (await db.query(`select estado, jaula_id, registrado_por from app.bandeja_pupacion order by numero`)).rows;
+  assert.deepEqual(trays, [
+    { estado: 'inactivo', jaula_id: ja, registrado_por: 'Maria' },
+    { estado: 'inactivo', jaula_id: ja, registrado_por: 'Maria' }
+  ], 'entran a la jaula el mismo día');
+
+  // The generation the cage got is corrected on its ingreso.
+  await db.query(`select app.editar('ingreso', $1, '{"generacion": 9}'::jsonb, 'Ricardo', now())`, [i.id]);
+  assert.equal((await fase()).generacion, 9);
+
+  // Withdrawing the ingreso puts the cage back where its last event left it.
+  await db.query(`update app.ingreso set deleted_at = now() where id = $1`, [i.id]);
+  assert.deepEqual(await fase(), { fase: 'limpia', estado: 'inactivo', generacion: 7, ciclo_desde: null });
+});
+
+test('a cage registered clean is repopulated at once; its starting generation can be corrected', async () => {
+  const db = await fresh();
+  const limpia = await jaula(db, { letra: 'C', nombre: 'ICC', gen: 5, fase: 'limpia' });
+  await db.query(`select app.ingresar($1::jsonb, $2::jsonb)`, [
+    json({ id: uid(), jaula_id: limpia, fecha: '2026-11-05T14:00:00Z', kg_larvas: 0.6, generacion: 6 }),
+    json([{ id: uid(), codigo: 'F5-B0511-1', numero: 1, peso_kg: 4.7 }])
+  ]);
+  assert.equal((await one(db, `select generacion from app.jaula where id = $1`, [limpia])).generacion, 6);
+
+  const otra = await jaula(db, { letra: 'D', nombre: 'ICD', gen: 3, fase: 'activa' });
+  await db.query(`select app.editar('jaula', $1, '{"generacion_inicial": 4}'::jsonb, 'Maria', now())`, [otra]);
+  assert.deepEqual(await one(db, `select generacion, fase from app.jaula where id = $1`, [otra]),
+                   { generacion: 4, fase: 'activa' });
+  // With an ingreso on record, the cage's generation is the ingreso's.
+  await db.query(`select app.editar('jaula', $1, '{"generacion_inicial": 2}'::jsonb, 'Maria', now())`, [limpia]);
+  assert.equal((await one(db, `select generacion from app.jaula where id = $1`, [limpia])).generacion, 6);
+});
+
+/* ── food ───────────────────────────────────────────────────────────────── */
+
+test('ensilado: from receptions, día 0 on the farm calendar, opened once', async () => {
+  const db = await fresh();
+  const s2 = uid(), rec = uid();
+  await db.query(`insert into app.contenedor (id, codigo) values ($1, 'S2')`, [s2]);
+  await db.query(`insert into app.recepcion (id, fecha, material, kg) values ($1, now(), 'Bagazo de cerveza (BSG)', 100)`, [rec]);
+  // 22:00 in Caracas on the 27th.
+  const ens = { id: uid(), codigo: 'S2-2710', contenedor_id: s2, ensilado_at: '2026-10-28T02:00:00Z',
+                registrado_por: 'Maria' };
+  const insumos = [{ id: uid(), recepcion_id: rec, kg: 80 }];
+  const crear = () => db.query(`select app.crear_ensilado($1::jsonb, $2::jsonb)`, [json(ens), json(insumos)]);
+
+  await assert.rejects(db.query(`select app.crear_ensilado($1::jsonb, '[]'::jsonb)`, [json(ens)]), code('22023'));
+  await crear();
+  await crear();
+  assert.equal((await one(db, `select dia0::text from app.ensilado where id = $1`, [ens.id])).dia0, '2026-10-27');
+  assert.equal(await count(db, `select count(*)::int n from app.ensilado_insumo`), 1);
+  // S2-2710 is unique on its day; the same container a year later is not a clash.
+  const igual = ensilado_at => db.query(`select app.crear_ensilado($1::jsonb, $2::jsonb)`, [
+    json({ ...ens, id: uid(), ensilado_at }), json([{ id: uid(), recepcion_id: rec, kg: 1 }])]);
+  await assert.rejects(igual('2026-10-27T15:00:00Z'), code('23505'));
+  await igual('2027-10-27T15:00:00Z');
+
+  await db.query(`select app.abrir_ensilado($1, '2026-11-17T12:00:00Z', 'Maria')`, [ens.id]);
+  await db.query(`select app.abrir_ensilado($1, '2026-11-18T12:00:00Z', 'Ricardo')`, [ens.id]);
+  assert.deepEqual(await one(db, `select abierto_at = '2026-11-17T12:00:00Z' as primero, abierto_por
+                                    from app.ensilado where id = $1`, [ens.id]),
+                   { primero: true, abierto_por: 'Maria' }, 'el primero que llega gana');
+
+  await db.query(`select app.editar('ensilado', $1, '{"ensilado_at": "2026-10-29T15:00:00Z"}'::jsonb, 'Maria', now())`, [ens.id]);
+  assert.deepEqual(await one(db, `select dia0::text, codigo from app.ensilado where id = $1`, [ens.id]),
+                   { dia0: '2026-10-29', codigo: 'S2-2710' }, 'la fecha se corrige; el código no cambia');
+});
+
+/* ── editing ────────────────────────────────────────────────────────────── */
+
+test('editar: listed fields only; a note or photo is not a value change', async () => {
+  const db = await fresh();
+  const inc = await incubadora(db, { jaulaId: await jaula(db) });
+  const editar = (tabla, id, cambios, por = 'Ricardo', at = null) =>
+    db.query(`select app.editar($1, $2, $3::jsonb, $4, $5)`, [tabla, id, json(cambios), por, at]);
+  const marcas = () => one(db, `select editado_at::text, editado_por, valores_editados_at::text,
+                                       revisado_at::text, dia0::text, peso_inicial_g::text
+                                  from app.incubadora where id = $1`, [inc]);
+
+  await editar('incubadora', inc, { recolecta_at: '2026-10-18T14:00:00Z', peso_inicial_g: 11 }, 'Ricardo',
+               '2026-10-21T10:00:00Z');
+  let m = await marcas();
+  assert.equal(m.dia0, '2026-10-18', 'el día 0 sigue a la fecha corregida');
+  assert.equal(m.peso_inicial_g, '11.00');
+  assert.equal(m.editado_por, 'Ricardo');
+  assert.equal(m.valores_editados_at, m.editado_at);
+
+  await editar('incubadora', inc, { nota: 'tapa rota' }, 'Maria', '2026-10-22T10:00:00Z');
+  const tras = await marcas();
+  assert.notEqual(tras.editado_at, m.editado_at);
+  assert.equal(tras.editado_por, 'Maria');
+  assert.equal(tras.valores_editados_at, m.valores_editados_at, 'una nota no marca «revisar» a nadie');
+  await editar('incubadora', inc, { foto_key: 'incubadora/x/y.jpg' }, 'Maria', '2026-10-23T10:00:00Z');
+  assert.equal((await marcas()).valores_editados_at, m.valores_editados_at, 'una foto tampoco');
+
+  await assert.rejects(editar('incubadora', inc, { codigo: 'F9Z-1' }),
+    err => err.code === '22023' && /no se puede editar/.test(err.message), 'el código no cambia nunca');
+  await assert.rejects(editar('incubadora', inc, { estado: 'activo' }), code('22023'));
+  await assert.rejects(editar('lote', inc, { nota: 'x' }), code('22023'));
+  await assert.rejects(editar('incubadora', inc, {}), code('22023'));
+
+  await db.query(`select app.marcar_revisado('incubadora', $1, '2026-10-24T10:00:00Z', 'Maria')`, [inc]);
+  m = await marcas();
+  assert.equal(m.revisado_at.slice(0, 10), '2026-10-24');
+  assert.equal(m.valores_editados_at, tras.valores_editados_at, 'revisar no es editar');
+  await assert.rejects(db.query(`select app.marcar_revisado('catalogo', $1, null, null)`, [inc]), code('22023'));
+});
+
+test('every write moves updated_at, which is what the phones pull by', async () => {
+  const db = await fresh();
+  const r = await rack(db, 'R1');
+  const antes = (await one(db, `select updated_at from app.rack where id = $1`, [r])).updated_at;
+  await new Promise(res => setTimeout(res, 5));
+  await db.query(`select app.editar('rack', $1, '{"codigo": "R1-B"}'::jsonb, 'Maria', null)`, [r]);
+  const despues = (await one(db, `select updated_at from app.rack where id = $1`, [r])).updated_at;
+  assert.ok(despues > antes);
+
+  // A registry that changes its object's state moves the object too.
+  const inc = await incubadora(db, { jaulaId: await jaula(db) });
+  const i0 = (await one(db, `select updated_at from app.incubadora where id = $1`, [inc])).updated_at;
+  await new Promise(res => setTimeout(res, 5));
+  await distribuir(db, distribucionDe(inc, 1));
+  const i1 = (await one(db, `select updated_at, estado from app.incubadora where id = $1`, [inc]));
+  assert.ok(i1.updated_at > i0 && i1.estado === 'inactivo');
+});
+
+/* ── access ─────────────────────────────────────────────────────────────── */
+
+test('access: every table open to the app through RLS; historico is not exposed', async () => {
+  const db = await fresh();
+  for (const t of TABLES) {
+    const rls = await one(db, `select relrowsecurity from pg_class where oid = ('app.' || $1)::regclass`, [t]);
+    assert.equal(rls.relrowsecurity, true, `RLS apagado en ${t}`);
+    assert.equal(await count(db, `select count(*)::int n from pg_policies
+                                   where schemaname = 'app' and tablename = $1 and policyname = 'demo_abierto'`, [t]), 1);
+    assert.equal((await one(db, `select has_table_privilege('anon', 'app.' || $1, 'insert') ok`, [t])).ok, true);
+  }
+  for (const fn of RPCS) {
+    const ok = await one(db, `select bool_and(has_function_privilege('anon', p.oid, 'execute')) ok
+                                from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                               where n.nspname = 'app' and p.proname = $1`, [fn]);
+    assert.equal(ok.ok, true, `anon no puede llamar ${fn}`);
+  }
+  assert.equal((await one(db, `select has_schema_privilege('anon', 'historico', 'usage') ok`)).ok, false);
 });

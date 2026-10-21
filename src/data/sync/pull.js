@@ -20,20 +20,20 @@ import { SYNCED_STORES } from '../idb/schema.js';
 import { PULL_OVERLAP_MS, PULL_PAGE_SIZE } from '../config.js';
 import { metaGet, metaSet } from '../idb/tx.js';
 import { applyServerRows } from '../store.js';
-import { rebuildAll } from '../cache.js';
 
 const cursorKey = table => `pull_cursor:${table}`;
 const EPOCH = '1970-01-01T00:00:00.000Z';
 
 /** Columns holding an instant, normalised to the canonical stored form. */
 const INSTANT_FIELDS = new Set([
-  'fecha', 'created_at', 'updated_at', 'synced_at', 'deleted_at',
-  'cerrado_at', 'empacado_at', 'despachado_at', 'rechazado_at', 'resuelto_at',
-  'distribuida_at', 'fecha_armado', 'sellado_at', 'listo_at', 'en_uso_at', 'agotado_at'
+  'fecha', 'created_at', 'updated_at', 'synced_at', 'deleted_at', 'resuelto_at',
+  'recolecta_at', 'horno_at', 'ensilado_at', 'abierto_at', 'cerrado_at',
+  'editado_at', 'valores_editados_at', 'revisado_at'
 ]);
 
-/** Tables without an `id` column (composite key). They page on time alone. */
-const SIN_ID = new Set(['lote_separacion']);
+/** Tables without an `id` column (composite key). They page on time alone.
+ *  None today; the paging keeps supporting them. */
+const SIN_ID = new Set();
 
 /**
  * A server timestamp as microseconds, for comparing cursors. The server sends
@@ -55,8 +55,8 @@ const FULL_ISO = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/;
  * dates with a plain string compare, so a mix of formats would silently
  * misorder the timeline.
  *
- * DATE columns (`fecha_inicio`, `cierre_real`, `fecha_vencimiento`, the
- * projections) are calendar facts and are deliberately left as `YYYY-MM-DD`.
+ * DATE columns (`dia0`, `ciclo_desde`) are calendar facts on the farm and are
+ * deliberately left as `YYYY-MM-DD`.
  */
 export function normalizeRow(row) {
   const out = {};
@@ -92,7 +92,6 @@ async function pullTable(db, client, table) {
   let groupAfterId = null;       // set while finishing a group of equal updated_at
   let total = 0, changed = 0, skipped = 0;
   let maxSeen = cursor;
-  const trays = new Set();
 
   for (let page = 0; page < 1000; page++) {
     let q = client.from(table).select('*');
@@ -110,7 +109,6 @@ async function pullTable(db, client, table) {
       total += res.applied;
       changed += res.changed;
       skipped += res.skipped;
-      for (const t of res.trays) trays.add(t);
     }
 
     if (groupAfterId !== null) {
@@ -137,7 +135,7 @@ async function pullTable(db, client, table) {
   // Only ever advance to a timestamp the SERVER produced.
   if (tsMicros(maxSeen) > tsMicros(cursor)) await metaSet(db, cursorKey(table), maxSeen);
 
-  return { table, applied: total, changed, skipped, trays: [...trays] };
+  return { table, applied: total, changed, skipped };
 }
 
 /**
@@ -186,12 +184,10 @@ export async function pullOnce(db, { tables = SYNCED_STORES } = {}) {
 
 /**
  * First-run hydration. Identical mechanics to a delta pull (cursors start at
- * the epoch), then one full cache rebuild — cheaper than maintaining the
- * rollup incrementally across thousands of seeded rows.
+ * the epoch); it only records that the phone has the full picture.
  */
 export async function initialPull(db) {
   const summary = await pullOnce(db);
-  await rebuildAll(db);
   await metaSet(db, 'initial_pull_at', new Date().toISOString());
   return summary;
 }

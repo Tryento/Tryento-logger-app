@@ -1,608 +1,672 @@
 /**
  * read.js — every read the UI performs, served from IndexedDB.
  *
- * CONTRACT: the shapes returned here must match what the prototype's mock
- * returned, field for field, because the template destructures them at ~40
- * sites. Where the backend renamed something (lote -> lote, id -> codigo)
- * the rename is absorbed HERE, so the UI keeps its vocabulary.
+ * Every screen starts from the same picture of the lab (vista.js, through
+ * snapshot.js), so a list, a detail page and "para hoy" can never disagree
+ * about what state something is in. Each function shapes that picture for one
+ * screen: plain data, Spanish words, numbers with a decimal comma.
  *
- * Everything is local, so these resolve in single-digit milliseconds with no
- * network and no artificial latency.
+ * Every record shown on a detail page comes as a `registro` — what it is, its
+ * numbers, when and who, whether it was corrected, its note and photo, and why
+ * it needs a second look — so one component can show, correct, annotate and
+ * review any of them.
+ *
+ * Everything is local, so these resolve in milliseconds with no network.
  */
-import { ok, fail, CODES, deepCopy, str } from './envelope.js';
+import { ok, fail, CODES, str } from './envelope.js';
 import { openDb } from './idb/open.js';
 import { metaGet } from './idb/tx.js';
-import { ayunoAbierto } from './idb/schema.js';
 import { allRows, rowById, rowsByIndex } from './store.js';
-import { allCache, getCache } from './cache.js';
-import { daysBetween, farmDay, addDays } from './time.js';
-import {
-  mergeProtocolo, v2Vigente, diaCiclo, siguientePaso, pasoIncubadora, pasoLabel, cuandoLabel,
-  ensilajeEstado, kgCargasProximas
-} from './protocolo.js';
-import { monitor } from './monitor.js';
+import { vistaActual, protocolo } from './snapshot.js';
+import { motivosRevisar } from './vista.js';
+import { paraHoy, horaLocal } from './monitor.js';
+import { pasoLabel, cuandoLabel, cargaDistribucion, cargaDef, kg3 } from './protocolo.js';
+import { pool2 } from './pool.js';
+import { siguienteIncubadora, cajaCodigo, siguientesBandejas, siguienteCochada, ensiladoCodigo } from './ids.js';
+import { EDITABLE, camposDe } from './registros.js';
+import { kgTxt, diaTxt, fechaHoraTxt, cuandoTxt } from './formato.js';
+import { farmDay, toNaiveLocal } from './time.js';
+import { generacionDeJaula } from './revisar.js';
 
-/** The protocol settings this device has, over the built-in defaults. */
-export async function loadProtocolo(db) {
-  return mergeProtocolo(await allRows(db, 'parametro'));
-}
-
-const round1 = v => (v === null || v === undefined ? null : Math.round(v * 10) / 10);
-
-/* ── decorations: the computed values, all null-safe ─────────────────────── */
-
-export function poblacionEstimada(biomasaKg) {
-  return biomasaKg === null || biomasaKg === undefined ? null : Math.round(biomasaKg * 50000);
-}
-
-/**
- * Deviation in days, ABSENT until the real date exists.
- *
- * This is the one-line fix for the "-20,676 days" values in the live sheet:
- * AppSheet read a blank date as the epoch and produced a ~56-year deviation for
- * every colony still open. No date, no number.
- */
-export function desviacionDias(real, proyectada) {
-  if (!real || !proyectada) return null;
-  return daysBetween(proyectada, real);
-}
-
-export function rendimientoPct(inicial, final) {
-  if (!inicial || inicial <= 0 || final === null || final === undefined) return null;
-  return round1((final / inicial) * 100);
-}
-
-export function mermaPct(inicial, final) {
-  if (!inicial || inicial <= 0 || final === null || final === undefined) return null;
-  return round1(((inicial - final) / inicial) * 100);
-}
-
-function decorateInsectario(row) {
-  return Object.assign(deepCopy(row), {
-    estado: row.cierre_real ? 'cerrado' : 'activo',
-    poblacion_estimada: poblacionEstimada(row.biomasa_kg),
-    desviacion_ovipositores_dias: desviacionDias(row.fecha_ovipositores, row.proyeccion_ovipositores),
-    desviacion_cierre_dias: desviacionDias(row.cierre_real, row.proyeccion_cierre)
-  });
-}
-
-/** Lote state, derived the same way the Postgres generated column does so
- *  an offline device and the server never disagree. */
-export function loteEstado(row) {
-  if (row.rechazado_at) return 'rechazado';
-  if (row.despachado_at || row.despachado) return 'despachado';
-  if (row.empacado_at || row.empacado) return 'empacado';
-  if (row.qc_aprobado !== null && row.qc_aprobado !== undefined) return 'en_qc';
-  return 'secando';
-}
-
-function decorateLote(row, nBandejas = 0) {
-  return Object.assign(deepCopy(row), {
-    estado: loteEstado(row),
-    rendimiento_pct: rendimientoPct(row.peso_inicial_kg, row.peso_final_kg),
-    n_bandejas: nBandejas,
-    // UI vocabulary: the template still says "lote" and "despachado".
-    despachado: row.despachado_at || null,
-    empacado: Boolean(row.empacado_at)
-  });
-}
-
-function decorateAyuno(row) {
-  return Object.assign(deepCopy(row), {
-    merma_pct: mermaPct(row.peso_inicial_kg, row.peso_final_kg),
-    abierto: ayunoAbierto(row)
-  });
-}
-
-/* ── joins ──────────────────────────────────────────────────────────────── */
-
-async function buildIndex(db) {
-  const [insectarios, recolecciones, links, lotes, incubadoras, parametros] = await Promise.all([
-    allRows(db, 'insectario'),
-    allRows(db, 'recoleccion'),
-    allRows(db, 'lote_separacion'),
-    allRows(db, 'lote'),
-    allRows(db, 'incubadora'),
-    allRows(db, 'parametro')
-  ]);
-  return {
-    insectarioById: new Map(insectarios.map(r => [r.id, r])),
-    recoleccionById: new Map(recolecciones.map(r => [r.id, r])),
-    loteBySeparacion: new Map(links.map(l => [l.separacion_id, l.lote_id])),
-    loteById: new Map(lotes.map(c => [c.id, c])),
-    incubadoraById: new Map(incubadoras.map(i => [i.id, i])),
-    incubadoraByRecoleccion: new Map(incubadoras.map(i => [i.recoleccion_id, i])),
-    cfg: mergeProtocolo(parametros),
-    hoy: farmDay()
-  };
-}
-
-/**
- * Where a v2 tray is in its cycle. Explicit records only — the loads it got,
- * whether it fasted, whether it was harvested — never inferred from blanks.
- */
-function cicloBandeja(row, c, idx) {
-  const protocolo = row.protocolo || 'v1';
-  const inc = row.incubadora_id ? idx.incubadoraById.get(row.incubadora_id) || null : null;
-  if (protocolo !== 'v2' || !inc) {
-    return { protocolo, incubadora_codigo: inc ? inc.codigo : null, dia_ciclo: null,
-             cargas_dadas: [], n_cargas: 0, siguiente_paso: null };
-  }
-  const estado = c?.estado ?? row.estado;
-  const tray = {
-    dia_ciclo: diaCiclo(inc.fecha_inicio, idx.hoy),
-    cargas_dadas: c?.cargas_dadas || [],
-    tiene_ayuno: Boolean(c?.tiene_ayuno) || estado === 'en_ayuno',
-    cosechada: estado === 'cosechada'
-  };
-  const paso = siguientePaso(tray, idx.cfg);
-  return {
-    protocolo,
-    incubadora_codigo: inc.codigo,
-    dia_ciclo: tray.dia_ciclo,
-    cargas_dadas: tray.cargas_dadas,
-    n_cargas: tray.cargas_dadas.length,
-    siguiente_paso: paso ? { ...paso, label: pasoLabel(paso), cuando: cuandoLabel(paso) } : null
-  };
-}
-
-function joinBandeja(row, idx, cache) {
-  const rec = idx.recoleccionById.get(row.recoleccion_id) || null;
-  const ins = rec ? idx.insectarioById.get(rec.insectario_id) || null : null;
-  const c = cache || null;
-  return Object.assign(deepCopy(row), {
-    estado: c?.estado ?? row.estado ?? 'en_crecimiento',
-    recolecta: rec ? rec.recolecta : null,
-    insectario_id: ins ? ins.id : null,
-    // The UI prints these; `codigo` is the human-facing label now that the PK
-    // is an opaque UUID.
-    insectario_codigo: ins ? ins.codigo : null,
-    insectario_nombre: ins ? ins.nombre_insectario : null,
-    separacion: c?.separacion_id ? { id: c.separacion_id, larva_limpia_g: c.larva_limpia_g } : null,
-    lote_id: c?.lote_id ?? null,
-    tiene_ayuno_abierto: Boolean(c?.tiene_ayuno_abierto),
-    ayuno_abierto_id: c?.ayuno_abierto_id ?? null,
-    kg_alimento_total: c?.kg_alimento_total ?? 0,
-    n_alimentaciones: c?.n_alimentaciones ?? 0,
-    last_evento: c?.last_evento_tipo ? { tipo: c.last_evento_tipo, fecha: c.last_evento_fecha } : null,
-    ...cicloBandeja(row, c, idx)
-  });
-}
-
-const sortKey = b => String(b.last_evento?.fecha || b.fecha || '');
-
-/* ── public reads ───────────────────────────────────────────────────────── */
-
-export async function listInsectarios(filters = {}) {
-  const db = await openDb();
-  let rows = (await allRows(db, 'insectario')).map(decorateInsectario);
-  if (filters.estado) rows = rows.filter(r => r.estado === filters.estado);
-  rows.sort((a, b) => String(b.fecha_inicio || '').localeCompare(String(a.fecha_inicio || '')));
-  return ok(rows);
-}
-
-export async function getInsectarioDetail(id) {
-  const db = await openDb();
-  const row = await rowById(db, 'insectario', id);
-  if (!row || row.deleted_at) return fail(CODES.NOT_FOUND, 'Insectario no encontrado.');
-  const incs = new Map((await allRows(db, 'incubadora')).map(i => [i.recoleccion_id, i]));
-  const recolecciones = (await rowsByIndex(db, 'recoleccion', 'by_insectario', id))
-    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
-    .map(r => Object.assign(deepCopy(r), {
-      protocolo: r.protocolo || 'v1',
-      incubadora_id: incs.get(r.id)?.id ?? null,
-      incubadora_codigo: incs.get(r.id)?.codigo ?? null
-    }));
-  return ok({ insectario: decorateInsectario(row), recolecciones });
-}
-
-export async function listRecolecciones(filters = {}) {
-  const db = await openDb();
-  const idx = await buildIndex(db);
-  let rows = await allRows(db, 'recoleccion');
-  if (filters.insectario_id) rows = rows.filter(r => r.insectario_id === filters.insectario_id);
-  if (filters.protocolo) rows = rows.filter(r => (r.protocolo || 'v1') === filters.protocolo);
-  rows.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-  return ok(rows.map(r => {
-    const ins = idx.insectarioById.get(r.insectario_id);
-    const inc = idx.incubadoraByRecoleccion.get(r.id);
-    return Object.assign(deepCopy(r), {
-      protocolo: r.protocolo || 'v1',
-      insectario_nombre: ins ? ins.nombre_insectario : null,
-      insectario_codigo: ins ? ins.codigo : null,
-      incubadora_id: inc ? inc.id : null,
-      incubadora_codigo: inc ? inc.codigo : null
-    });
-  }));
-}
-
-/* ── protocolo v2 ───────────────────────────────────────────────────────── */
-
-/** Settings plus today's farm day, for the screens that show the plan. */
 export async function getProtocolo() {
-  const db = await openDb();
-  const cfg = await loadProtocolo(db);
-  const hoy = farmDay();
-  return ok({ ...cfg, hoy, v2_vigente: v2Vigente(cfg, hoy) });
+  return ok(await protocolo(await openDb()));
 }
 
-function decorateIncubadora(inc, idx, nBandejas = 0) {
-  const rec = idx.recoleccionById.get(inc.recoleccion_id) || null;
-  const ins = rec ? idx.insectarioById.get(rec.insectario_id) || null : null;
-  const paso = pasoIncubadora(inc, idx.cfg, idx.hoy);
-  return Object.assign(deepCopy(inc), {
-    estado: inc.distribuida_at ? 'distribuida' : 'incubando',
-    dia_ciclo: diaCiclo(inc.fecha_inicio, idx.hoy),
-    recolecta: rec ? rec.recolecta : null,
-    recoleccion_fecha: rec ? rec.fecha : null,
-    peso_ovipositores_g: rec ? rec.peso_ovipositores_g ?? null : null,
-    insectario_id: ins ? ins.id : null,
-    insectario_codigo: ins ? ins.codigo : null,
-    insectario_nombre: ins ? ins.nombre_insectario : null,
-    n_bandejas: nBandejas,
-    siguiente_paso: paso ? { ...paso, label: pasoLabel(paso), cuando: cuandoLabel(paso) } : null
-  });
+/* ── shaping helpers ──────────────────────────────────────────────────────── */
+
+const FASE_TXT = { activa: 'Con moscas', cerrada: 'Cerrada', limpia: 'Limpia' };
+const ENSILADO_TXT = { madurando: 'Madurando', abierto: 'Abierto', vencido: 'Consumido' };
+
+const paso = p => p ? { ...p, label: pasoLabel(p), cuando: cuandoLabel(p) } : null;
+const primerPaso = pasos => paso((pasos || []).find(p => !p.bloqueado) || null);
+
+/** Where an object's food came from, in words. */
+function origenAlimento(v, id) {
+  const c = v.alimento.consumos.get(id);
+  if (!c) return '';
+  const partes = c.partes.map(p => `${kgTxt(p.kg)} kg de ${p.codigo}`);
+  if (c.sin_ensilado_kg > 0) partes.push(`${kgTxt(c.sin_ensilado_kg)} kg sin ensilado`);
+  return partes.join(' · ');
 }
 
-export async function listIncubadoras(filters = {}) {
-  const db = await openDb();
-  const idx = await buildIndex(db);
-  const trays = await allRows(db, 'bandeja');
-  const counts = new Map();
-  for (const t of trays) if (t.incubadora_id) counts.set(t.incubadora_id, (counts.get(t.incubadora_id) || 0) + 1);
-
-  let rows = [...idx.incubadoraById.values()].map(i => decorateIncubadora(i, idx, counts.get(i.id) || 0));
-  if (filters.estado) rows = rows.filter(r => r.estado === filters.estado);
-  rows.sort((a, b) => String(b.fecha_inicio).localeCompare(String(a.fecha_inicio)) ||
-                      String(a.codigo).localeCompare(String(b.codigo)));
-  return ok(rows);
-}
-
-/* ── alimento ───────────────────────────────────────────────────────────── */
-
-const round2 = v => Math.round(Number(v || 0) * 100) / 100;
-
-export async function listRecepciones(filters = {}) {
-  const db = await openDb();
-  let rows = (await allRows(db, 'recepcion_alimento'))
-    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-  if (filters.limit) rows = rows.slice(0, filters.limit);
-  return ok(deepCopy(rows));
-}
-
-/** Everything the food screens derive, from stored rows only. */
-async function alimentoIndex(db) {
-  const [ens, insumos, lecturas, feeds, parametros] = await Promise.all([
-    allRows(db, 'ensilaje'), allRows(db, 'ensilaje_insumo'), allRows(db, 'ensilaje_lectura'),
-    allRows(db, 'alimentacion'), allRows(db, 'parametro')
-  ]);
-  const consumo = new Map();
-  for (const a of feeds) {
-    if (!a.ensilaje_id) continue;
-    const c = consumo.get(a.ensilaje_id) || { kg: 0, n: 0 };
-    c.kg += Number(a.cantidad_kg) || 0; c.n += 1;
-    consumo.set(a.ensilaje_id, c);
-  }
-  const ultimas = new Map();
-  for (const l of lecturas) {
-    const prev = ultimas.get(l.ensilaje_id);
-    if (!prev || String(l.fecha) > String(prev.fecha)) ultimas.set(l.ensilaje_id, l);
-  }
-  return { ens, insumos, lecturas, feeds, consumo, ultimas, cfg: mergeProtocolo(parametros), hoy: farmDay() };
-}
-
-function decorateEnsilaje(e, idx) {
-  const estado = ensilajeEstado(e);
-  const diaSellado = e.sellado_at ? farmDay(e.sellado_at) : null;
-  const listoPrevisto = diaSellado ? addDays(diaSellado, idx.cfg.dias_fermentacion) : null;
-  const c = idx.consumo.get(e.id) || { kg: 0, n: 0 };
-  const ult = idx.ultimas.get(e.id) || null;
-  return Object.assign(deepCopy(e), {
-    estado,
-    dias_fermentando: diaSellado ? daysBetween(diaSellado, idx.hoy) : null,
-    listo_previsto: listoPrevisto,
-    // Days until it should be ready: negative once that date has passed.
-    listo_en: listoPrevisto && !e.listo_at ? daysBetween(idx.hoy, listoPrevisto) : null,
-    kg_consumido: round2(c.kg),
-    n_cargas: c.n,
-    kg_disponible: e.kg_inicial == null ? null : round2(Number(e.kg_inicial) - c.kg),
-    ultima_temperatura_c: ult ? ult.temperatura_c : null,
-    ultima_lectura: ult ? ult.fecha : null
-  });
-}
-
-export async function listEnsilajes(filters = {}) {
-  const db = await openDb();
-  const idx = await alimentoIndex(db);
-  const orden = { en_uso: 0, listo: 1, fermentando: 2, armado: 3, agotado: 4 };
-  let rows = idx.ens.map(e => decorateEnsilaje(e, idx));
-  if (filters.activos) rows = rows.filter(r => r.estado !== 'agotado');
-  rows.sort((a, b) => (orden[a.estado] - orden[b.estado]) ||
-                      String(b.fecha_armado).localeCompare(String(a.fecha_armado)));
-  return ok(rows);
-}
-
-export async function getEnsilajeDetail(id) {
-  const db = await openDb();
-  const row = await rowById(db, 'ensilaje', id);
-  if (!row || row.deleted_at) return fail(CODES.NOT_FOUND, 'Ensilaje no encontrado.');
-  const idx = await alimentoIndex(db);
-  const porDia = new Map();
-  for (const a of idx.feeds.filter(f => f.ensilaje_id === id)) {
-    const d = farmDay(a.fecha);
-    porDia.set(d, round2((porDia.get(d) || 0) + (Number(a.cantidad_kg) || 0)));
-  }
-  return ok({
-    ensilaje: decorateEnsilaje(row, idx),
-    insumos: deepCopy(idx.insumos.filter(i => i.ensilaje_id === id)),
-    lecturas: deepCopy(idx.lecturas.filter(l => l.ensilaje_id === id)
-      .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))),
-    consumo_por_dia: [...porDia].sort((a, b) => b[0].localeCompare(a[0])).map(([dia, kg]) => ({ dia, kg }))
-  });
-}
+const sinEnsilado = (v, id) => (v.alimento.consumos.get(id)?.sin_ensilado_kg || 0) > 0;
 
 /**
- * The whole food picture: raw material in store, ensilaje usable now and
- * fermenting, what the trays eat per day, how long the stock lasts, and
- * whether it covers the loads due in the next days.
+ * One record, ready for a list: what it is and its numbers, when and who,
+ * whether it was corrected, its note and photo, why it needs a second look.
  */
-export async function getStockAlimento({ dias = 3 } = {}) {
-  const db = await openDb();
-  const [idx, recepciones, bidx, cache] = await Promise.all([
-    alimentoIndex(db), allRows(db, 'recepcion_alimento'), buildIndex(db), allCache(db)
-  ]);
+function registro(v, tabla, r, titulo, detalle, { fecha } = {}) {
+  const momento = fecha || r.fecha || r.created_at;
+  return {
+    tabla, id: r.id, titulo, detalle: detalle || '',
+    fecha: momento,
+    cuando: cuandoTxt(momento, v.hoy),
+    por: r.registrado_por || '',
+    corregido: r.editado_at ? `Corregido por ${r.editado_por || '—'} · ${cuandoTxt(r.editado_at, v.hoy)}` : '',
+    nota: r.nota || '',
+    foto_key: r.foto_key || null,
+    revisar: motivosRevisar(v, tabla, r.id),
+    editable: Boolean(EDITABLE[tabla]),
+    revisable: !['rack', 'contenedor'].includes(tabla)
+  };
+}
 
-  const mats = new Map();
-  const mat = m => { if (!mats.has(m)) mats.set(m, { material: m, recibido_kg: 0, usado_kg: 0, ultima_recepcion: null }); return mats.get(m); };
-  for (const r of recepciones) {
-    const x = mat(r.material);
-    x.recibido_kg += Number(r.kg) || 0;
-    if (!x.ultima_recepcion || String(r.fecha) > String(x.ultima_recepcion)) x.ultima_recepcion = r.fecha;
-  }
-  const vivos = new Set(idx.ens.map(e => e.id));
-  for (const i of idx.insumos) if (vivos.has(i.ensilaje_id)) mat(i.material).usado_kg += Number(i.kg) || 0;
-  const materiales = [...mats.values()].map(x => ({
-    ...x, recibido_kg: round2(x.recibido_kg), usado_kg: round2(x.usado_kg),
-    disponible_kg: round2(x.recibido_kg - x.usado_kg)
-  })).sort((a, b) => a.material.localeCompare(b.material, 'es'));
+const porFechaDesc = (a, b) => String(b.fecha).localeCompare(String(a.fecha));
 
-  const ens = idx.ens.map(e => decorateEnsilaje(e, idx));
-  const usable = ens.filter(e => e.estado === 'en_uso' || e.estado === 'listo');
-  const enUso = ens.filter(e => e.estado === 'en_uso')
-    .sort((a, b) => String(a.en_uso_at).localeCompare(String(b.en_uso_at)))[0] || null;
-  const disponible = round2(usable.reduce((s, e) => s + Math.max(0, e.kg_disponible || 0), 0));
-  const fermentando = round2(ens.filter(e => e.estado === 'fermentando' || e.estado === 'armado')
-    .reduce((s, e) => s + (Number(e.kg_inicial) || 0), 0));
+function registrosMovimiento(v, objId) {
+  return v.movimientos.filter(m => m.objeto_id === objId).map(m =>
+    registro(v, 'movimiento', m, 'Cambio de rack',
+             `${v.por.rack.get(m.rack_desde)?.codigo || '—'} → ${v.por.rack.get(m.rack_hasta)?.codigo || '?'}`));
+}
 
-  // What the new-protocol trays actually ate in the last 7 farm days.
-  const desde = addDays(idx.hoy, -6);
-  const consumo7 = round2(idx.feeds
-    .filter(a => (a.protocolo || 'v1') === 'v2' && farmDay(a.fecha) >= desde)
-    .reduce((s, a) => s + (Number(a.cantidad_kg) || 0), 0));
-  const diario = round2(consumo7 / 7);
+const chequeoTxt = c =>
+  `${kgTxt(c.humedad_pct)} % · ${kgTxt(c.temperatura_c)} °C · ${c.peso_g != null ? `${kgTxt(c.peso_g)} g` : `${kgTxt(c.peso_kg)} kg`}`;
 
-  // And what they will need soon, from the plan.
-  const trays = (await allRows(db, 'bandeja')).filter(b => b.protocolo === 'v2' && !b.cerrada_admin_at)
-    .map(b => {
-      const c = cache.get(b.id);
-      const inc = bidx.incubadoraById.get(b.incubadora_id);
-      const estado = c?.estado ?? b.estado;
-      return { dia_ciclo: inc ? diaCiclo(inc.fecha_inicio, bidx.hoy) : null, cargas_dadas: c?.cargas_dadas || [],
-               tiene_ayuno: Boolean(c?.tiene_ayuno) || estado === 'en_ayuno', cosechada: estado === 'cosechada' };
-    });
-  const proximas = kgCargasProximas(trays, idx.cfg, dias);
+const cierreTxt = o => o.cerrado_at
+  ? `Cerrada antes de tiempo: ${o.motivo_cierre || '—'} (${o.cerrado_por || '—'}, ${cuandoTxt(o.cerrado_at)})` : '';
 
+/* ── home ─────────────────────────────────────────────────────────────────── */
+
+export async function getInicio() {
+  const v = await vistaActual(await openDb());
+  const hoy = paraHoy(v);
   return ok({
-    materiales,
-    ensilaje_en_uso: enUso,
-    ensilaje_disponible_kg: disponible,
-    ensilaje_fermentando_kg: fermentando,
-    consumo_7d_kg: consumo7,
-    consumo_diario_kg: diario,
-    dias_restantes: diario > 0 ? Math.floor(disponible / diario) : null,
-    kg_cargas_proximas: proximas,
-    dias_prevision: dias,
-    alcanza: disponible >= proximas
+    paraHoy: hoy,
+    conteos: {
+      jaulas: v.jaulas.filter(j => j.fase === 'activa').length,
+      incubadoras: v.incubadoras.filter(i => i.estado === 'activo').length,
+      cajas: v.cajas.filter(c => c.estado === 'activo').length,
+      cochadas: v.cochadas.filter(c => c.estado === 'activo').length,
+      ensilados: v.ensilados.filter(e => e.estado === 'abierto').length,
+      revisar: v.revisar.size
+    },
+    pool_kg: v.pool.kg_pendiente,
+    horno_kg: kg3(v.horno.reduce((s, h) => s + h.kg_pendiente, 0)),
+    vacio: !v.jaulas.length && !v.racks.length
   });
 }
 
-/**
- * What is due: the home screen's list (monitor.js), from this phone's rows.
- * Everything the plan tracks is local, so it works the same with no signal.
- */
-export async function getMonitor({ horizonte = 2 } = {}) {
-  const db = await openDb();
-  const [idx, cache, trays, ensilajes, revisiones] = await Promise.all([
-    buildIndex(db), allCache(db), allRows(db, 'bandeja'), allRows(db, 'ensilaje'), allRows(db, 'revision')
-  ]);
-  const bandejas = trays.filter(b => b.protocolo === 'v2').map(b => {
-    const c = cache.get(b.id);
-    const estado = c?.estado ?? b.estado;
-    return {
-      id: b.id, id_bandeja: b.id_bandeja, protocolo: b.protocolo, estado,
-      cerrada_admin_at: b.cerrada_admin_at ?? null,
-      fecha_inicio: idx.incubadoraById.get(b.incubadora_id)?.fecha_inicio ?? null,
-      cargas_dadas: c?.cargas_dadas || [],
-      tiene_ayuno: Boolean(c?.tiene_ayuno) || estado === 'en_ayuno'
-    };
+/* ── racks, containers ────────────────────────────────────────────────────── */
+
+export async function listRacks() {
+  const v = await vistaActual(await openDb());
+  const enRack = id => [
+    ...v.incubadoras.filter(i => i.estado === 'activo' && i.rack?.id === id).map(i => i.codigo),
+    ...v.cajas.filter(c => c.estado === 'activo' && c.rack?.id === id).map(c => c.codigo)
+  ];
+  return ok(v.racks.map(r => ({ id: r.id, codigo: r.codigo, objetos: enRack(r.id),
+                                registro: registro(v, 'rack', r, `Rack ${r.codigo}`, '') }))
+    .sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true })));
+}
+
+export async function listContenedores() {
+  const v = await vistaActual(await openDb());
+  return ok(v.contenedores.map(c => {
+    const actual = v.ensilados.filter(e => e.contenedor_id === c.id && e.estado !== 'vencido')
+      .sort((a, b) => String(b.ensilado_at).localeCompare(String(a.ensilado_at)))[0];
+    return { id: c.id, codigo: c.codigo, ensilado: actual ? `${actual.codigo} · ${ENSILADO_TXT[actual.estado]}` : 'Vacío',
+             registro: registro(v, 'contenedor', c, `Contenedor ${c.codigo}`, '') };
+  }).sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true })));
+}
+
+/* ── the insectario ───────────────────────────────────────────────────────── */
+
+function jaulaFila(v, j) {
+  return {
+    id: j.id, nombre: j.nombre, letra: j.letra, lugar: j.lugar,
+    fase: j.fase, faseTxt: FASE_TXT[j.fase], generacion: j.generacion,
+    dia_ciclo: j.dia_ciclo,
+    linea: [`F${j.generacion}`, FASE_TXT[j.fase],
+            j.dia_ciclo !== null ? `día ${j.dia_ciclo} del ciclo` : null, j.lugar || null].filter(Boolean).join(' · '),
+    paso: primerPaso(j.pasos.filter(p => p.aviso))
+  };
+}
+
+export async function listJaulas() {
+  const v = await vistaActual(await openDb());
+  return ok({
+    jaulas: v.jaulas.map(j => jaulaFila(v, j)).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
+    pool_kg: v.pool.kg_pendiente
   });
-  const incubadoras = [...idx.incubadoraById.values()].map(i => decorateIncubadora(i, idx));
-  const stock = await getStockAlimento({ dias: idx.cfg.dias_stock_alerta });
-  return ok(monitor({
-    bandejas, incubadoras, ensilajes,
-    revisiones: revisiones.filter(r => r.temperatura_c !== null && r.temperatura_c !== undefined),
-    stock: stock.ok ? stock.data : null,
-    cfg: idx.cfg, hoy: idx.hoy, horizonte
-  }));
 }
 
-export async function getIncubadoraDetail(id) {
-  const db = await openDb();
-  const row = await rowById(db, 'incubadora', id);
-  if (!row || row.deleted_at) return fail(CODES.NOT_FOUND, 'Incubadora no encontrada.');
-  const [idx, cache] = await Promise.all([buildIndex(db), allCache(db)]);
-  const bandejas = (await rowsByIndex(db, 'bandeja', 'by_incubadora', id))
-    .map(b => joinBandeja(b, idx, cache.get(b.id)))
-    .sort((a, b) => (a.no_bandeja ?? 0) - (b.no_bandeja ?? 0));
-  return ok({ incubadora: decorateIncubadora(row, idx, bandejas.length), bandejas });
-}
-
-export async function listBandejas(filters = {}) {
-  const db = await openDb();
-  const [idx, cache] = await Promise.all([buildIndex(db), allCache(db)]);
-  const f = filters || {};
-
-  let rows = (await allRows(db, 'bandeja'))
-    // Administratively closed trays are excluded everywhere. Without this the
-    // home screen reads "347 bandejas activas" after migration, because nine
-    // months of trays have no recorded harvest.
-    .filter(b => !b.cerrada_admin_at)
-    .map(b => joinBandeja(b, idx, cache.get(b.id)));
-
-  if (f.q) {
-    const q = String(f.q).toLowerCase();
-    rows = rows.filter(b =>
-      String(b.id_bandeja || '').toLowerCase().includes(q) ||
-      String(b.insectario_codigo || '').toLowerCase().includes(q) ||
-      String(b.recolecta || '').includes(q));
+function ingresoRegistros(v, i) {
+  const l = i.larvas;
+  const edades = l && l.edad_min !== null
+    ? (l.edad_min === l.edad_max ? `${l.edad_min} días` : `${l.edad_min}–${l.edad_max} días (prom. ${l.edad_promedio})`)
+    : 'sin datos de edad';
+  const out = [registro(v, 'ingreso', i, `Ingreso · F${i.generacion}`,
+    `${kgTxt(i.kg_larvas)} kg del 2 % · ${i.bandejas.length} bandeja${i.bandejas.length === 1 ? '' : 's'} · larvas de ${edades}` +
+    (l?.mezcla ? ` · mezcla de F${l.generaciones.join(', F')}` : '') +
+    (l?.faltan_kg > 0 ? ` · ${kgTxt(l.faltan_kg)} kg sin registro en el 2 %` : ''))];
+  for (const b of i.bandejas) {
+    out.push(registro(v, 'bandeja_pupacion', b, `Bandeja ${b.codigo}`,
+      `${kgTxt(b.peso_kg)} kg · rack ${v.por.rack.get(b.rack_id)?.codigo || '—'}`, { fecha: i.fecha }));
   }
-  if (f.estado) rows = rows.filter(b => b.estado === f.estado);
-  if (f.insectario_id) rows = rows.filter(b => b.insectario_id === f.insectario_id);
-  if (f.from) rows = rows.filter(b => String(b.fecha) >= f.from);
-  if (f.to) rows = rows.filter(b => String(b.fecha) <= f.to);
-
-  rows.sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
-  if (f.limit) rows = rows.slice(0, f.limit);
-  return ok(rows);
+  return out;
 }
 
-export async function getBandejaDetail(id) {
+export async function getJaula(id) {
+  const v = await vistaActual(await openDb());
+  const j = v.jaulas.find(x => x.id === id);
+  if (!j) return fail(CODES.NOT_FOUND, 'Jaula no encontrada.');
+  const ingresos = v.ingresos.filter(i => i.jaula_id === id);
+  const registros = [
+    registro(v, 'jaula', j, 'Registro de la jaula',
+             `Letra ${j.letra} · F${j.generacion_inicial} al registrarla · ${FASE_TXT[j.fase_inicial]}`,
+             { fecha: j.created_at }),
+    ...ingresos.flatMap(i => ingresoRegistros(v, i)),
+    ...j.eventos.map(e => registro(v, 'jaula_evento', e, e.tipo === 'cierre' ? 'Cierre' : 'Limpieza', ''))
+  ].sort(porFechaDesc);
+  const recolectas = v.incubadoras.filter(i => i.jaula_id === id)
+    .sort((a, b) => String(b.recolecta_at).localeCompare(String(a.recolecta_at)))
+    .slice(0, 12)
+    .map(i => ({ id: i.id, codigo: i.codigo, linea: `${diaTxt(i.dia0)} · día ${i.dia} · ${i.estado === 'activo' ? 'en incubadora' : i.distribucion ? 'distribuida' : 'cerrada'}` }));
+  return ok({
+    jaula: jaulaFila(v, j),
+    facts: [
+      ['Generación', `F${j.generacion}`], ['Estado', FASE_TXT[j.fase]],
+      ['Ciclo', j.ciclo_desde ? `desde ${diaTxt(j.ciclo_desde)} (día ${j.dia_ciclo})` : 'sin fecha (ya tenía moscas)'],
+      ['Lugar', j.lugar || '—']
+    ],
+    pasos: j.pasos.map(paso),
+    pool_kg: v.pool.kg_pendiente,
+    recolectas,
+    registros
+  });
+}
+
+/* ── incubadoras ──────────────────────────────────────────────────────────── */
+
+function incubadoraFila(v, i) {
+  return {
+    id: i.id, codigo: i.codigo, estado: i.estado, dia: i.dia,
+    jaula: i.jaula?.nombre || '?',
+    linea: [`Día ${i.dia}`, i.jaula?.nombre, i.rack ? `rack ${i.rack.codigo}` : null,
+            i.excepcion ? 'registrada tarde' : null].filter(Boolean).join(' · '),
+    paso: primerPaso(i.pasos.filter(p => p.aviso)),
+    revisar: motivosRevisar(v, 'incubadora', i.id).length > 0,
+    estadoTxt: i.estado === 'activo' ? 'En incubadora' : i.distribucion ? 'Distribuida' : 'Cerrada'
+  };
+}
+
+export async function listIncubadoras({ inactivas = false } = {}) {
+  const v = await vistaActual(await openDb());
+  const rows = v.incubadoras
+    .filter(i => inactivas || i.estado === 'activo')
+    .sort((a, b) => (a.estado === b.estado ? 0 : a.estado === 'activo' ? -1 : 1) ||
+                    String(b.recolecta_at).localeCompare(String(a.recolecta_at)));
+  return ok(rows.slice(0, inactivas ? 60 : 500).map(i => incubadoraFila(v, i)));
+}
+
+export async function getIncubadora(id) {
+  const v = await vistaActual(await openDb());
+  const i = v.por.incubadora.get(id);
+  if (!i) return fail(CODES.NOT_FOUND, 'Incubadora no encontrada.');
+  const cajas = v.cajas.filter(c => c.incubadora_id === id).sort((a, b) => a.numero - b.numero);
+  const registros = [
+    registro(v, 'incubadora', i, 'Recolecta',
+             `${kgTxt(i.peso_inicial_g)} g · ${kgTxt(i.alimento_inicial_kg)} kg de alimento` +
+             (origenAlimento(v, i.id) ? ` (${origenAlimento(v, i.id)})` : ''),
+             { fecha: i.recolecta_at }),
+    ...i.chequeos.map(c => registro(v, 'chequeo', c, `Chequeo día ${c.dia}`, chequeoTxt(c))),
+    ...(i.distribucion ? [registro(v, 'distribucion', i.distribucion, 'Tamizado, pesado y distribución',
+        `${kgTxt(i.distribucion.peso_total_kg)} kg tamizados · ${cajas.length} caja${cajas.length === 1 ? '' : 's'}`)] : []),
+    ...registrosMovimiento(v, id)
+  ].sort(porFechaDesc);
+  return ok({
+    incubadora: incubadoraFila(v, i),
+    facts: [
+      ['Jaula', `${i.jaula?.nombre || '?'} · F${i.generacion}`], ['Día', String(i.dia)],
+      ['Recolecta', fechaHoraTxt(i.recolecta_at)], ['Rack', i.rack?.codigo || '—'],
+      ['Peso inicial', `${kgTxt(i.peso_inicial_g)} g`], ['Alimento inicial', `${kgTxt(i.alimento_inicial_kg)} kg`]
+    ],
+    sin_ensilado: sinEnsilado(v, i.id),
+    cierre: cierreTxt(i),
+    excepcion: i.excepcion ? 'Registrada con fecha pasada (excepción).' : '',
+    pasos: i.pasos.map(paso),
+    cajas: cajas.map(c => cajaFila(v, c)),
+    registros,
+    activa: i.estado === 'activo'
+  });
+}
+
+/* ── cajas de engorde ─────────────────────────────────────────────────────── */
+
+function cajaFila(v, c) {
+  const estadoTxt = c.estado === 'activo' ? (c.en_ayuno ? 'En ayuno' : 'Engorde')
+                  : c.separacion ? 'Separada' : 'Cerrada';
+  return {
+    id: c.id, codigo: c.codigo, estado: c.estado, estadoTxt, dia: c.dia, en_ayuno: c.en_ayuno,
+    incubadora_id: c.incubadora_id, incubadora: c.incubadora_codigo, numero: c.numero,
+    linea: [`Día ${c.dia}`, c.rack ? `rack ${c.rack.codigo}` : null,
+            `cargas ${c.cargas.map(x => x.carga).join(', ') || '—'}`].filter(Boolean).join(' · '),
+    paso: primerPaso(c.pasos.filter(p => p.aviso)),
+    revisar: motivosRevisar(v, 'caja', c.id).length > 0
+  };
+}
+
+export async function listCajas({ inactivas = false } = {}) {
+  const v = await vistaActual(await openDb());
+  const rows = v.cajas
+    .filter(c => inactivas || c.estado === 'activo')
+    .sort((a, b) => (a.estado === b.estado ? 0 : a.estado === 'activo' ? -1 : 1) ||
+                    String(a.dia0).localeCompare(String(b.dia0)) || a.codigo.localeCompare(b.codigo));
+  return ok(rows.slice(0, inactivas ? 80 : 1000).map(c => cajaFila(v, c)));
+}
+
+export async function getCaja(id) {
+  const v = await vistaActual(await openDb());
+  const c = v.por.caja.get(id);
+  if (!c) return fail(CODES.NOT_FOUND, 'Caja no encontrada.');
+  const sep = c.separacion;
+  const registros = [
+    registro(v, 'caja', c, 'Caja creada en la distribución',
+             `${kgTxt(c.peso_inicial_kg)} kg · rack ${v.por.rack.get(c.rack_id)?.codigo || '—'}`, { fecha: c.created_at }),
+    ...c.cargas.map(a => registro(v, 'alimentacion', a, `Carga ${a.carga}`,
+      `${kgTxt(a.kg)} kg${a.kg_plan != null && Number(a.kg_plan) !== Number(a.kg) ? ` (plan ${kgTxt(a.kg_plan)})` : ''}` +
+      (origenAlimento(v, a.id) ? ` · ${origenAlimento(v, a.id)}` : ''))),
+    ...c.chequeos.map(x => registro(v, 'chequeo', x, `Chequeo día ${x.dia}`, chequeoTxt(x))),
+    ...(sep ? [registro(v, 'separacion', sep, 'Separación',
+        `${kgTxt(sep.peso_total_kg)} kg → ${kgTxt(c.reparto.coccion_kg)} kg al horno · ${kgTxt(c.reparto.retorno_kg)} kg al insectario`)] : []),
+    ...registrosMovimiento(v, id)
+  ].sort(porFechaDesc);
+  return ok({
+    caja: cajaFila(v, c),
+    facts: [
+      ['Incubadora', c.incubadora_codigo], ['Día', String(c.dia)],
+      ['Rack', c.rack?.codigo || '—'], ['Peso inicial', `${kgTxt(c.peso_inicial_kg)} kg`],
+      ['Estado', cajaFila(v, c).estadoTxt], ['Generación', c.generacion !== null ? `F${c.generacion}` : '—']
+    ],
+    cierre: cierreTxt(c),
+    sin_ensilado: c.cargas.some(a => sinEnsilado(v, a.id)),
+    pasos: c.pasos.map(paso),
+    registros,
+    activa: c.estado === 'activo'
+  });
+}
+
+/* ── the oven ─────────────────────────────────────────────────────────────── */
+
+function cochadaFila(v, co) {
+  return {
+    id: co.id, codigo: co.codigo, estado: co.estado,
+    estadoTxt: co.estado === 'activo' ? 'En el horno' : co.final ? 'Lista para empacar' : 'Cerrada',
+    linea: [`${kgTxt(co.peso_inicial_kg)} kg`, co.final ? `final ${kgTxt(co.final.peso_kg)} kg` : null,
+            fechaHoraTxt(co.horno_at)].filter(Boolean).join(' · '),
+    paso: primerPaso(co.pasos.filter(p => p.aviso)),
+    revisar: co.origenes.some(o => motivosRevisar(v, 'cochada_origen', o.id).length)
+  };
+}
+
+/** The 98 % waiting, separación by separación — what a new cochada takes from. */
+function pendientesHorno(v) {
+  return v.horno.filter(h => h.kg_pendiente > 0).map(h => {
+    const caja = v.por.caja.get(h.caja_id);
+    return { separacion_id: h.separacion_id, caja: caja?.codigo || '?', fecha: diaTxt(farmDay(h.fecha)),
+             kg_pendiente: h.kg_pendiente, coccion_kg: h.coccion_kg };
+  });
+}
+
+export async function getHorno() {
+  const v = await vistaActual(await openDb());
+  const cochadas = [...v.cochadas].sort((a, b) =>
+    (a.estado === b.estado ? 0 : a.estado === 'activo' ? -1 : 1) || String(b.horno_at).localeCompare(String(a.horno_at)));
+  return ok({
+    pendientes: pendientesHorno(v),
+    kg_pendiente: kg3(v.horno.reduce((s, h) => s + h.kg_pendiente, 0)),
+    activas: cochadas.filter(c => c.estado === 'activo').map(c => cochadaFila(v, c)),
+    recientes: cochadas.filter(c => c.estado !== 'activo').slice(0, 20).map(c => cochadaFila(v, c))
+  });
+}
+
+export async function getCochada(id) {
+  const v = await vistaActual(await openDb());
+  const co = v.cochadas.find(c => c.id === id);
+  if (!co) return fail(CODES.NOT_FOUND, 'Cochada no encontrada.');
+  const registros = [
+    registro(v, 'cochada', co, 'Al horno', `${kgTxt(co.peso_inicial_kg)} kg`, { fecha: co.horno_at }),
+    ...co.origenes.map(o => registro(v, 'cochada_origen', o, `Del 98 % de ${o.caja?.codigo || '?'}`, `${kgTxt(o.kg)} kg`)),
+    ...co.lecturas.map(l => registro(v, 'cochada_lectura', l, l.momento === 'final' ? 'Lectura final' : 'Mitad del horno',
+      `${kgTxt(l.temperatura_c)} °C${l.peso_kg != null ? ` · ${kgTxt(l.peso_kg)} kg` : ''}`))
+  ].sort(porFechaDesc);
+  const merma = co.final && Number(co.peso_inicial_kg) > 0
+    ? `${kgTxt(Math.round((1 - Number(co.final.peso_kg) / Number(co.peso_inicial_kg)) * 1000) / 10)} %` : '—';
+  return ok({
+    cochada: cochadaFila(v, co),
+    facts: [
+      ['Al horno', fechaHoraTxt(co.horno_at)], ['Peso inicial', `${kgTxt(co.peso_inicial_kg)} kg`],
+      ['Del 98 %', `${kgTxt(co.kg_origen)} kg de ${co.origenes.length} separaci${co.origenes.length === 1 ? 'ón' : 'ones'}`],
+      ['Mitad', co.media ? `${kgTxt(co.media.temperatura_c)} °C` : '—'],
+      ['Final', co.final ? `${kgTxt(co.final.temperatura_c)} °C · ${kgTxt(co.final.peso_kg)} kg` : '—'],
+      ['Pérdida de peso', merma]
+    ],
+    cierre: cierreTxt(co),
+    pasos: co.pasos.map(paso),
+    registros,
+    activa: co.estado === 'activo',
+    tiene_media: Boolean(co.media)
+  });
+}
+
+/* ── food ─────────────────────────────────────────────────────────────────── */
+
+function ensiladoFila(v, e) {
+  return {
+    id: e.id, codigo: e.codigo, estado: e.estado, estadoTxt: ENSILADO_TXT[e.estado],
+    linea: e.estado === 'madurando'
+      ? `${kgTxt(e.kg_total)} kg · se abre el ${diaTxt(e.apertura_prevista)}`
+      : e.estado === 'abierto'
+        ? `Quedan ${kgTxt(e.kg_restante)} de ${kgTxt(e.kg_total)} kg · vence ${horaLocal(e.vence_at)}`
+        : `${kgTxt(e.kg_usado)} kg consumidos · ${kgTxt(e.kg_descartado)} kg descartados`,
+    paso: primerPaso(e.pasos),
+    revisar: motivosRevisar(v, 'ensilado', e.id).length > 0
+  };
+}
+
+export async function getAlimento() {
   const db = await openDb();
-  const row = await rowById(db, 'bandeja', id);
-  if (!row || row.deleted_at) return fail(CODES.NOT_FOUND, 'Bandeja no encontrada.');
+  const v = await vistaActual(db);
+  const ens = [...v.ensilados].sort((a, b) =>
+    ({ abierto: 0, madurando: 1, vencido: 2 }[a.estado] - { abierto: 0, madurando: 1, vencido: 2 }[b.estado]) ||
+    String(a.dia0).localeCompare(String(b.dia0)));
+  const recepciones = [...v.recepciones].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  return ok({
+    stock: [...v.stock.porMaterial.values()].sort((a, b) => a.material.localeCompare(b.material, 'es')),
+    ensilados: [
+      ...ens.filter(e => e.estado !== 'vencido').map(e => ensiladoFila(v, e)),
+      ...ens.filter(e => e.estado === 'vencido').reverse().slice(0, 15).map(e => ensiladoFila(v, e))
+    ],
+    recepciones: recepciones.slice(0, 30).map(r => {
+      const s = v.stock.porRecepcion.get(r.id);
+      return { id: r.id, disponible: s.kg_disponible,
+               registro: registro(v, 'recepcion', r, r.material,
+                 `${kgTxt(r.kg)} kg · quedan ${kgTxt(s.kg_disponible)} kg sin ensilar`) };
+    }),
+    sin_ensilado: [...v.alimento.consumos.values()].filter(c => c.sin_ensilado_kg > 0).length
+  });
+}
 
-  const [idx, cache] = await Promise.all([buildIndex(db), getCache(db, id)]);
-  const bandeja = joinBandeja(row, idx, cache);
-
-  const [alims, ayunos, revs, seps] = await Promise.all([
-    rowsByIndex(db, 'alimentacion', 'by_bandeja', id),
-    rowsByIndex(db, 'ayuno', 'by_bandeja', id),
-    rowsByIndex(db, 'revision', 'by_bandeja', id),
-    rowsByIndex(db, 'separacion', 'by_bandeja', id)
-  ]);
-
-  const eventos = [
-    ...alims.map(x => ({ tipo: 'alimentacion', ...deepCopy(x) })),
-    ...ayunos.map(x => ({ tipo: 'ayuno', ...decorateAyuno(x) })),
-    ...revs.map(x => ({ tipo: 'revision', ...deepCopy(x) })),
-    ...seps.map(x => ({ tipo: 'separacion', ...deepCopy(x) }))
-  ].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-
-  let lote = null;
-  if (bandeja.lote_id) {
-    const c = idx.loteById.get(bandeja.lote_id);
-    if (c) lote = decorateLote(c);
+export async function getEnsilado(id) {
+  const v = await vistaActual(await openDb());
+  const e = v.ensilados.find(x => x.id === id);
+  if (!e) return fail(CODES.NOT_FOUND, 'Ensilado no encontrado.');
+  const consumos = [];
+  for (const [cid, c] of v.alimento.consumos) {
+    for (const p of c.partes) {
+      if (p.ensilado_id !== id) continue;
+      const inc = c.tabla === 'incubadora' ? v.por.incubadora.get(cid) : null;
+      const carga = c.tabla === 'alimentacion' ? v.alimentaciones.find(a => a.id === cid) : null;
+      const caja = carga ? v.por.caja.get(carga.caja_id) : null;
+      consumos.push({ que: inc ? `Recolecta ${inc.codigo}` : `Carga ${carga?.carga} · ${caja?.codigo || '?'}`,
+                      kg: kgTxt(p.kg), fecha: inc ? inc.recolecta_at : carga?.fecha });
+    }
   }
-
-  return ok({ bandeja, lote, eventos });
+  consumos.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  const registros = [
+    registro(v, 'ensilado', e, 'Ensilado', `${e.contenedor?.codigo || '?'} · ${kgTxt(e.kg_total)} kg` +
+             (e.abierto_at ? ` · abierto ${cuandoTxt(e.abierto_at, v.hoy)} por ${e.abierto_por || '—'}` : ''),
+             { fecha: e.ensilado_at }),
+    ...e.insumos.map(i => registro(v, 'ensilado_insumo', i, i.recepcion?.material || 'Material',
+      `${kgTxt(i.kg)} kg · recepción del ${i.recepcion ? diaTxt(farmDay(i.recepcion.fecha)) : '?'}`))
+  ].sort(porFechaDesc);
+  return ok({
+    ensilado: ensiladoFila(v, e),
+    facts: [
+      ['Contenedor', e.contenedor?.codigo || '?'], ['Ensilado', diaTxt(e.dia0)],
+      ['Apertura', e.abierto_at ? fechaHoraTxt(e.abierto_at) : `prevista ${diaTxt(e.apertura_prevista)}`],
+      ['Total', `${kgTxt(e.kg_total)} kg`], ['Consumido', `${kgTxt(e.kg_usado)} kg`],
+      [e.estado === 'vencido' ? 'Descartado' : 'Queda', `${kgTxt(e.estado === 'vencido' ? e.kg_descartado : e.kg_restante)} kg`]
+    ],
+    pasos: e.pasos.map(paso),
+    consumos: consumos.map(c => ({ ...c, cuando: cuandoTxt(c.fecha, v.hoy) })),
+    registros,
+    puede_abrir: e.estado === 'madurando' && v.hoy >= e.apertura_prevista
+  });
 }
 
-export async function listSeparacionesDisponibles() {
-  const db = await openDb();
-  const [seps, links, trays] = await Promise.all([
-    allRows(db, 'separacion'),
-    allRows(db, 'lote_separacion'),
-    allRows(db, 'bandeja')
-  ]);
-  const pooled = new Set(links.map(l => l.separacion_id));
-  const trayById = new Map(trays.map(t => [t.id, t]));
+/* ── what needs a second look ─────────────────────────────────────────────── */
 
-  const rows = seps
-    .filter(s => !pooled.has(s.id))
-    .map(s => Object.assign(deepCopy(s), {
-      bandeja_label: trayById.get(s.bandeja_id)?.id_bandeja || '(bandeja sin sincronizar)'
+/** The object page a record lives on, so "revisar" can take you there. */
+function dondeVive(v, tabla, id) {
+  const fila = {
+    incubadora: () => ({ pantalla: 'incubadora', id }),
+    chequeo: () => {
+      const c = v.chequeos.find(x => x.id === id);
+      return c?.incubadora_id ? { pantalla: 'incubadora', id: c.incubadora_id } : { pantalla: 'caja', id: c?.caja_id };
+    },
+    distribucion: () => ({ pantalla: 'incubadora', id: v.distribuciones.find(x => x.id === id)?.incubadora_id }),
+    cochada_origen: () => ({ pantalla: 'cochada', id: v.origenes.find(x => x.id === id)?.cochada_id }),
+    ingreso: () => ({ pantalla: 'jaula', id: v.ingresos.find(x => x.id === id)?.jaula_id }),
+    ensilado: () => ({ pantalla: 'ensilado', id })
+  }[tabla];
+  return fila ? fila() : null;
+}
+
+const NOMBRE_DE = {
+  incubadora: (v, id) => `Incubadora ${v.por.incubadora.get(id)?.codigo || ''}`,
+  chequeo: (v, id) => { const c = v.chequeos.find(x => x.id === id);
+    const o = c?.incubadora_id ? v.por.incubadora.get(c.incubadora_id) : v.por.caja.get(c?.caja_id);
+    return `Chequeo día ${c?.dia} · ${o?.codigo || ''}`; },
+  distribucion: (v, id) => `Distribución de ${v.por.incubadora.get(v.distribuciones.find(x => x.id === id)?.incubadora_id)?.codigo || ''}`,
+  cochada_origen: (v, id) => `Cochada ${v.cochadas.find(c => c.id === v.origenes.find(x => x.id === id)?.cochada_id)?.codigo || ''}`,
+  ingreso: (v, id) => { const i = v.por.ingreso.get(id); return `Ingreso en ${i?.jaula?.nombre || ''} (${diaTxt(farmDay(i?.fecha))})`; },
+  ensilado: (v, id) => `Ensilado ${v.ensilados.find(e => e.id === id)?.codigo || ''}`
+};
+
+export async function getRevisar() {
+  const v = await vistaActual(await openDb());
+  const out = [];
+  for (const [k, motivos] of v.revisar) {
+    const [tabla, id] = k.split(':');
+    out.push({ tabla, id, nombre: (NOMBRE_DE[tabla] || (() => tabla))(v, id), motivos, abre: dondeVive(v, tabla, id) });
+  }
+  return ok(out.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
+}
+
+/* ── forms: what each one starts from ─────────────────────────────────────── */
+
+const rackOpciones = v => v.racks.map(r => ({ id: r.id, codigo: r.codigo }))
+  .sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true }));
+
+export async function getFormRecolecta() {
+  const v = await vistaActual(await openDb());
+  const codigos = v.incubadoras.map(i => i.codigo);
+  return ok({
+    jaulas: v.jaulas.filter(j => j.fase === 'activa')
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+      .map(j => ({ id: j.id, nombre: j.nombre, letra: j.letra, generacion: j.generacion,
+                   siguiente: siguienteIncubadora(j.generacion, j.letra, codigos).codigo,
+                   hoy: v.incubadoras.some(i => i.jaula_id === j.id && i.dia0 === v.hoy) })),
+    racks: rackOpciones(v),
+    alimento_kg: v.cfg.alimento_inicial_incubadora_kg,
+    hoy: v.hoy
+  });
+}
+
+/** The code a recolecta would get on a past day (excepción): the cage may have
+ *  had another generation then. */
+export async function previewRecolecta({ jaula_id, fecha } = {}) {
+  const v = await vistaActual(await openDb());
+  const j = v.por.jaula.get(jaula_id);
+  if (!j) return ok(null);
+  const gen = generacionDeJaula(jaula_id, fecha || new Date().toISOString(), { jaulas: v.jaulas, ingresos: v.ingresos });
+  return ok({ generacion: gen, codigo: siguienteIncubadora(gen, j.letra, v.incubadoras.map(i => i.codigo)).codigo });
+}
+
+export async function getFormChequeo({ objeto, ids = [], dia } = {}) {
+  const v = await vistaActual(await openDb());
+  const enCaja = objeto === 'caja';
+  const fuente = enCaja ? v.cajas : v.incubadoras;
+  const elegidas = ids.length ? ids : fuente.filter(o => o.pasos.some(p => p.paso === 'chequeo' && p.dia === Number(dia))).map(o => o.id);
+  return ok({
+    objeto, dia: Number(dia), unidad: enCaja ? 'kg' : 'g',
+    items: elegidas.map(id => (enCaja ? v.por.caja : v.por.incubadora).get(id)).filter(Boolean)
+      .map(o => ({ id: o.id, codigo: o.codigo, dia_actual: o.dia,
+                   hecho: o.chequeos.some(c => Number(c.dia) === Number(dia)) }))
+  });
+}
+
+export async function getFormDistribucion(incubadora_id) {
+  const v = await vistaActual(await openDb());
+  const i = v.por.incubadora.get(incubadora_id);
+  if (!i) return fail(CODES.NOT_FOUND, 'Incubadora no encontrada.');
+  const plan = cargaDistribucion(v.cfg);
+  return ok({
+    incubadora: { id: i.id, codigo: i.codigo, dia: i.dia, rack_id: i.rack?.id || null, activa: i.estado === 'activo' },
+    carga: plan ? { n: plan.n, kg: plan.kg } : null,
+    // The cajas will be {codigo}-01, -02… (ids.js cajaCodigo).
+    primera: cajaCodigo(i.codigo, 1),
+    racks: rackOpciones(v)
+  });
+}
+
+export async function getFormCargas({ caja_ids = [], carga } = {}) {
+  const v = await vistaActual(await openDb());
+  const def = cargaDef(v.cfg, carga);
+  return ok({
+    carga: def,
+    items: caja_ids.map(id => v.por.caja.get(id)).filter(Boolean).map(c => ({
+      id: c.id, codigo: c.codigo, dia: c.dia, en_ayuno: c.en_ayuno,
+      dada: c.cargas.some(x => Number(x.carga) === Number(carga)),
+      espera_chequeo: Boolean(def && v.cfg.dias_chequeo_caja.includes(def.dia) &&
+                              !c.chequeos.some(x => Number(x.dia) === def.dia))
     }))
-    .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
-
-  return ok(rows);
-}
-
-export async function listLotes(filters = {}) {
-  const db = await openDb();
-  const [lotes, links] = await Promise.all([
-    allRows(db, 'lote'),
-    allRows(db, 'lote_separacion')
-  ]);
-  const counts = new Map();
-  for (const l of links) counts.set(l.lote_id, (counts.get(l.lote_id) || 0) + 1);
-
-  let rows = lotes.map(c => decorateLote(c, counts.get(c.id) || 0));
-  if (filters.estado) rows = rows.filter(r => r.estado === filters.estado);
-  rows.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-  return ok(rows);
-}
-
-export async function getLoteDetail(id) {
-  const db = await openDb();
-  const row = await rowById(db, 'lote', id);
-  if (!row || row.deleted_at) return fail(CODES.NOT_FOUND, 'Lote no encontrado.');
-
-  const links = await rowsByIndex(db, 'lote_separacion', 'by_lote', id);
-  const [seps, trays] = await Promise.all([allRows(db, 'separacion'), allRows(db, 'bandeja')]);
-  const sepById = new Map(seps.map(s => [s.id, s]));
-  const trayById = new Map(trays.map(t => [t.id, t]));
-
-  const separaciones = links.map(l => {
-    const sep = sepById.get(l.separacion_id) || null;
-    const tray = sep ? trayById.get(sep.bandeja_id) : null;
-    return {
-      separacion_id: l.separacion_id,
-      larva_limpia_g: sep ? sep.larva_limpia_g : null,
-      bandeja_label: tray ? tray.id_bandeja : '—',
-      fecha: sep ? sep.fecha : null
-    };
   });
+}
 
-  return ok({ lote: decorateLote(row, separaciones.length), separaciones });
+export async function getFormSeparacion({ caja_ids = [] } = {}) {
+  const v = await vistaActual(await openDb());
+  const ids = caja_ids.length ? caja_ids
+    : v.cajas.filter(c => c.estado === 'activo' && c.dia >= v.cfg.dia_separacion).map(c => c.id);
+  return ok({
+    pct_coccion: v.cfg.pct_coccion,
+    items: ids.map(id => v.por.caja.get(id)).filter(Boolean)
+      .map(c => ({ id: c.id, codigo: c.codigo, dia: c.dia, separada: Boolean(c.separacion), activa: c.estado === 'activo' }))
+  });
+}
+
+export async function getFormCochada() {
+  const v = await vistaActual(await openDb());
+  const hoyCodigos = v.cochadas.filter(c => farmDay(c.horno_at) === v.hoy).map(c => c.codigo);
+  return ok({ pendientes: pendientesHorno(v), codigo: siguienteCochada(new Date().toISOString(), hoyCodigos) });
+}
+
+export async function getFormIngreso(jaula_id) {
+  const v = await vistaActual(await openDb());
+  const j = v.jaulas.find(x => x.id === jaula_id);
+  return ok({
+    jaula: j ? jaulaFila(v, j) : null,
+    jaulas_limpias: v.jaulas.filter(x => x.fase === 'limpia').map(x => ({ id: x.id, nombre: x.nombre })),
+    pool_kg: v.pool.kg_pendiente,
+    pendientes: v.pool.pendientes.map(p => ({ caja: p.caja_codigo, kg: p.kg, dia0: p.dia0, generacion: p.generacion })),
+    kg_bandeja: v.cfg.kg_bandeja_pupacion,
+    racks: rackOpciones(v)
+  });
 }
 
 /**
- * Names that have been used before, most recent first.
- *
- * There is no operator table. `registrado_por` is just the name the person
- * typed, which means nothing has to be seeded and no write can ever be rejected
- * because a device has not synced its roster yet — that foreign key was the one
- * thing capable of making a whole day's capture fail.
- *
- * The cost of free text is near-duplicates ("Maria" / "maria"). Two things keep
- * it in check: names already used come back as one-tap chips so almost nobody
- * types, and `app.v_nombres_registrados` lists the variants so a month of
- * reporting can be cleaned up with one UPDATE.
- *
- * Merged from two places — the names remembered locally (so one typed seconds
- * ago appears before any record exists) and the names on records already here
- * (so a freshly synced device shows everyone).
+ * What a repopulation would draw from the 2 %, as it is typed: the larvae's
+ * ages and generation, a mix of generations, kilos the 2 % has no record of,
+ * and the codes the trays will get.
  */
-const NAME_STORES = ['alimentacion', 'ayuno', 'revision', 'separacion',
-                     'bandeja', 'insectario', 'recoleccion', 'lote'];
+export async function previewIngreso({ kg_larvas, n_bandejas = 1 } = {}) {
+  const v = await vistaActual(await openDb());
+  const kg = Number(String(kg_larvas ?? '').replace(',', '.'));
+  if (!Number.isFinite(kg) || kg <= 0) return ok(null);
+  const ahora = new Date().toISOString();
+  const r = pool2({ separaciones: v.separaciones, cajas: v.cajas, incubadoras: v.incubadoras, ingresos: v.ingresos },
+                  v.cfg, { fecha: ahora, kg_larvas: kg }).nuevo;
+  const gen = r.generacion_larvas;
+  return ok({
+    ...r,
+    generacion_jaula: gen === null ? null : gen + 1,
+    codigos: gen === null ? [] : siguientesBandejas(gen, ahora, Math.max(1, Number(n_bandejas) || 1),
+                                                    v.bandejas.map(b => b.codigo)).map(c => c.codigo)
+  });
+}
+
+export async function getFormEnsilado() {
+  const db = await openDb();
+  const v = await vistaActual(db);
+  return ok({
+    contenedores: v.contenedores.map(c => ({ id: c.id, codigo: c.codigo, codigo_hoy: ensiladoCodigo(c.codigo, new Date().toISOString()) })),
+    recepciones: [...v.stock.porRecepcion.values()].filter(r => r.kg_disponible > 0)
+      .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))
+      .map(r => ({ id: r.id, material: r.material, fecha: diaTxt(farmDay(r.fecha)), disponible: r.kg_disponible }))
+  });
+}
+
+export async function listMateriales() {
+  return listCatalogo('material_alimento');
+}
+
+/* ── one record, for the correction form ──────────────────────────────────── */
+
+export async function getRegistro(tabla, id) {
+  const db = await openDb();
+  if (!EDITABLE[tabla]) return fail(CODES.VALIDATION, 'Ese registro no se puede corregir.');
+  const row = await rowById(db, tabla, id);
+  if (!row || row.deleted_at) return fail(CODES.NOT_FOUND, 'Registro no encontrado.');
+  const v = await vistaActual(db);
+  const materiales = (await listCatalogo('material_alimento')).data;
+  const valorForm = (kind, val) => kind === 'fecha' ? (val ? toNaiveLocal(val) : '') : (val ?? '');
+  return ok({
+    tabla, id, titulo: EDITABLE[tabla].titulo,
+    campos: camposDe(tabla, row).map(([col, kind, label]) => ({ col, kind, label, valor: valorForm(kind, row[col]) })),
+    nota: row.nota || '',
+    foto_key: row.foto_key || null,
+    revisar: motivosRevisar(v, tabla, id),
+    opciones: {
+      racks: rackOpciones(v),
+      jaulas: v.jaulas.map(j => ({ id: j.id, nombre: j.nombre })),
+      materiales,
+      fases: [{ id: 'activa', nombre: 'Con moscas' }, { id: 'limpia', nombre: 'Limpia' }]
+    }
+  });
+}
+
+/* ── people and lists ─────────────────────────────────────────────────────── */
+
+/**
+ * The names to offer as one-tap chips.
+ *
+ * Names are plain text, tapped or typed — never a table with a foreign key,
+ * which is what once made a whole day's capture fail on a device that had not
+ * synced the roster yet. Merged from the names picked on this phone (most
+ * recent first), the shared roster, and the names already on records.
+ */
+const NAME_STORES = ['incubadora', 'chequeo', 'distribucion', 'alimentacion', 'separacion',
+                     'cochada', 'ingreso', 'jaula_evento', 'recepcion', 'ensilado'];
 
 export async function listOperators() {
   const db = await openDb();
-
-  // Names actually picked on this device, in the order they were picked.
-  //
-  // The stored list is maintained most-recent-first, and that ORDER is the
-  // source of truth rather than the timestamps on it: two names chosen in the
-  // same millisecond carry identical timestamps, and sorting by them would
-  // silently fall back to alphabetical.
-  const picked = new Map();   // lowercased -> { nombre, rank }
+  const picked = new Map();
   ((await metaGet(db, 'nombres_usados', [])) || []).forEach((r, i) => {
     const n = str(r?.nombre);
     if (n && !picked.has(n.toLowerCase())) picked.set(n.toLowerCase(), { nombre: n, rank: i });
   });
 
-  // The shared, registered roster — seeded in 0003_seed.sql and added to
-  // whenever anyone types a new name. Syncs to every device.
   const registered = new Map();
   for (const c of await allRows(db, 'catalogo')) {
     if (c.tipo !== 'operario' || c.activo === false) continue;
@@ -611,8 +675,6 @@ export async function listOperators() {
     registered.set(n.toLowerCase(), { nombre: n, orden: c.orden ?? 0 });
   }
 
-  // Names seen only on records — e.g. someone who registered before the shared
-  // list existed, or data arriving from the migration.
   const derived = new Map();
   for (const store of NAME_STORES) {
     for (const row of await allRows(db, store)) {
@@ -626,53 +688,29 @@ export async function listOperators() {
     }
   }
 
-  // Whoever used this phone most recently comes first — they are the most
-  // likely next tap — then the rest of the registered roster, then stragglers.
   return ok([
     ...[...picked.values()].sort((a, b) => a.rank - b.rank),
-    ...[...registered.values()].sort((a, b) =>
-      a.orden - b.orden || a.nombre.localeCompare(b.nombre, 'es')),
-    ...[...derived.values()].sort((a, b) =>
-      b.last.localeCompare(a.last) || a.nombre.localeCompare(b.nombre, 'es'))
+    ...[...registered.values()].sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, 'es')),
+    ...[...derived.values()].sort((a, b) => b.last.localeCompare(a.last) || a.nombre.localeCompare(b.nombre, 'es'))
   ].map(r => r.nombre));
 }
 
-/** Open fasts, for the "cerrar ayuno" action. The prototype had no way to reach
- *  these at all, which is why merma_pct was permanently null. */
-export async function listAyunosAbiertos() {
-  const db = await openDb();
-  const [ayunos, trays] = await Promise.all([allRows(db, 'ayuno'), allRows(db, 'bandeja')]);
-  const trayById = new Map(trays.map(t => [t.id, t]));
-  const rows = ayunos
-    .filter(ayunoAbierto)
-    .map(a => Object.assign(decorateAyuno(a), {
-      bandeja_label: trayById.get(a.bandeja_id)?.id_bandeja || '(bandeja sin sincronizar)',
-      protocolo: trayById.get(a.bandeja_id)?.protocolo || 'v1'
-    }))
-    .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
-  return ok(rows);
-}
-
 /**
- * Catalogue values, replacing the frozen module-level arrays.
- *
- * Each value once. A phone seeds the lists before its first sync so the
- * pickers work offline; the server's copies of the same values arrive later
- * with different ids. Without this every option showed twice, and both copies
- * lit up together because they share one form value.
+ * Catalogue values. Each value once: a phone seeds the lists before its first
+ * sync so the pickers work offline, and the server's copies of the same values
+ * arrive later with different ids.
  */
 export async function listCatalogo(tipo) {
   const db = await openDb();
   const rows = (await rowsByIndex(db, 'catalogo', 'by_tipo', tipo))
     .filter(c => c.activo !== false)
-    // Server rows first, so they win the de-duplication below.
     .sort((a, b) => Number(Boolean(a._seeded)) - Number(Boolean(b._seeded)));
   const byValue = new Map();
   for (const c of rows) {
     const k = String(c.valor ?? '').trim().toLowerCase();
     if (k && !byValue.has(k)) byValue.set(k, c);
   }
-  const unique = [...byValue.values()]
-    .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(a.valor).localeCompare(String(b.valor)));
-  return ok(unique.map(c => c.valor));
+  return ok([...byValue.values()]
+    .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(a.valor).localeCompare(String(b.valor)))
+    .map(c => c.valor));
 }

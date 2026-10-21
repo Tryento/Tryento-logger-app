@@ -12,65 +12,56 @@ About 20 minutes. Two services, both free tier:
 
 ---
 
-> ### ⚠ Base que ya existe: corre el SQL que falte ANTES de hacer push
+> ### ⚠ Base que ya existe: los protocolos nuevos (0010), ANTES del push
 >
-> Averigua qué falta (sólo lee, no cambia nada):
+> `0010_ciclo_nuevo.sql` reconstruye la base para los protocolos de octubre de
+> 2026. **Borra todos los datos de la app del protocolo anterior** y conserva
+> sólo los nombres de las personas. El historial de AppSheet nunca se cargó; va
+> aparte, al esquema `historico` (ver *Loading your historical data*).
 >
-> ```powershell
-> npm run check:sql-applied
-> ```
+> En este orden:
 >
-> Corre en Supabase → SQL Editor → New query, **uno por uno y en este orden**,
-> sólo los que salgan como `FALTA`. Copia el CONTENIDO del archivo, no su nombre.
+> 1. Si el proyecto de Supabase está pausado, restáuralo (Dashboard → *Restore*).
+> 2. Averigua qué falta (sólo lee, no cambia nada):
+>    ```powershell
+>    npm run check:sql-applied
+>    ```
+> 3. Supabase → SQL Editor → New query: pega el CONTENIDO de
+>    **`supabase/migrations/0010_ciclo_nuevo.sql`** y Run.
+> 4. `npm run check:sql-applied` otra vez: **todas las líneas deben decir `ok`.**
+> 5. Pon el alimento inicial habitual de la incubadora: Table Editor → esquema
+>    `app` → `parametro` → `alimento_inicial_incubadora_kg` (por ejemplo `2`).
+>    Mientras no tenga valor, la recolecta no propone los kg.
+> 6. Recién entonces, push. Entre el paso 3 y el push la app publicada no puede
+>    sincronizar: que nadie registre en ese rato.
+> 7. `npm run check:backend` y `npm run check:sync`: ambos limpios.
 >
-> 1. **`0004_atribucion_acciones.sql`** — quién hizo cada acción de un toque.
->    (Aplicado en producción.)
-> 2. **`0005_renombrar_lote.sql`** — `cochada` vuelve a llamarse `lote`, como en
->    AppSheet. Renombra en el lugar: no borra ni copia datos. Recrea las
->    funciones y vistas él mismo. (Aplicado en producción.)
-> 3. **`0006_sobrecargas.sql`** — quita funciones duplicadas que dejó 0004.
->    (Aplicado en producción.)
-> 4. **`0007_protocolo_v2.sql`** — el protocolo nuevo de 16 días: incubadora,
->    distribución en bandejas, cargas fijas, ayuno de un toque, 2 % al
->    laboratorio, y la tabla `parametro` con los días y kilos del plan. No
->    convierte ni borra datos viejos: todo lo existente queda marcado `v1`.
-> 5. **`0008_alimento.sql`** — recepción de material, ensilajes (armado →
->    sellado → listo → en uso → agotado, con lecturas de temperatura), de qué
->    ensilaje sale cada carga, y las vistas de stock y consumo. Sólo agrega.
-> 6. **`0009_monitor.sql`** — la temperatura de la cama en la revisión (días
->    11–12, máximo 36 °C), los parámetros de la lista "para hoy" del inicio y
->    la vista `v_temperatura_cama`. Sólo agrega.
+> **El orden importa.** La app llama a las funciones de la base por su nombre:
+> si haces push antes del SQL, todo lo que se registre queda en *Conflictos*
+> hasta correrlo.
 >
-> Después vuelve a correr `npm run check:sql-applied`: cada línea del SQL que
-> corriste debe decir `ok`. Recién entonces haz push.
+> Correr `0010` dos veces no borra nada nuevo: la parte que borra sólo actúa si
+> encuentra las tablas del protocolo anterior.
 >
-> **Cada versión de la app necesita su SQL** (si publicas por partes):
+> **En los teléfonos**, la versión nueva borra la base local del protocolo
+> anterior al abrir (no hay nada en ella que pueda sincronizar) y cada persona
+> elige su nombre otra vez. Las fotos viejas quedan en el bucket `fotos`; se
+> vacían desde Storage si se quiere, no desde SQL.
 >
-> | Publicación | Qué trae | SQL que debe estar corrido antes del push |
-> |---|---|---|
-> | 1 | arreglo del arranque + protocolo v2 (recolecta, incubadora, cargas, ayuno, cosecha) | `0005`, `0006`, `0007` |
-> | 2 | módulo de alimento (recepción, ensilaje, stock) | además `0008` |
-> | 3 | lista "para hoy" en el inicio, temperatura de la cama | además `0009` |
+> **Después del arranque**: registra los racks, los contenedores y las jaulas
+> (con la generación que tienen hoy). Las larvas que ya están en incubadoras o
+> cajas se anotan como recolecta con fecha pasada (interruptor *excepción*) y se
+> distribuyen ese mismo día. Detalle en `docs/protocolo.html`.
 >
-> Correr `0008` o `0009` antes de tiempo no rompe una publicación anterior: sólo
-> agregan, y las funciones que `0008` cambia conservan su firma.
+> **`SETUP_COMPLETO.sql` es `0010` más lo que venga después**: para una base
+> nueva y vacía. En una con el protocolo anterior hace lo mismo que `0010`
+> (borra sus datos).
 >
-> **El orden importa.** La app llama a las funciones de la base por su nombre.
-> Si haces push antes del SQL, lo nuevo (recolecta con incubadora, distribución,
-> cierre de ayuno con quién lo hizo, ensilajes, temperatura de cama) falla y
-> queda en *Conflictos* hasta correr el SQL. Lo que ya existía sigue funcionando.
->
-> **Nunca pegues `SETUP_COMPLETO.sql` en una base que ya tiene datos.** Es sólo
-> para una base nueva y vacía; en una existente falla en la primera línea.
-> `0005` a `0009` se pueden correr dos veces sin daño.
->
-> **Cambiar el plan** (días, kilos por carga, larvas por bandeja, días de
-> fermentación del ensilaje, temperatura máxima de la cama y sus días de
-> control, fecha de inicio del protocolo nuevo): Supabase →
-> Table Editor → esquema `app` → tabla `parametro`. Cada fila tiene una
-> descripción. Los teléfonos lo toman en la siguiente sincronización; no hace
-> falta publicar la app. `dias_fermentacion` (14) es provisional: confírmalo
-> con el laboratorio.
+> **Cambiar el plan** (días de chequeo, cargas y kilos, día de separación,
+> porcentaje al horno, kilos por bandeja de pupación, días de recolecta,
+> maduración y horas de consumo del ensilado): Supabase → Table Editor →
+> esquema `app` → tabla `parametro`. Cada fila tiene una descripción. Los
+> teléfonos lo toman en la siguiente sincronización; no hace falta publicar.
 
 ## Step 0 — be in the right folder
 
@@ -130,13 +121,10 @@ the built-in terminal always starts in the right place.
 6. Wait for the green **Success. No rows returned**. It takes a few seconds.
 
 **Confirm it worked** — click **Table Editor** in the sidebar, and in the schema
-dropdown at the top (it says `public`) choose **`app`**. You should see 12
-tables: `alimentacion`, `ayuno`, `ayuno_huerfano`, `bandeja`, `catalogo`,
-`insectario`, `lote`, `lote_separacion`, `migracion_log`, `recoleccion`,
-`revision`, `separacion`.
-
-If you see an error instead, run the three files in `supabase/migrations/` one
-at a time — you get a clearer idea of where it stopped.
+dropdown at the top (it says `public`) choose **`app`**. You should see 21
+tables, among them `jaula`, `incubadora`, `caja`, `chequeo`, `separacion`,
+`cochada`, `ensilado` and `parametro`. Then run `npm run check:sql-applied`:
+every line must say `ok`.
 
 ### A3. Expose the `app` schema
 
@@ -193,21 +181,19 @@ npm install
 npm run check:backend
 ```
 
-This writes a real colony, tray, feeding, fast, harvest and oven run to your
-Supabase (plus the new-protocol recolecta, incubadora and distribution once
-0007 is applied, a reception, an ensilaje and a load taken from it once 0008
-is, and a bed temperature over the maximum once 0009 is), checks the triggers
-fired and the computed values are right,
-then marks everything it created as deleted (`deleted_at`). It never
-hard-deletes: phones cannot see a hard delete, and a phone that had synced
-those rows would keep them. To erase old test rows for good, a week later:
-`node tools/cleanup-qa.mjs ZZTEST-… --purge`.
+This runs a whole cycle through your Supabase — a cage, a recolecta and its
+incubadora, the chequeo and distribución, a separación and its 98/2, a
+correction, a cochada through the oven, the cage closed, cleaned and repopulated,
+food ensiled and opened, an early close, a photo — checks the triggers fired and
+the computed values are right, then marks everything it created as deleted
+(`deleted_at`). It never hard-deletes: phones cannot see a hard delete, and a
+phone that had synced those rows would keep them. To erase old test rows for
+good, a week later: `node tools/cleanup-qa.mjs --purge`.
 
 Expected output ends with:
 
 ```
-La base está lista: escritura, claves foráneas, triggers, restricciones,
-vistas y almacenamiento de fotos funcionan.
+La base está lista: escritura, llamadas, triggers, restricciones y fotos funcionan.
 ```
 
 If any line says `FAIL`, it names the fix. **Do not continue until it is clean.**
@@ -254,15 +240,15 @@ Open the Netlify URL on a phone and do these **in order**:
    name in the box below it — it then appears for everyone.)
 3. **Header chip says "Al día"** within a few seconds. Anything else — tap it;
    the sync screen explains the problem in plain Spanish.
-4. Create: **Insectarios → + Nuevo insectario**, then open it → **+ Nueva
-   recolección**, then **Inicio → Nueva bandeja**.
-5. **Check Supabase** → Table Editor → `app.bandeja`. Your tray is there.
+4. Create: **Racks y contenedores → Agregar rack**, then **Insectarios →
+   Registrar jaula** (with flies), then **Inicio → Nueva recolecta**.
+5. **Check Supabase** → Table Editor → `app.incubadora`. Your incubadora is there.
 6. **Airplane mode. Reload the page.** The app must still open and show your
    data. ← *If this fails, nothing else matters. Fix it first.*
-7. Still offline, log a feeding. It saves instantly; the chip shows "1 en
-   espera".
+7. Still offline, open the incubadora and log its chequeo. It saves instantly;
+   the chip shows "1 en espera".
 8. Turn the radio back on. Within a minute the chip returns to "Al día" and the
-   feeding appears in Supabase.
+   chequeo appears in Supabase.
 
 Then **install it to the home screen** (Share → Add to Home Screen). On iPhone
 this is what stops Safari deleting the offline data after a week — it matters,
@@ -272,29 +258,19 @@ it is not cosmetic.
 
 ## Loading your historical data
 
-Send me the 9 tabs of `Tryento_App_Data` as CSV and I will run it. The
-procedure, for reference:
+The AppSheet history is kept for looking things up, in the `historico` schema
+(0010 creates it). It is not turned into rows of the app: the protocols changed
+and the old records do not fit the new cycle.
 
 ```bash
 # CSVs into migration/csv/ — one per sheet tab
-npm run migration:csv          # -> migration/generated/01_staging_load.sql
+npm run migration:csv          # -> migration/generated/01_historico.sql
 ```
 
-Then in the SQL editor: `01_staging_load.sql` → `migration/02_transform.sql` →
-`migration/03_checks.sql`, reading every result of the last one.
-
-Do it in a **scratch Supabase project first**. Every id is derived
-deterministically, so the whole migration is safely re-runnable — which you
-will need, because nobody gets it right the first time.
-
-Three things it will tell you, all findings rather than failures:
-
-- **Fasting records have no tray.** The AppSheet `Ayuno` tab never had that
-  link. They go to a quarantine table with ranked suggestions for a human.
-- **`Separacion` and `Lotes` are empty.** The back half of the process has never
-  been recorded, so yield and FCR have no denominator yet.
-- **Every historical tray would show as active.** The transform closes them out
-  explicitly rather than letting them flood the home screen.
+Then run `01_historico.sql` in the SQL editor. Every column lands as text, and
+every row keeps its sheet row number (`fila_origen`). Running it again replaces
+each table with what the CSVs hold now. `historico` is not exposed to the app;
+query it from the Supabase dashboard.
 
 ---
 
@@ -304,13 +280,13 @@ Three things it will tell you, all findings rather than failures:
 |---|---|---|
 | `syntax error at or near "supabase"` | You pasted the file NAME, not its contents | Open the file, `Ctrl+A`, `Ctrl+C`, paste that |
 | Everything 404s / no data ever loads | `app` not in Exposed schemas | **A3** — this is almost always it |
-| `permission denied for schema app` | Migration didn't finish | Re-run `0001_schema.sql` to the end |
+| `permission denied for schema app` | Migration didn't finish | Re-run `0010_ciclo_nuevo.sql` to the end |
 | Chip says "Sólo local" | `app-config.js` is empty or wrong | **B1**, then redeploy |
 | Data saves but never syncs | Wrong URL or key | Tap the chip; the sync screen shows the error |
 | Blank page offline | Service worker not installed | Must be HTTPS (Netlify is). Force-close and reopen |
-| Dropdowns are empty | `0003_seed.sql` not run | Run it |
-| Photos don't upload | Bucket missing | `0003_seed.sql` creates it |
-| "Ya existe la bandeja Nº N" | Two trays share a number in one collection | A real duplicate — check the rack |
+| Materials list is empty | `0010` not run | Run it |
+| Photos don't upload | Bucket missing | `0010` creates it (section 12) |
+| "Ya existe una incubadora F…" in Conflictos | Two phones gave out the same code offline | A real duplicate: keep one, *Descartar* the other |
 | Dates a day off | Device clock wrong | The sync screen warns above 5 minutes of drift |
 | Old version stuck on a phone | Cached | Force-close the app and reopen; `sw.js` is sent no-cache |
 
@@ -327,8 +303,8 @@ Not needed for the demo. Needed before the farm depends on it:
       the free tier gives daily snapshots and no point-in-time recovery. A
       `pg_dump` on a schedule is the cheapest insurance you will buy.
 - [ ] **Real logins.** Enable Google in Supabase, set `authMode: 'google'`, and
-      replace the open policy on each table. The exact SQL is at the bottom of
-      `0001_schema.sql`. **No schema change is required** — `created_by` is
+      replace the open policy (`demo_abierto`) on each table — 0010 creates them,
+      section 10; the example is at the bottom of `0001_schema.sql`. **No schema change is required** — `created_by` is
       already on every table waiting to be populated.
 - [ ] **A custom domain**, so the URL isn't a guessable `*.netlify.app`.
 - [ ] Deploy previews still disabled.

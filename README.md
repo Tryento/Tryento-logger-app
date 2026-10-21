@@ -3,10 +3,12 @@
 Offline-first production logger for a black soldier fly farm. Replaces an
 AppSheet app backed by a single Google Sheet.
 
-Operators record the whole pipeline from a phone, in a shed, with no signal:
-colonies → egg harvests → rearing trays → feeding / inspection / fasting →
-harvest → oven runs → packing → dispatch. Everything is captured locally and
-syncs to Postgres when a connection appears.
+Operators record the whole cycle from a phone, in a shed, with no signal:
+recolecta → incubadora → distribución into cajas de engorde → chequeos and
+cargas → separación (98 % to the oven, 2 % back to the cages) → cochada → the
+cage repopulated with the 2 % → the next generation's recolecta; plus the food
+(recepción → ensilado → 21 days → apertura → 72 h). Everything is captured
+locally and syncs to Postgres when a connection appears.
 
 ---
 
@@ -44,37 +46,43 @@ against IndexedDB, it just never syncs. That is the intended behaviour for a
 demo and for a misconfigured deploy: a missing setting must never cost an
 operator their day's work.
 
-Once Supabase is configured, `npm run check:backend` writes a real colony →
-tray → feeding → fast → harvest → oven run to it, verifies the computed values
-and the state machine, and marks everything it created as deleted (a soft
-delete, which phones can see). Run it before trusting the database.
+Once Supabase is configured, `npm run check:sql-applied` says whether the SQL
+the app needs is live, and `npm run check:backend` runs a whole cycle through
+it — a cage, a recolecta, its distribución, a separación and its 98/2, a
+correction, a cochada, the cage repopulated, food ensiled and opened — checks
+what the database computed, and marks everything it created as deleted (a soft
+delete, which phones can see). Run both before trusting the database.
 
-**The production protocol (v2, ciclo de 16 días)** — recolecta → incubadora
-(día 0–7) → distribución en bandejas + carga 1 (día 7) → carga 2 (día 10) →
-carga 3 (día 13) → ayuno (días 14–15) → cosecha (día 16: ~98 % al horno,
-~2 % al laboratorio). Days and kilos live in the `app.parametro` table, not in
-code. Data recorded under the old protocol is kept as-is, marked `v1`. Detail:
-[docs/protocolo-16-dias.html](docs/protocolo-16-dias.html) and
-[docs/LAB_SPEC.md](docs/LAB_SPEC.md).
+**The protocols (October 2026)** — the lab's real cycle, defined with them
+step by step: [docs/protocolo.html](docs/protocolo.html) (in Spanish, for the
+lab) and [docs/LAB_SPEC.md](docs/LAB_SPEC.md). Days, kilos and percentages
+live in the `app.parametro` table, not in code. Migration
+[`0010_ciclo_nuevo.sql`](supabase/migrations/0010_ciclo_nuevo.sql) rebuilt the
+schema for them and removed everything of the earlier protocols; 0001–0009 stay
+in the folder as history.
 
-**Feed (Alimento)** — every delivery is a `recepcion_alimento`; each batch of
-fermented feed is an `ensilaje` that moves armado → sellado → listo → en uso →
-agotado, with temperature readings. Each load names the batch in use
-(`alimentacion.ensilaje_id`) and takes its planned kilos from it, so stock and
-consumption come from the loads themselves: nothing is typed twice. Migration
-`0008_alimento.sql`.
+**Objects and registries** — objects exist and are active or inactive (racks,
+contenedores, jaulas, incubadoras, cajas, bandejas de pupación, cochadas,
+ensilados); registries say what happened, when and who. Nothing is deleted: an
+object becomes inactive by its registries (distributed, separated, out of the
+oven, closed) or by an early close with a written reason. Every registry can be
+corrected at any time; a correction moves everything computed from it, and what
+a person recorded on top of it is marked **«revisar»** until reviewed.
+
+**Computed, never stored** — ages, the 2 % waiting and which cajas it came from
+(oldest first), the 98 % waiting for the oven, which ensilado each feeding drew
+from (the oldest open one) and what was discarded after 72 h, the raw material
+in store. [`src/data/vista.js`](src/data/vista.js) works all of it out from the
+rows on the phone, by the same rules as the database's triggers.
 
 **What is due (home screen)** — [`src/data/monitor.js`](src/data/monitor.js)
-turns the phone's own rows into one list: late, today, the next two days.
-Trays that need the same step on the same day are one line and one tap (the
-form opens with them chosen): incubadoras to distribute, cargas, the bed
-temperature on días 11–12 (a bed over 36 °C goes to the top), ayuno, cosecha,
-an ensilaje due to be ready, and whether the ensilaje ready covers the next
-3 days of loads. Pure and clock-free, so it is tested on pinned days,
-including 20:00–24:00 in Caracas. Migration `0009_monitor.sql`.
+turns that into one list: late, today, the next two days. Cajas of one
+incubadora that need the same step are one line; each line opens its form
+already filled in. Pure and clock-free, so it is tested on pinned days.
 
-To connect it to Supabase, fill in [`app-config.js`](app-config.js) and apply
-the migrations in [`supabase/migrations/`](supabase/migrations/) in order.
+To connect it to Supabase, fill in [`app-config.js`](app-config.js) and run
+[`supabase/SETUP_COMPLETO.sql`](supabase/SETUP_COMPLETO.sql) (a new database) or
+the numbered files you are missing (an existing one) — see [DEPLOY.md](DEPLOY.md).
 
 **Deploying to Netlify → [DEPLOY.md](DEPLOY.md).** Read its first section before
 putting real data behind a no-login URL.
@@ -96,19 +104,24 @@ index.html  (built from "BSF Production Log.dc.html")
    │
    └── dataClient.js       ← THE ONLY SEAM between UI and storage
          └── src/data/
-              ├── read.js / write.js      the 28-name public API
+              ├── read.js / write.js      what each screen reads, every action
+              ├── vista.js                the lab worked out from the rows (pure)
+              ├── protocolo.js            settings, day count, next steps (pure)
+              ├── alimento.js · pool.js   food used / the 2 % and 98 % (pure)
+              ├── revisar.js              what a correction leaves to review (pure)
+              ├── monitor.js              "para hoy" (pure)
+              ├── registros.js            what can be corrected, per table
+              ├── snapshot.js             the rows, read once and reused
               ├── idb/                    IndexedDB: the device's source of truth
               ├── outbox.js               the durable write queue
               ├── sync/{push,pull,blobs,loop}.js
-              ├── cache.js                per-tray rollup + local estado
               ├── conflicts.js            writes the server refused
               └── photo.js                capture → downscale → queue
 ```
 
-**`dataClient.js` keeps the exact public surface the UI already used** — same 28
-names, same `{ok, data}` / `{ok, error:{code, message}}` envelope — so swapping
-an in-memory mock for an offline-first Supabase client required almost no
-changes to the 783-line template.
+Every function answers with the same envelope — `{ok, data}` or
+`{ok, error:{code, message}}` — and the sync machinery (outbox, push, pull,
+conflicts, photos) is the same one that ran before the October 2026 rebuild.
 
 ### The write path
 
@@ -135,28 +148,29 @@ twice.
 These are invariants. Breaking any one reintroduces something this rebuild exists
 to eliminate.
 
-**1. `estado` is a real column, never inferred at read time.**
-The mechanism is forced by where the inputs live — it is not a preference:
+**1. A state comes from registries, by one rule in two places.** An
+incubadora is inactive once distributed, a caja once separated, a cochada once
+out of the oven, a cage's phase is its last ingreso, cierre or limpieza. The
+database keeps `estado` up to date by trigger (for anyone querying it); the
+phone works out the same thing from its own rows (`vista.js`), so it never
+waits for the server, and a state can never flip between what this phone did
+and what the last pull said.
 
-| Entity | Inputs | Mechanism |
-|---|---|---|
-| `insectario`, `lote` | same row | `GENERATED ALWAYS AS … STORED` |
-| `bandeja` | other tables (`ayuno`, `separacion`) | trigger — a cross-table generated column is *impossible* in Postgres |
+**2. Store what a person recorded or confirmed; compute the rest.** Ages, the
+2 % and 98 % waiting, food used and discarded, the stock: computed on read, so a
+correction moves all of them with nothing to keep in step. What cannot move by
+itself — a generation confirmed at a repopulation, kilos a cochada took — is
+flagged «revisar» when something it was built on changes.
 
-**2. Tray state is monotonic.** `cosechada > en_ayuno > en_crecimiento`, and no
-event moves a tray backwards. This is what makes out-of-order offline sync safe:
-an `ayuno` that syncs three days late cannot un-harvest a tray.
+**3. Codes are labels and never change.** F8A-12, S2-2810 and the rest are
+written on the container. A corrected cage, generation or date corrects the
+data; the code stays, and numbering continues from the codes given.
 
-**3. Deletes are admin-only and online-only, never queued.** A queued
-soft-delete of a `separacion` would drag a tray from `cosechada` back to
-`en_ayuno` — the exact regression rule 2 prevents, re-entering through the back
-door.
-
-**4. Two writes carry cross-row uniqueness that append-only cannot protect:**
-`logSeparacion` and `createLote`. Two offline devices both pass the local check
-and both sync; Postgres rejects one. The constraints are hard, and the loser
-goes to the conflict inbox — **not** softened to `ON CONFLICT DO NOTHING`, which
-would silently discard a recorded harvest.
+**4. Cross-row uniqueness is the server's.** One distribución per incubadora,
+one separación per caja, one chequeo per day, a code once per day. Two offline
+devices both pass the local check and both sync; Postgres rejects one, and the
+loser goes to the conflict inbox — **not** softened to `ON CONFLICT DO NOTHING`,
+which would silently discard a recorded event.
 
 **5. Nothing in the capture path can fail for a reason the operator can't act
 on.** There is no login, and `registrado_por` is plain text rather than a
@@ -199,67 +213,43 @@ regression test.
 
 Instants are stored as UTC `Z` — one format everywhere, because lists sort dates
 with a plain string compare and a mix of `Z` and `-04:00` would silently
-misorder timelines. Calendar facts (`fecha_inicio`, `fecha_vencimiento`) stay
-`DATE`; they are days, not instants.
+misorder timelines. Calendar facts (`dia0`, `ciclo_desde`) stay `DATE`; they
+are days on the farm's calendar, not instants.
 
 ---
 
-## Migrating from the Google Sheet
+## The AppSheet history
+
+The years recorded in AppSheet are kept for looking things up, in their own
+schema, `historico` — not turned into rows of the app: the protocols changed in
+October 2026 and the old records do not fit the new cycle. `historico` is not
+exposed to the API; it is read from the Supabase dashboard.
 
 ```bash
 # 1. export every tab of Tryento_App_Data as CSV into migration/csv/
-npm run migration:csv          # -> migration/generated/01_staging_load.sql
+npm run migration:csv          # -> migration/generated/01_historico.sql
 ```
 
-Then, in the Supabase SQL editor, in order:
+Then run `migration/generated/01_historico.sql` in the Supabase SQL editor.
+Every column lands as `text` (a typed import turns "1,5" into 15 and a blank
+date into 1970), and every row keeps its sheet row number in `fila_origen`.
+Running it again replaces each table with what the CSVs hold now.
 
-1. `supabase/migrations/0001_schema.sql`
-2. `supabase/migrations/0002_views.sql`
-3. `supabase/migrations/0003_seed.sql` — **replace the placeholder operator
-   names with the real roster first**
-4. `migration/generated/01_staging_load.sql`
-5. `migration/02_transform.sql` — read its header before running
-6. `migration/03_checks.sql` — **read every result**
-
-Three things the migration will surface, all of them findings rather than bugs:
-
-- **`Ayuno` rows have no tray.** They land in `app.ayuno_huerfano`, a quarantine
-  the FK and the trigger cannot see, with ranked suggestions for a human to
-  confirm. A sentinel "unknown tray" was rejected: it would poison every
-  downstream metric and is exactly the infer-from-a-blank failure being removed.
-- **`Separacion` and `Lotes` have zero rows.** The back half of the process has
-  never been recorded. Yield, FCR and rendimiento have no denominator until new
-  data arrives — those views will legitimately be empty.
-- **Every historical tray computes to `en_crecimiento`.** Step 12 of the
-  transform closes them out with an explicit, attributable `cerrada_admin_at`,
-  kept in its own column so `estado` stays a pure function of physical events.
-
-Run the whole migration into a scratch project **twice** and diff the output.
-Every id is derived with `uuid_generate_v5`, so it is deterministic and
-re-runnable — which you will need, because you will run it more than once.
+`migration/csv/` and `migration/generated/` hold farm data and are never
+committed or published.
 
 ---
 
 ## Analytics
 
-Exposed as SQL views in [`0002_views.sql`](supabase/migrations/0002_views.sql)
-so the Streamlit dashboard (`Tryento/Dashboard-demo`) stays thin:
+The views of the earlier protocols (`v_rendimiento_bandeja`, `v_fcr_bandeja`,
+…) went with their tables in 0010. The Streamlit dashboard
+(`Tryento/Dashboard-demo`) keeps reading `devices.records`; its production
+section needs new views over the new tables, which are not built yet.
 
-`v_rendimiento_bandeja` · `v_fcr_bandeja` · `v_tiempos_ciclo` ·
-`v_productividad_insectario` · `v_rendimiento_lote` · `v_actividad_operario` ·
-`v_consumo_alimento` · `v_calidad_datos`
-
-**Connection model matters.** Streamlit must connect as `analytics_ro` through
-**Supavisor in transaction mode** — not the anon key through PostgREST, which
-RLS returns zero rows for, and not a direct connection, which will exhaust the
-pool PostgREST is also using.
-
-Put `v_calidad_datos` on the dashboard home. It is what turns "the active view
-has been wrong for months" into something noticed in a day.
-
-> `v_actividad_operario` is a coaching and workload view, **not** an audit
-> record — operator identity is self-asserted from a picker. Say so to the team
-> before it goes live, or the quality of what gets logged will quietly drop.
+When they are: the dashboard must connect as a read-only role through
+**Supavisor in transaction mode** — not the anon key through PostgREST, and not
+a direct connection, which would exhaust the pool PostgREST is also using.
 
 ---
 
@@ -273,8 +263,8 @@ Each phone must be set up **at the office, online**, before it goes to the field
    stick; without it Safari clears site data after 7 days of non-use
 3. Confirm persistent storage was granted (the sync screen reports it)
 4. Let the first full pull finish
-5. Verify the tray list is populated, then go offline and reload to prove the
-   shell is cached
+5. Verify the cages (Insectarios) are listed, then go offline and reload to
+   prove the shell is cached
 
 Step 2 is not cosmetic. An evicted database takes every unsynced capture with
 it, silently.
@@ -290,25 +280,35 @@ npm run check:all    # the above, plus both live checks against Supabase
 
 - `test/time.test.mjs` — timezone correctness, including the off-by-one regression
 - `test/outbox.test.mjs` — queue ordering, dependencies, poison quarantine, error taxonomy
-- `test/dataflow.test.mjs` — the full public API end to end, offline
-- `test/schema-contract.test.mjs` — **parses the real migration and asserts every
-  payload the app would send matches a real, non-generated column.** This is the
-  failure that silently breaks storage on day one: post one column the table
-  does not have and PostgREST rejects *every* write, with nothing in the UI
-  looking wrong
+- `test/protocolo.test.mjs`, `alimento`, `pool`, `revisar`, `monitor` — the pure
+  rules on pinned farm days: the 98/2 split rounding exactly like Postgres, the
+  steps of each object, food drawn oldest-first, the 2 % and its ages, what a
+  correction flags, "para hoy"
+- `test/flujo.test.mjs` — **a whole day in the lab through the data layer**:
+  every action offline, then pushed by the real sync engine to a real Postgres
+  built from `SETUP_COMPLETO.sql`, pulled back, and two phones separating the
+  same caja
+- `test/sql-migrations.test.mjs` — 0010 on an empty database, over a replica of
+  production with data (people kept, everything else gone), run twice, and every
+  trigger and call
+- `test/contrato.test.mjs` — what the phone may correct equals what
+  `app.editar` accepts; every store has its table; generated columns never sent
+- `test/herramientas.test.mjs`, `test/check-sync.test.mjs` — the production
+  checks below, run against a local Postgres so their verdict can be trusted
 - `tools/check-ui.mjs` — the logic script parses; every `{{ binding }}` resolves;
   the offline blockers stay fixed
 - `tools/check-sql.mjs` — every migration parses against the real Postgres grammar
-- `tools/check-backend.mjs` — the live round trip against a real project:
-  proves the DATABASE works (schema, grants, triggers, constraints, storage)
-- `tools/check-sync.mjs` — proves the APP works: runs the real outbox, push and
-  pull against the live project, then wipes the local database and pulls from
-  scratch to confirm a second device sees the same data. This is the one that
-  catches a wrong RPC argument or an over-eager column filter — both of which it
-  has already caught
+- `tools/check-idb-browser.mjs` — **real Chrome at phone size**: the whole cycle
+  driven on screen like a person (`npm run build` first; `SHOTS=<folder>` saves
+  screenshots)
+- `tools/check-sql-applied.mjs` — is the SQL the app needs live? Read-only
+- `tools/check-backend.mjs` — proves the live DATABASE works (schema, grants,
+  triggers, constraints, storage), then marks its rows deleted
+- `tools/check-sync.mjs` — proves the APP works against the live project: the
+  real outbox, push and pull, then a wiped phone pulling from scratch
 
-What these do **not** cover: the React UI actually painting (no browser in CI).
-That needs the manual pass in [DEPLOY.md](DEPLOY.md#part-d--verify-on-a-real-phone-5-min).
+What these do **not** cover: a real phone's camera and storage eviction. That
+needs the manual pass in [DEPLOY.md](DEPLOY.md#part-d--verify-on-a-real-phone-5-min).
 
 ---
 

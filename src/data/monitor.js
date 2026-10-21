@@ -1,165 +1,151 @@
 /**
- * monitor.js — what the plan says is due, for the home screen.
+ * monitor.js — "para hoy": what the protocols say is late, due today, or
+ * coming in the next two days, across the whole lab.
  *
- * One list: what is late, what is due today, and what comes in the next days,
- * each item one tap from the form that does it. Trays that need the same thing
- * on the same day are one item, done in one action.
+ * Each line says what to do and to which objects, and carries what the screen
+ * needs to open the form for it already filled in. The steps of the cajas of
+ * one incubadora are done together, so they come as one line.
  *
- * Pure: no storage and no clock. `hoy` is a FARM day (YYYY-MM-DD, from
- * time.js farmDay), passed in, so the same rows always give the same list —
- * including between 20:00 and midnight in Caracas, when the UTC date is
- * already tomorrow.
- *
- * Inputs (read.js getMonitor builds them from the phone's own rows):
- *   bandejas     [{ id, id_bandeja, protocolo, estado, cerrada_admin_at,
- *                   fecha_inicio (día 0 of its incubadora), cargas_dadas, tiene_ayuno }]
- *   incubadoras  [{ id, codigo, fecha_inicio, distribuida_at, insectario_codigo }]
- *   ensilajes    [{ id, codigo, sellado_at, listo_at, en_uso_at, agotado_at }]
- *   revisiones   [{ bandeja_id, fecha, temperatura_c }]
- *   stock        read.js getStockAlimento() data, or null
+ * Pure: it reads a vista (vista.js), nothing else.
  */
-import { farmDay, addDays, daysBetween } from './time.js';
-import {
-  PROTOCOLO_DEFAULTS, diaCiclo, siguientePaso, pasoIncubadora, ensilajeEstado, cuandoLabel
-} from './protocolo.js';
+import { pasoLabel, cuandoLabel, kg3 } from './protocolo.js';
+import { daysBetween } from './time.js';
+import { FARM_TZ } from './config.js';
 
-/** Most urgent first. `alerta` is something wrong now (a hot bed, no feed). */
-const RANK = { alerta: 0, atrasado: 1, hoy: 2, proximo: 3 };
-const TIPO_ORDEN = ['temperatura_alta', 'stock', 'distribucion', 'carga', 'temperatura', 'ayuno', 'cosecha',
-                    'sin_ensilaje', 'ensilaje'];
+const ORDEN = { atrasado: 0, hoy: 1, proximo: 2 };
+const kgTxt = v => String(kg3(v)).replace('.', ',');
 
-const num = n => String(Math.round(Number(n) * 100) / 100).replace('.', ',');
-const cuantas = n => `${n} ${n === 1 ? 'bandeja' : 'bandejas'}`;
-
-/** "F7AR1-01, F7AR1-02 y 3 más" */
-function etiquetas(trays, max = 3) {
-  const names = trays.map(t => t.id_bandeja || '—');
-  return names.length <= max ? names.join(', ') : `${names.slice(0, max).join(', ')} y ${names.length - max} más`;
-}
-
-const porCodigo = (a, b) => String(a.id_bandeja).localeCompare(String(b.id_bandeja));
-
-/** "ahora", "hoy", "mañana", "en 2 días", "atrasado 1 día". */
-export function cuandoItem(it) {
-  return it.estado === 'alerta' ? 'ahora' : cuandoLabel(it);
-}
-
-export function monitor({
-  bandejas = [], incubadoras = [], ensilajes = [], revisiones = [], stock = null,
-  cfg = PROTOCOLO_DEFAULTS, hoy = farmDay(), horizonte = 2
-} = {}) {
+/**
+ * @returns {{ items: Array, resumen: { atrasado, hoy, proximo } }}
+ *   item: { clave, grupo, paso, titulo, detalle, estado, dias, cuando, accion }
+ */
+export function paraHoy(vista, { ventana = 2 } = {}) {
   const items = [];
-  // Upcoming steps only as far as the horizon: tomorrow and the day after.
-  const visible = p => Boolean(p) && (p.estado !== 'proximo' || -p.dias <= horizonte);
+  const add = it => {
+    if (it.estado === 'proximo' && -it.dias > ventana) return;
+    items.push({ ...it, cuando: it.cuando ?? cuandoLabel(it) });
+  };
 
-  /* día 7: incubadoras to split into trays */
-  for (const i of incubadoras) {
-    if (i.deleted_at) continue;
-    const p = pasoIncubadora(i, cfg, hoy);
-    if (!visible(p)) continue;
-    items.push({
-      tipo: 'distribucion', estado: p.estado, dias: p.dias, incubadora_id: i.id,
-      titulo: `Distribuir ${i.codigo} en bandejas`,
-      detalle: [`día ${p.dia_objetivo + p.dias}`, i.insectario_codigo].filter(Boolean).join(' · ')
-    });
+  for (const j of vista.jaulas) {
+    for (const p of j.pasos) {
+      if (!p.aviso) continue;
+      add({
+        clave: `jaula:${j.id}:${p.paso}`, grupo: 'insectario', paso: p.paso,
+        titulo: `${pasoLabel(p)} · ${j.nombre}`,
+        detalle: p.paso === 'repoblado' ? `2 % esperando: ${kgTxt(vista.pool.kg_pendiente)} kg`
+               : p.paso === 'cierre' ? `Día ${j.dia_ciclo} del ciclo F${j.generacion}`
+               : `F${j.generacion} · ${j.lugar || ''}`.trim(),
+        estado: p.estado, dias: p.dias,
+        accion: { tipo: p.paso, jaula_id: j.id }
+      });
+    }
   }
 
-  /* the trays: loads, fast, harvest — grouped by step and by how late */
-  const activas = bandejas
-    .filter(b => !b.deleted_at && (b.protocolo || 'v1') === 'v2' && b.estado !== 'cosechada' && !b.cerrada_admin_at)
-    .map(b => ({ ...b, dia_ciclo: diaCiclo(b.fecha_inicio, hoy) }))
-    .filter(b => b.dia_ciclo !== null);
+  for (const i of vista.incubadoras) {
+    for (const p of i.pasos) {
+      if (!p.aviso) continue;
+      add({
+        clave: `incubadora:${i.id}:${p.paso}`, grupo: 'larvas', paso: p.paso,
+        titulo: `${pasoLabel(p)} · ${i.codigo}`,
+        detalle: `Día ${i.dia}${i.rack ? ` · rack ${i.rack.codigo}` : ''}`,
+        estado: p.estado, dias: p.dias,
+        accion: { tipo: p.paso, incubadora_id: i.id, dia: p.dia }
+      });
+    }
+  }
+
+  // The cajas of one incubadora share a calendar: one line per step.
   const grupos = new Map();
-  for (const b of activas) {
-    const p = siguientePaso({ dia_ciclo: b.dia_ciclo, cargas_dadas: b.cargas_dadas,
-                              tiene_ayuno: b.tiene_ayuno, cosechada: false }, cfg);
-    if (!visible(p)) continue;
-    const key = `${p.paso}:${p.carga ?? ''}:${p.dias}`;
-    if (!grupos.has(key)) grupos.set(key, { p, trays: [] });
-    grupos.get(key).trays.push(b);
-  }
-  for (const { p, trays } of grupos.values()) {
-    trays.sort(porCodigo);
-    const n = trays.length;
-    const base = { estado: p.estado, dias: p.dias, bandeja_ids: trays.map(t => t.id) };
-    const dia = `día ${trays[0].dia_ciclo}`;
-    if (p.paso === 'carga') {
-      items.push({ ...base, tipo: 'carga', carga: p.carga, kg: Math.round(p.kg * n * 100) / 100,
-                   titulo: `Carga ${p.carga} · ${cuantas(n)}`,
-                   detalle: `${etiquetas(trays)} · ${dia} · ${num(p.kg * n)} kg` });
-    } else if (p.paso === 'ayuno') {
-      items.push({ ...base, tipo: 'ayuno', titulo: `Iniciar ayuno · ${cuantas(n)}`,
-                   detalle: `${etiquetas(trays)} · ${dia}` });
-    } else if (p.paso === 'cosecha') {
-      items.push({ ...base, tipo: 'cosecha', titulo: `Cosechar · ${cuantas(n)}`,
-                   detalle: `${etiquetas(trays)} · ${dia}` });
+  for (const c of vista.cajas) {
+    for (const p of c.pasos) {
+      if (!p.aviso) continue;
+      const k = `${c.incubadora_id}:${p.paso}:${p.dia}:${p.carga ?? ''}`;
+      if (!grupos.has(k)) grupos.set(k, { p, incubadora_id: c.incubadora_id, codigo: c.incubadora_codigo, cajas: [] });
+      grupos.get(k).cajas.push(c);
     }
   }
-
-  /* bed temperature: who still needs measuring today, and any bed too hot */
-  const max = cfg.temperatura_cama_max_c;
-  const diasControl = new Set((cfg.dias_control_temperatura || []).map(Number));
-  const medidaHoy = new Map();
-  for (const r of revisiones) {
-    if (r.deleted_at || r.temperatura_c === null || r.temperatura_c === undefined) continue;
-    if (farmDay(r.fecha) !== hoy) continue;
-    const prev = medidaHoy.get(r.bandeja_id);
-    if (!prev || String(r.fecha) > String(prev.fecha)) medidaHoy.set(r.bandeja_id, r);
-  }
-  const aMedir = activas.filter(b => diasControl.has(b.dia_ciclo) && !b.tiene_ayuno && !medidaHoy.has(b.id))
-    .sort(porCodigo);
-  if (aMedir.length) {
-    items.push({ tipo: 'temperatura', estado: 'hoy', dias: 0, bandeja_ids: aMedir.map(b => b.id),
-                 titulo: `Temperatura de cama · ${cuantas(aMedir.length)}`,
-                 detalle: `${etiquetas(aMedir)} · máximo ${num(max)} °C` });
-  }
-  const altas = activas.filter(b => medidaHoy.has(b.id) && Number(medidaHoy.get(b.id).temperatura_c) > max)
-    .sort(porCodigo);
-  if (altas.length) {
-    items.push({ tipo: 'temperatura_alta', estado: 'alerta', dias: 0, bandeja_ids: altas.map(b => b.id),
-                 titulo: `Cama sobre ${num(max)} °C · ${cuantas(altas.length)}`,
-                 detalle: altas.map(b => `${b.id_bandeja} ${num(medidaHoy.get(b.id).temperatura_c)} °C`).join(', ') });
-  }
-
-  /* ensilaje due to be ready */
-  for (const e of ensilajes) {
-    if (e.deleted_at || ensilajeEstado(e) !== 'fermentando' || !e.sellado_at) continue;
-    const previsto = addDays(farmDay(e.sellado_at), cfg.dias_fermentacion);
-    const faltan = daysBetween(hoy, previsto);
-    if (faltan === null || faltan > horizonte) continue;
-    items.push({
-      tipo: 'ensilaje', estado: faltan <= 0 ? 'hoy' : 'proximo', dias: faltan <= 0 ? 0 : -faltan,
-      ensilaje_id: e.id, listo_previsto: previsto,
-      titulo: `${e.codigo} listo para usar`,
-      detalle: faltan < 0 ? `Según el plan, desde hace ${faltan === -1 ? '1 día' : `${-faltan} días`}`
-             : 'Según los días de fermentación del plan'
+  for (const g of grupos.values()) {
+    const cajas = g.cajas.sort((a, b) => a.numero - b.numero);
+    add({
+      clave: `cajas:${g.incubadora_id}:${g.p.paso}:${g.p.dia}:${g.p.carga ?? ''}`, grupo: 'larvas', paso: g.p.paso,
+      titulo: `${pasoLabel(g.p)} · ${g.codigo}`,
+      detalle: `${cajas.length === 1 ? '1 caja' : `${cajas.length} cajas`}: ${cajas.map(c => c.codigo.slice(g.codigo.length + 1)).join(', ')}`,
+      estado: g.p.estado, dias: g.p.dias,
+      accion: { tipo: g.p.paso, caja_ids: cajas.map(c => c.id), dia: g.p.dia, carga: g.p.carga ?? null }
     });
   }
 
-  /* does the feed at hand cover the loads coming? */
-  if (stock) {
-    const debidas = items.some(i => i.tipo === 'carga' && i.estado !== 'proximo');
-    const usaAlimento = ensilajes.some(e => !e.deleted_at);
-    if (usaAlimento && stock.kg_cargas_proximas > 0 && !stock.alcanza) {
-      const falta = Math.round((stock.kg_cargas_proximas - stock.ensilaje_disponible_kg) * 100) / 100;
-      items.push({ tipo: 'stock', estado: 'alerta', dias: 0,
-                   titulo: 'El ensilaje listo no alcanza',
-                   detalle: `Cargas de los próximos ${stock.dias_prevision} días: ${num(stock.kg_cargas_proximas)} kg; ` +
-                            `listos ${num(stock.ensilaje_disponible_kg)} kg (faltan ${num(falta)})` });
-    } else if (!stock.ensilaje_en_uso && debidas) {
-      // Not a fault: the trays still get fed. It only means the stock will not move.
-      items.push({ tipo: 'sin_ensilaje', estado: 'hoy', dias: 0,
-                   titulo: 'Ningún ensilaje en uso',
-                   detalle: 'Las cargas de hoy no descontarán del stock: marca en Alimento cuál se usa.' });
+  for (const co of vista.cochadas) {
+    for (const p of co.pasos) {
+      if (!p.aviso) continue;
+      add({
+        clave: `cochada:${co.id}:${p.paso}`, grupo: 'horno', paso: p.paso,
+        titulo: `${pasoLabel(p)} · ${co.codigo}`,
+        detalle: `${kgTxt(co.peso_inicial_kg)} kg al horno`,
+        estado: p.estado, dias: p.dias,
+        accion: { tipo: p.paso, cochada_id: co.id }
+      });
     }
   }
 
-  items.sort((a, b) => (RANK[a.estado] - RANK[b.estado]) || (b.dias - a.dias) ||
-                       (TIPO_ORDEN.indexOf(a.tipo) - TIPO_ORDEN.indexOf(b.tipo)));
-  for (const it of items) it.cuando = cuandoItem(it);
+  const kgHorno = kg3(vista.horno.reduce((x, h) => x + h.kg_pendiente, 0));
+  if (kgHorno > 0) {
+    const n = vista.horno.filter(h => h.kg_pendiente > 0).length;
+    add({
+      clave: 'horno:pendiente', grupo: 'horno', paso: 'cochada',
+      titulo: `98 % esperando el horno · ${kgTxt(kgHorno)} kg`,
+      detalle: `De ${n === 1 ? '1 separación' : `${n} separaciones`}`,
+      estado: 'hoy', dias: 0, accion: { tipo: 'cochada' }
+    });
+  }
 
-  const resumen = { alerta: 0, atrasado: 0, hoy: 0, proximo: 0 };
+  if (vista.pool.kg_pendiente > 0 && !vista.jaulas.some(j => j.fase === 'limpia')) {
+    add({
+      clave: 'pool:pendiente', grupo: 'insectario', paso: 'pool',
+      titulo: `2 % esperando una jaula limpia · ${kgTxt(vista.pool.kg_pendiente)} kg`,
+      detalle: 'Se repuebla una jaula cerrada y limpia',
+      estado: 'hoy', dias: 0, accion: { tipo: 'pool' }
+    });
+  }
+
+  for (const e of vista.ensilados) {
+    for (const p of e.pasos) {
+      add({
+        clave: `ensilado:${e.id}:${p.paso}`, grupo: 'alimento', paso: p.paso,
+        titulo: `${pasoLabel(p)} · ${e.codigo}`,
+        detalle: p.paso === 'consumo'
+          ? `Quedan ${kgTxt(e.kg_restante)} kg · vence ${p.vence_at ? horaLocal(p.vence_at) : ''}`.trim()
+          : `${kgTxt(e.kg_total)} kg · día ${daysBetween(e.dia0, vista.hoy)} de maduración`,
+        estado: p.estado, dias: p.dias,
+        ...(p.paso === 'consumo' ? { cuando: `quedan ${p.horas} h` } : {}),
+        accion: { tipo: p.paso, ensilado_id: e.id }
+      });
+    }
+  }
+
+  const nRevisar = vista.revisar.size;
+  if (nRevisar) {
+    add({
+      clave: 'revisar', grupo: 'revisar', paso: 'revisar',
+      titulo: nRevisar === 1 ? '1 registro para revisar' : `${nRevisar} registros para revisar`,
+      detalle: 'Algo de lo que dependían se corrigió',
+      estado: 'hoy', dias: 0, accion: { tipo: 'revisar' }
+    });
+  }
+
+  // Most late first; then today; then the soonest coming.
+  items.sort((a, b) => ORDEN[a.estado] - ORDEN[b.estado] || b.dias - a.dias ||
+                       a.titulo.localeCompare(b.titulo));
+  const resumen = { atrasado: 0, hoy: 0, proximo: 0 };
   for (const it of items) resumen[it.estado]++;
-  resumen.pendientes = resumen.alerta + resumen.atrasado + resumen.hoy;
-  return { hoy, items, resumen };
+  return { items, resumen };
+}
+
+/** "vie 14:00" in the farm's time. */
+export function horaLocal(iso) {
+  try {
+    return new Intl.DateTimeFormat('es-VE', { timeZone: FARM_TZ, weekday: 'short',
+                                              hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .format(new Date(iso)).replace('.', '');
+  } catch { return ''; }
 }

@@ -13,7 +13,7 @@
  * day that is ~10 MB/day, so a five-day offline stretch is ~50 MB. Quota is not
  * the binding constraint — eviction and upload bandwidth on a rural link are.
  */
-import { PHOTO_MAX_EDGE, PHOTO_QUALITY, STORAGE_BUCKET } from './config.js';
+import { PHOTO_MAX_EDGE, PHOTO_QUALITY, STORAGE_BUCKET, SUPABASE_URL } from './config.js';
 import { openDb } from './idb/open.js';
 import { reqToPromise, withTx } from './idb/tx.js';
 import { uuid } from './ids.js';
@@ -144,3 +144,15 @@ export async function pendingPhotoBytes(db) {
 
 export const publicUrlFor = key =>
   key ? `${STORAGE_BUCKET}/${key}` : null;
+
+/**
+ * Where to show a record's photo from: this phone's own copy while it has not
+ * uploaded (it may never have left the shed yet), the public bucket after.
+ */
+export async function photoUrlFor(key) {
+  if (!key) return null;
+  const blobId = String(key).split('/').pop().replace(/\.jpg$/i, '');
+  const local = await localPhotoUrl(blobId).catch(() => null);
+  if (local) return local;
+  return SUPABASE_URL ? `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${key}` : null;
+}

@@ -7,15 +7,15 @@
  *    device so a write needs no server round-trip, and used as the idempotency
  *    key for `ON CONFLICT (id) DO NOTHING`. Two devices can never collide.
  *
- *  - HUMAN identity (`id_bandeja`, `codigo`, `recolecta`): what someone writes
- *    on a tray with a marker and reads aloud across the shed. These are derived
- *    from counters and dates, so two offline devices CAN produce the same one.
+ *  - HUMAN identity (`codigo`): what someone writes on a container with a
+ *    marker and reads aloud across the shed. These are derived from counters
+ *    and dates, so two offline devices CAN produce the same one.
  *    UUIDv4 does nothing for this. The database enforces uniqueness and the
  *    rare collision surfaces in the conflict inbox rather than silently
  *    duplicating — which is the behaviour the farm actually wants, because a
  *    duplicate label means two physical trays are wearing the same number.
  */
-import { ddmm, farmDay } from './time.js';
+import { ddmm } from './time.js';
 
 const HEX = '0123456789abcdef';
 
@@ -31,17 +31,6 @@ export function uuid() {
   b[8] = (b[8] & 0x3f) | 0x80;   // variant 10
   const h = [...b].map(x => HEX[x >> 4] + HEX[x & 15]).join('');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
-
-/** Short, unambiguous suffix for human codes. Excludes I/O/0/1 so a code read
- *  aloud or copied off a tray cannot be misheard. */
-export function shortCode(n = 4) {
-  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const c = globalThis.crypto;
-  const b = new Uint8Array(n);
-  if (c && typeof c.getRandomValues === 'function') c.getRandomValues(b);
-  else for (let i = 0; i < n; i++) b[i] = Math.floor(Math.random() * 256);
-  return [...b].map(x => A[x % A.length]).join('');
 }
 
 /**
@@ -94,74 +83,60 @@ export function deviceId() {
   }
 }
 
-/** `ICA-0326` — colony name plus the farm-local DDMM it started. */
-export function insectarioCodigo(nombre, fechaInicio) {
-  return `${String(nombre || '').trim()}-${ddmm(fechaInicio || farmDay())}`;
-}
-
-/**
- * `2609.104.3` — DDMM of the tray date, the colony's recolecta ordinal, and the
- * tray number within that batch. Matches what is written on the physical tray.
- *
- * `noBandeja` is TYPED by the operator, never auto-computed: the farm labels the
- * tray with a marker first and then enters it, so the human assigns the number
- * and the app must not invent a different one.
+/* ── the lab's codes (October 2026) ──────────────────────────────────────────
+ * What gets written on the container. A code is given once and NEVER changes:
+ * correcting the cage, the generation or a date of what it came from corrects
+ * the data, not the label. So the next number always continues from the codes
+ * already given, whatever happened to them since.
  */
-export function bandejaLabel(fecha, recolecta, noBandeja) {
-  return `${ddmm(fecha)}.${recolecta}.${noBandeja}`;
-}
 
-/**
- * `F7AR9` — v2 incubadora: fly generation (F7), the insectario's letter (A) and
- * the recolecta number (R9). The lab defined this code.
- *
- * The letter comes from the `letras_insectario` setting; an insectario with no
- * letter there uses the first letter of its name, so a new colony still gets a
- * usable code instead of blocking the recolecta.
- */
-export function incubadoraCodigo({ generacion, nombreInsectario, recolecta, letras = {} }) {
-  const gen = String(generacion || '').trim().toUpperCase().replace(/\s+/g, '') || 'F?';
-  const nombre = String(nombreInsectario || '').trim();
-  const letra = String(letras[nombre] || nombre.charAt(0) || '?').toUpperCase();
-  return `${gen}${letra}R${String(recolecta ?? '').trim()}`;
-}
-
-/**
- * `F7AR9-01` — a bandeja that came out of incubadora F7AR9.
- *
- * PROVISIONAL: the lab has not defined this naming yet. It lives in this one
- * function so the real rule is a one-line change. Nothing uses it as a key —
- * the tray's identity is its UUID; this is only the label written on it.
- */
-export function bandejaV2Codigo(incubadoraCodigoValue, n) {
-  return `${incubadoraCodigoValue}-${String(n).padStart(2, '0')}`;
-}
-
-/**
- * `CO-260922-K7QM` — oven run. Date plus a random suffix rather than a counter,
- * because a global counter cannot be assigned offline without collisions and a
- * lote is a physical event that must never be merged with another.
- */
-export function loteCodigo(fecha) {
-  const d = farmDay(fecha) || farmDay();
-  return `CO-${d.slice(2).replace(/-/g, '')}-${shortCode(4)}`;
-}
-
-/**
- * Next per-colony recolecta ordinal. Scoped to the colony, not global: the
- * prototype's `'REC-' + (length + 101)` (dataClient.js:221) was a single global
- * counter that two offline devices would both advance to the same value.
- *
- * Scoping makes a collision near-impossible in practice (one person harvests
- * one cage) while keeping the constraint that surfaces the rare real one.
- */
-export function nextRecolectaOrdinal(existingForColony) {
+/** Highest `n` among codes shaped `${prefix}${n}`. */
+function maxNumero(codigos, prefix) {
   let max = 0;
-  for (const r of existingForColony || []) {
-    const n = parseInt(String(r.recolecta ?? '').replace(/\D/g, ''), 10);
-    if (Number.isFinite(n) && n > max) max = n;
+  for (const c of codigos || []) {
+    const s = String(c || '');
+    if (!s.startsWith(prefix)) continue;
+    const n = Number(s.slice(prefix.length));
+    if (Number.isInteger(n) && n > max) max = n;
   }
-  return String(max + 1);
+  return max;
+}
+
+/** `F8A-12` — generation, the cage's letter, and its recolecta number in that
+ *  generation (it starts again at 1 with each generation). */
+export const incubadoraPrefijo = (generacion, letra) =>
+  `F${Number(generacion)}${String(letra || '').trim().toUpperCase()}-`;
+
+export function siguienteIncubadora(generacion, letra, codigos) {
+  const prefijo = incubadoraPrefijo(generacion, letra);
+  const numero = maxNumero(codigos, prefijo) + 1;
+  return { codigo: `${prefijo}${numero}`, numero };
+}
+
+/** `F8A-12-03` — the third caja de engorde out of incubadora F8A-12. */
+export const cajaCodigo = (incubadoraCodigo, n) => `${incubadoraCodigo}-${String(n).padStart(2, '0')}`;
+
+/** `H-2810-1` — the first cochada into the oven on 28 Oct (farm day). Counted
+ *  among that day's cochadas only, so next year's 28 Oct starts at 1 again. */
+export function siguienteCochada(fecha, codigosDelDia) {
+  const prefijo = `H-${ddmm(fecha)}-`;
+  return `${prefijo}${maxNumero(codigosDelDia, prefijo) + 1}`;
+}
+
+/** `S2-2810` — container S2, ensiled on 28 Oct (farm day). */
+export const ensiladoCodigo = (contenedorCodigo, fecha) =>
+  `${String(contenedorCodigo || '').trim().toUpperCase()}-${ddmm(fecha)}`;
+
+/** `F7-B2810-1` — a bandeja de pupación of generation-7 larvae made on 28 Oct.
+ *  `desde` is the first number to use: trays of one ingreso are numbered on. */
+export function bandejaPupacionPrefijo(generacion, fecha) {
+  return `F${Number(generacion)}-B${ddmm(fecha)}-`;
+}
+
+export function siguientesBandejas(generacion, fecha, n, codigos) {
+  const prefijo = bandejaPupacionPrefijo(generacion, fecha);
+  const desde = maxNumero(codigos, prefijo) + 1;
+  return Array.from({ length: n }, (_, i) => ({ codigo: `${prefijo}${desde + i}`, numero: desde + i }));
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
