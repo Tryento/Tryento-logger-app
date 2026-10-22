@@ -7,9 +7,9 @@ log (this repo), and the physical process that connects them.
 
 | | |
 |---|---|
-| Version | 0.5 — the October 2026 protocols: the larvae cycle, the insectario and the food, rebuilt |
-| Last updated | 2026-10-21 |
-| Built from | `tryento-app` `main` @ `a2b5b73` (2026-04-23) plus branches `50`, `52`, `55`, `Trunk`; `Tryento-logger-app` `main` @ `3eb549a` (2026-09-28) |
+| Version | 0.6 — the Resumen tab: the lab's KPIs, computed in the app |
+| Last updated | 2026-10-22 |
+| Built from | `tryento-app` `main` @ `a2b5b73` (2026-04-23) plus branches `50`, `52`, `55`, `Trunk`; `Tryento-logger-app` branch `ciclo-nuevo` (2026-10-22) |
 | Companion | [BSF research knowledge base](reports/Black%20soldier%20fly%20farms%20and%20biology.md) — the biology and industry evidence behind the numbers here |
 
 > **This is a living document.** Anything marked **⚠ CONFIRM** was inferred from
@@ -78,8 +78,8 @@ The two data streams are **not linked today**. The controller knows cages by
 The protocols the production log follows from **October 2026**, defined with
 the lab step by step (sessions of 19–20 October 2026). The lab's own document,
 in Spanish: [`docs/protocolo.html`](protocolo.html). Migration
-`0010_ciclo_nuevo.sql` rebuilt the production log for them — ⚠ pending
-deployment at the time of writing. Every number below is a row in
+`0010_ciclo_nuevo.sql` rebuilt the production log for them; it ran in
+production on 22 October 2026. Every number below is a row in
 `app.parametro`, editable without a new app version. Notation: CAPS = a process
 or period, lowercase = a task someone does.
 
@@ -413,7 +413,8 @@ lab:
 | Aspect | Value |
 |---|---|
 | Replaces | AppSheet app on the Google Sheet `Tryento_App_Data` (in use until September 2026) |
-| Backend | Supabase Postgres, schema `app`; migrations in `supabase/migrations/` (append-only). `0010_ciclo_nuevo.sql` rebuilt it for the October 2026 protocols |
+| Backend | Supabase Postgres, schema `app`; migrations in `supabase/migrations/` (append-only). `0010_ciclo_nuevo.sql` rebuilt it for the October 2026 protocols (run in production on 2026-10-22) |
+| Tabs | Inicio (what is due today), Larvas, Insectarios, Horno, Alimento, Resumen (the lab in numbers, §9) |
 | History | The AppSheet sheet goes, as it was, into schema `historico` (read-only, not used by the app) — ⚠ not loaded yet |
 | Device storage | IndexedDB (`tryento-ciclo`); every write is local first, then synced through an outbox |
 | Login | None in the demo configuration; the database is open (RLS with permissive policies) |
@@ -480,8 +481,9 @@ set before go-live).
 ## 9. KPIs and how they are computed
 
 The views of the earlier protocols (`0002_views.sql` and later) were removed
-with their tables in `0010`. What the app computes today, on the phone
-(`src/data/vista.js`), and what each KPI will be built from:
+with their tables in `0010`. Everything here is computed on the phone, from the
+same picture of the lab every screen uses (`src/data/vista.js`); nothing is
+stored, so a correction moves every figure that depended on it.
 
 | Quantity | Computed from | Notes |
 |---|---|---|
@@ -493,12 +495,38 @@ with their tables in `0010`. What the app computes today, on the phone
 | Raw material in store | Σ `recepcion.kg` − Σ `ensilado_insumo.kg`, per material | — |
 | Oven weight loss | `1 − final kg / initial kg` per cochada | Shown on the cochada page; note 05 🔬 |
 
-KPIs to build next, as views over these tables (none exist yet): kg separated
-per g of eggs/larvae at the recolecta, 98 % yield per incubadora, FCR (kg food
-/ kg separated) on a stated basis 🔬 (published FCRs are usually dry-matter;
-note 04), cycle times (día of distribución and separación), recolecta output
-per cage per cycle, oven yield. The Streamlit dashboard's production section
-needs these views before it shows anything.
+### 9.1 The Resumen tab
+
+The app's **Resumen** tab (`src/data/resumen.js`) shows the lab in three parts:
+
+- **Ahora** — cages with flies and their generations, active incubadoras and
+  cajas (their days; how many in ayuno), cochadas in the oven, the 98 % and the
+  2 % waiting, kg left in the open ensilado, raw material not yet ensiled, late
+  steps and records to review. Each tile opens the tab it lives on.
+- **Últimas 8 semanas** — g recolectados and kg separados per week, Monday to
+  Sunday on the farm's calendar; a tap on a week reads it, and a table has every
+  number.
+- **Rendimiento** — over the last 7 days, the last 30 days or everything (farm
+  days, today included):
+
+| KPI | Definition | Notes |
+|---|---|---|
+| kg separated per g recolectado | Σ separación `peso_total_kg` ÷ Σ incubadora `peso_inicial_g`, over the incubadoras whose cycle **ended** in the period | A cycle ends when its last caja is separated or closed, or when the incubadora is closed before distribución. Early closures count, so losses lower the yield |
+| Growth in the cajas | Σ kg separated ÷ Σ `distribucion.peso_total_kg`, same incubadoras | Shown as ×N |
+| FCR | (Σ `alimento_inicial_kg` + Σ cargas) ÷ Σ kg separated, same incubadoras | **Wet basis** 🔬 — published FCRs are usually dry matter (note 04); not comparable without the feed's and the larvae's moisture |
+| Día of distribución / separación | Average of (event's farm day − día 0) over the distributed incubadoras / separated cajas of those cycles | Against the plan: `dia_distribucion`, `dia_separacion` |
+| Separaciones | Count, kg, 98 % and 2 % of those dated in the period | — |
+| Chequeos | Average, minimum and maximum substrate humidity and temperature | All chequeo days together |
+| Closed early | Incubadoras, cajas, cochadas and trays closed early in the period | — |
+| Recolectas per cage | Count and g of the recolectas dated in the period, per cage | — |
+| Cage cycle | Days from repopulation to cierre, and recolectas and g in between, averaged over the cycles closed in the period | A cage that had flies when the app started has no first cycle |
+| Repopulations | Count, kg of 2 % larvae, trays | — |
+| Oven yield | Σ final kg ÷ Σ initial kg of the cochadas finished in the period, and the range per cochada | Weight loss = 100 % − yield (note 05 🔬) |
+| Ensilado eaten | kg eaten ÷ kg made, over the ensilados whose 72 h ended in the period | The rest was discarded |
+| Food | kg given (initial food + cargas), of which with no open ensilado; kg received per material; ensilados made | — |
+
+Still missing: these as views in the database. The Streamlit dashboard reads
+the database, so its production section stays empty until they exist.
 
 ### 🔬 The 50,000 individuals/kg factor
 
@@ -536,7 +564,7 @@ tryento-app `.planning/codebase/CONCERNS.md`.
 | 10 | The dashboard reads the sensors again each cycle | The value shown can differ slightly from the value used for control | `web_panel.py` |
 | 11 | Production database open with no login (demo) | Anyone with the URL can edit records | Supabase |
 | 12 | No link between `env_id` and `jaula` | Climate cannot be joined to recolecta output | Both systems |
-| 13 | No production KPI views since 0010 | The dashboard's production section is empty until they are built (§9) | Supabase |
+| 13 | No production KPI views in the database since 0010 | The app's Resumen tab computes the KPIs on the phone, but the dashboard's production section stays empty until views exist (§9) | Supabase |
 
 ---
 
@@ -597,3 +625,4 @@ bump the minor version for new content, the patch version for corrections.
 | 2026-09-29 | 0.3 | Added feed tracking (§2.1 "Feed: from delivery to the load", catalogue `material_alimento`, four tables in §8.1, three views in §9). **Reason:** the lab now feeds a standardized ensilaje in fixed loads, so the question moved from "how much did each tray get" to "what came in, which batch is fermenting, and how long does what is ready last"; migration `0008_alimento.sql` (pending deployment). Also noted in §9 that day counts use the farm's day, not the server's (a correction made to `0007` before it ran anywhere). |
 | 2026-09-30 | 0.4 | Bed temperature on días 11–12 is now recorded (`revision.temperatura_c`) and the home screen lists what the plan says is due (§2.1, §8.1, §9). **Reason:** the protocol's 36 °C limit had no record, and the fixed calendar means the app can tell each day what is late, due or coming; migration `0009_monitor.sql` (pending deployment). |
 | 2026-10-21 | 0.5 | Rewrote §2, §8 and §9 for the protocols defined with the lab on 19–20 October 2026: the larvae cycle (recolecta → incubadora → distribución into cajas → chequeos días 3/10/14 and cargas 7/10/13 → separación 98 % horno / 2 % back → cochada; the 2 % into pupation trays repopulating a closed and cleaned cage), the cage cycle (one generation per cycle) and the food (recepción → ensilado → 21 days → apertura → 72 h, oldest open ensilado first). Objects vs registries, codes that never change, corrections with "revisar". **Reason:** the earlier protocols (v1 and the "16-day v2") followed the wrong flow and asked for data the lab does not need; migration `0010_ciclo_nuevo.sql` rebuilds the schema and removes their data (pending deployment); the AppSheet history goes to schema `historico`. The views of §9 went with the old tables; new KPI views are still to be built. |
+| 2026-10-22 | 0.6 | §9.1: the KPIs are now computed in the app's new **Resumen** tab — what there is now, the last eight weeks, and yield per g recolectado, growth in the cajas, FCR (wet basis), cycle days against the plan, recolectas per cage and per cage cycle, oven yield and ensilado eaten over 7 days, 30 days or everything — each with its definition. §8: the six tabs. §2 and §8: `0010` ran in production on 22 October 2026, deleting the earlier protocols' data. **Reason:** the lab asked for a tab with the stats and an overview of the lab and its performance, and for the old data to be deleted. |

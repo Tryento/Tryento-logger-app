@@ -146,6 +146,7 @@ export const getCochada = guard(reads.getCochada);
 export const getAlimento = guard(reads.getAlimento);
 export const getEnsilado = guard(reads.getEnsilado);
 export const getRevisar = guard(reads.getRevisar);
+export const getResumen = guard(reads.getResumen);
 export const getRegistro = guard(reads.getRegistro);
 
 /* What each form starts from. */
@@ -234,7 +235,7 @@ const api = {
   MATERIALES_ALIMENTO,
   getInicio, getProtocolo, listOperators, listRacks, listContenedores, listJaulas, getJaula,
   listIncubadoras, getIncubadora, listCajas, getCaja, getHorno, getCochada, getAlimento,
-  getEnsilado, getRevisar, getRegistro,
+  getEnsilado, getRevisar, getResumen, getRegistro,
   getFormRecolecta, previewRecolecta, getFormChequeo, getFormDistribucion, getFormCargas,
   getFormSeparacion, getFormCochada, getFormIngreso, previewIngreso, getFormEnsilado,
   rememberOperator, setOperator,

@@ -400,6 +400,128 @@ a:hover{color:#4ADE80}
 </div>
     </sc-if>
 
+    <sc-if value="{{ isResumen }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:26px">
+<!-- What there is right now. Each tile opens the tab it lives on. -->
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189">AHORA</div>
+<button onClick="{{ onResAlerta }}" style="display:flex;align-items:center;gap:11px;width:100%;text-align:left;background:{{ resAlertaBg }};border:1px solid {{ resAlertaBd }};border-radius:12px;padding:11px 13px;min-height:50px;cursor:pointer;color:{{ resAlertaFg }}">
+  <div style="width:24px;height:24px;flex:none;border-radius:12px;background:{{ resAlertaFg }};color:#061308;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800">{{ resAlertaMark }}</div>
+  <div style="flex:1;min-width:0;font-size:14.5px;font-weight:600">{{ resAlerta }}</div>
+</button>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+<sc-for list="{{ resAhora }}" as="t" hint-placeholder-count="8">
+  <button onClick="{{ t.onClick }}" style="display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:3px;text-align:left;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px 13px;min-height:92px;cursor:pointer;color:#EAF7EC">
+    <div style="font-size:23px;font-weight:700;letter-spacing:-0.02em;line-height:1.15">{{ t.valor }}</div>
+    <div style="font-size:13.5px;font-weight:600;color:#C9E2CF;line-height:1.25">{{ t.label }}</div>
+    <sc-if value="{{ t.hasSub }}" hint-placeholder-val="{{ true }}">
+      <div style="font-size:12.5px;color:#9FB8A6;line-height:1.3">{{ t.sub }}</div>
+    </sc-if>
+  </button>
+</sc-for>
+</div>
+</div>
+<!-- The last eight weeks. A tap on a column reads its week; the table has every number. -->
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189">ÚLTIMAS 8 SEMANAS</div>
+<sc-for list="{{ resCharts }}" as="ch" hint-placeholder-count="2">
+  <div style="background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px 12px 10px;display:flex;flex-direction:column;gap:6px">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+      <div style="font-size:14.5px;font-weight:700">{{ ch.titulo }}</div>
+      <div style="font-size:12px;color:#7FA189;white-space:nowrap">{{ ch.escala }}</div>
+    </div>
+    <div style="font-size:13.5px;color:#C9E2CF;min-height:19px">{{ ch.lectura }}</div>
+    <div style="height:96px;display:flex;align-items:stretch;gap:4px;border-top:1px solid #1D2A21;border-bottom:1px solid #2A3A2F;padding-top:4px">
+      <sc-for list="{{ ch.barras }}" as="b" hint-placeholder-count="8">
+        <button onClick="{{ b.onClick }}" aria-label="{{ b.aria }}" style="flex:1;min-width:0;display:flex;align-items:flex-end;justify-content:center;background:none;border:none;padding:0;cursor:pointer">
+          <div style="width:100%;max-width:24px;height:{{ b.alto }};min-height:{{ b.min }};border-radius:4px 4px 0 0;background:{{ b.bg }}"></div>
+        </button>
+      </sc-for>
+    </div>
+    <div style="display:flex;gap:4px">
+      <sc-for list="{{ ch.barras }}" as="b" hint-placeholder-count="8">
+        <div style="flex:1;min-width:0;text-align:center;font-size:10.5px;font-weight:{{ b.ejePeso }};color:{{ b.ejeFg }};white-space:nowrap;font-variant-numeric:tabular-nums">{{ b.etiqueta }}</div>
+      </sc-for>
+    </div>
+  </div>
+</sc-for>
+<button onClick="{{ onResTabla }}" style="min-height:44px;padding:0 4px;border:none;background:none;font-size:15px;font-weight:600;color:#22C55E;cursor:pointer;align-self:flex-start">{{ resTablaLabel }}</button>
+<sc-if value="{{ resVerTabla }}" hint-placeholder-val="{{ false }}">
+<div style="background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:4px 12px;display:flex;flex-direction:column">
+  <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr 1fr;gap:6px;padding:8px 0;font-size:11px;font-weight:600;letter-spacing:.05em;color:#7FA189;border-bottom:1px solid #1D2A21">
+    <div>SEMANA</div><div style="text-align:right">RECOL.</div><div style="text-align:right">G</div><div style="text-align:right">CAJAS</div><div style="text-align:right">KG SEP.</div>
+  </div>
+  <sc-for list="{{ resFilas }}" as="r" hint-placeholder-count="8">
+    <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr 1fr;gap:6px;padding:7px 0;font-size:13.5px;color:#C9E2CF;font-variant-numeric:tabular-nums;border-bottom:1px solid #182219">
+      <div style="white-space:nowrap;font-weight:{{ r.peso }}">{{ r.semana }}</div><div style="text-align:right">{{ r.recolectas }}</div><div style="text-align:right">{{ r.g }}</div><div style="text-align:right">{{ r.seps }}</div><div style="text-align:right">{{ r.kg }}</div>
+    </div>
+  </sc-for>
+</div>
+</sc-if>
+</div>
+<!-- How a period went. The chips scope everything below them. -->
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189">RENDIMIENTO</div>
+<div style="display:flex;gap:8px">
+  <sc-for list="{{ resPeriodos }}" as="c" hint-placeholder-count="3">
+    <button onClick="{{ c.onClick }}" style="flex:1;min-height:46px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15px;font-weight:700;cursor:pointer">{{ c.label }}</button>
+  </sc-for>
+</div>
+<div style="font-size:13.5px;color:#9FB8A6">{{ resPeriodoTitulo }}</div>
+</div>
+<sc-for list="{{ resSecciones }}" as="sec" hint-placeholder-count="4">
+<div style="display:flex;flex-direction:column;gap:10px">
+  <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189">{{ sec.titulo }}</div>
+  <sc-if value="{{ sec.hasNota }}" hint-placeholder-val="{{ false }}">
+    <div style="font-size:14px;color:#9FB8A6">{{ sec.nota }}</div>
+  </sc-if>
+  <sc-if value="{{ sec.hasTiles }}" hint-placeholder-val="{{ true }}">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <sc-for list="{{ sec.tiles }}" as="t" hint-placeholder-count="4">
+        <div style="display:flex;flex-direction:column;gap:3px;background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px 13px;min-height:92px">
+          <div style="font-size:23px;font-weight:700;letter-spacing:-0.02em;line-height:1.15">{{ t.valor }}</div>
+          <div style="font-size:13.5px;font-weight:600;color:#C9E2CF;line-height:1.25">{{ t.label }}</div>
+          <sc-if value="{{ t.hasSub }}" hint-placeholder-val="{{ true }}">
+            <div style="font-size:12.5px;color:#9FB8A6;line-height:1.3">{{ t.sub }}</div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </sc-if>
+  <sc-if value="{{ sec.hasBarras }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px 13px;display:flex;flex-direction:column;gap:11px">
+      <div style="font-size:14.5px;font-weight:700">{{ sec.barrasTitulo }}</div>
+      <sc-for list="{{ sec.barras }}" as="b" hint-placeholder-count="3">
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+            <span style="font-size:14px;font-weight:600;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ b.nombre }}</span>
+            <span style="font-size:13px;color:#C9E2CF;white-space:nowrap">{{ b.texto }}</span>
+          </div>
+          <div style="height:8px;display:flex"><div style="width:{{ b.ancho }};min-width:3px;border-radius:0 4px 4px 0;background:#16A34A"></div></div>
+        </div>
+      </sc-for>
+    </div>
+  </sc-if>
+  <sc-if value="{{ sec.hasMedidor }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px 13px;display:flex;flex-direction:column;gap:9px">
+      <div style="font-size:14.5px;font-weight:700">{{ sec.medidorTexto }}</div>
+      <div style="height:10px;display:flex;gap:2px">
+        <div style="width:{{ sec.medidorAncho }};border-radius:4px 0 0 4px;background:#16A34A"></div>
+        <sc-if value="{{ sec.medidorResto }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:1;border-radius:0 4px 4px 0;background:#1E4A2F"></div>
+        </sc-if>
+      </div>
+      <div style="font-size:13px;color:#9FB8A6;line-height:1.35">{{ sec.medidorSub }}</div>
+    </div>
+  </sc-if>
+  <sc-for list="{{ sec.lineas }}" as="l" hint-placeholder-count="2">
+    <div style="font-size:14px;color:#C9E2CF;background:#111A14;border:1px solid #1D2A21;border-radius:10px;padding:10px 12px;line-height:1.4">{{ l.texto }}</div>
+  </sc-for>
+</div>
+</sc-for>
+</div>
+    </sc-if>
+
     <sc-if value="{{ isRevisar }}" hint-placeholder-val="{{ false }}">
 <div style="display:flex;flex-direction:column;gap:12px">
 <div style="font-size:14.5px;color:#9FB8A6">Algo de lo que dependían estos registros se corrigió. Ábrelos, compruébalos y toca «Revisado» en el registro marcado.</div>
@@ -1089,12 +1211,14 @@ a:hover{color:#4ADE80}
 
   </div>
 
+  <!-- Six tabs on a 360 px phone: each takes its label's width plus an even
+       share of what is left, so "Insectarios" never runs into its neighbours. -->
   <sc-if value="{{ showTabs }}" hint-placeholder-val="{{ true }}">
     <div style="position:sticky;bottom:0;z-index:20;display:flex;background:#141C16;border-top:1px solid #1E251E">
-      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
-        <button onClick="{{ t.onClick }}" style="flex:1;min-height:66px;border:none;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;color:{{ t.fg }}">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="6">
+        <button onClick="{{ t.onClick }}" style="flex:1 1 auto;min-width:0;min-height:66px;padding:0 3px;border:none;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;color:{{ t.fg }}">
           <div style="width:22px;height:4px;border-radius:2px;background:{{ t.mark }}"></div>
-          <div style="font-size:13.5px;font-weight:700;letter-spacing:.01em;white-space:nowrap">{{ t.label }}</div>
+          <div style="font-size:12.5px;font-weight:700;white-space:nowrap">{{ t.label }}</div>
         </button>
       </sc-for>
     </div>
@@ -1174,7 +1298,13 @@ const FIELDS = ['operator_input', 'ask_value', 'hora', 'peso_inicial_g', 'alimen
   'nombre', 'letra', 'lugar', 'generacion'];
 
 // The tab screens: no back arrow, and the tab bar shows.
-const TABS = [['home', 'Inicio'], ['larvas', 'Larvas'], ['jaulas', 'Insectarios'], ['horno', 'Horno'], ['alimento', 'Alimento']];
+const TABS = [['home', 'Inicio'], ['larvas', 'Larvas'], ['jaulas', 'Insectarios'], ['horno', 'Horno'], ['alimento', 'Alimento'],
+  ['resumen', 'Resumen']];
+// The Resumen charts: one series each, a green step inside the dark band (the
+// brand green is too light for a data mark); the tapped column lifts to it.
+const BARRA = '#16A34A';
+const BARRA_EN_CURSO = '#15803D';
+const BARRA_ELEGIDA = '#22C55E';
 const TAB_SCREENS = TABS.map(t => t[0]);
 // Forms keep what was typed when another phone's work arrives.
 const FORMS = ['recolecta', 'distribucion', 'chequeo', 'cargas', 'separacion', 'cochadaNueva', 'lectura',
@@ -1192,6 +1322,7 @@ class Component extends DCLogic {
     screen: 'operator', ctx: {}, ready: false, saving: false, fatal: null,
     operator: null, operators: [],
     inicio: null, incubadoras: [], cajas: [], jaulas: null, horno: null, alimento: null,
+    resumen: null, resSemana: null, resTabla: false,
     revisar: [], racks: [], contenedores: [],
     det: null, frm: null, form: {}, filas: [], preview: null, recCodigo: null, reg: null, regFotoUrl: null,
     photoId: null, photoName: '',
@@ -1369,6 +1500,7 @@ class Component extends DCLogic {
       case 'jaulas': return { jaulas: await d(api.listJaulas()) };
       case 'horno': return { horno: await d(api.getHorno()) };
       case 'alimento': return { alimento: await d(api.getAlimento()) };
+      case 'resumen': return { resumen: await d(api.getResumen({ periodo: ctx.periodo || '30' })) };
       case 'revisar': return { revisar: await d(api.getRevisar()) };
       case 'racks': {
         const [a, b] = await Promise.all([d(api.listRacks()), d(api.listContenedores())]);
@@ -1890,7 +2022,7 @@ class Component extends DCLogic {
     const d = s.det;
     const titles = {
       home: 'Inicio', operator: '¿Quién registra?', larvas: 'Larvas', jaulas: 'Insectarios', horno: 'Horno',
-      alimento: 'Alimento', revisar: 'Para revisar', racks: 'Racks y contenedores', sincronizacion: 'Sincronización',
+      alimento: 'Alimento', resumen: 'Resumen', revisar: 'Para revisar', racks: 'Racks y contenedores', sincronizacion: 'Sincronización',
       incubadora: d && d.incubadora ? 'Incubadora ' + d.incubadora.codigo : 'Incubadora',
       caja: d && d.caja ? 'Caja ' + d.caja.codigo : 'Caja de engorde',
       jaula: d && d.jaula ? 'Jaula ' + d.jaula.nombre : 'Jaula',
@@ -1908,7 +2040,7 @@ class Component extends DCLogic {
       onBack: this.back, operatorShort: s.operator || 'Elegir nombre', onOpenOperator: this.openOperatorScreen,
       isHome: screen === 'home', isOperatorScreen: screen === 'operator', isLarvas: screen === 'larvas',
       isJaulas: screen === 'jaulas', isHorno: screen === 'horno', isAlimento: screen === 'alimento',
-      isRevisar: screen === 'revisar', isRacks: screen === 'racks', isDetalle: DETALLES.includes(screen),
+      isResumen: screen === 'resumen', isRevisar: screen === 'revisar', isRacks: screen === 'racks', isDetalle: DETALLES.includes(screen),
       isRecolecta: screen === 'recolecta', isDistribucion: screen === 'distribucion', isChequeo: screen === 'chequeo',
       isCargas: screen === 'cargas', isSeparacion: screen === 'separacion', isCochadaNueva: screen === 'cochadaNueva',
       isLectura: screen === 'lectura', isIngreso: screen === 'ingreso', isNuevaJaula: screen === 'nuevaJaula',
@@ -2025,6 +2157,65 @@ class Component extends DCLogic {
     vals.sinEnsiladoTxt = A ? (A.sin_ensilado === 1 ? '1 alimentación' : A.sin_ensilado + ' alimentaciones') + ' sin ensilado abierto: quedan registradas, pero no descuentan de ningún ensilado.' : '';
     vals.recepcionRegs = A ? A.recepciones.map(r => this.regRow(r.registro)) : [];
     vals.sinRecepciones = !!A && !A.recepciones.length;
+
+    /* resumen */
+    const R = s.resumen;
+    const ALERTA = { mal: ['#F87171', '#1A1112', '#7A2E2E', '!'], bien: ['#4ADE80', '#0E2415', '#1E4A2F', '✓'] };
+    const al = ALERTA[R ? R.alerta.tono : 'bien'];
+    vals.resAlerta = R ? R.alerta.texto : '…';
+    vals.resAlertaFg = al[0]; vals.resAlertaBg = al[1]; vals.resAlertaBd = al[2]; vals.resAlertaMark = al[3];
+    vals.onResAlerta = () => {
+      const ir = R && R.alerta.ir;
+      if (ir === 'revisar') this.open('revisar', {});
+      else if (ir) this.goTab(ir);
+    };
+    vals.resAhora = R ? R.ahora.map(t => ({ valor: t.valor, label: t.label, sub: t.sub, hasSub: !!t.sub, onClick: () => this.goTab(t.ir) })) : [];
+    // One week is read at a time, the latest unless a column was tapped; both charts follow it.
+    const sem = R ? R.semanas : [];
+    const sel = s.resSemana !== null && s.resSemana < sem.length ? s.resSemana : sem.length - 1;
+    const veces = (n, uno, varios) => n + ' ' + (n === 1 ? uno : varios);
+    const serie = (titulo, campo, unidad, lectura) => {
+      const max = Math.max(0, ...sem.map(x => x[campo]));
+      return {
+        titulo, escala: max > 0 ? 'máx. ' + kgTxt(max) + ' ' + unidad : '',
+        lectura: sem[sel] ? lectura(sem[sel]) : '',
+        barras: sem.map((x, i) => ({
+          alto: max > 0 ? Math.round(x[campo] / max * 100) + '%' : '0%', min: x[campo] > 0 ? '3px' : '0px',
+          bg: i === sel ? BARRA_ELEGIDA : x.en_curso ? BARRA_EN_CURSO : BARRA,
+          etiqueta: x.etiqueta, ejeFg: i === sel ? TEXT : '#7FA189', ejePeso: i === sel ? '700' : '500',
+          aria: x.titulo + ': ' + kgTxt(x[campo]) + ' ' + unidad,
+          onClick: () => this.setState({ resSemana: i })
+        }))
+      };
+    };
+    vals.resCharts = R ? [
+      serie('Recolectado · g', 'g', 'g', x => x.titulo + ': ' + kgTxt(x.g) + ' g en ' + veces(x.recolectas, 'recolecta', 'recolectas')),
+      serie('Separado · kg', 'kg', 'kg', x => x.titulo + ': ' + kgTxt(x.kg) + ' kg de ' + veces(x.separaciones, 'caja', 'cajas'))
+    ] : [];
+    vals.resVerTabla = !!s.resTabla;
+    vals.resTablaLabel = s.resTabla ? 'Ocultar los números' : 'Ver los números de cada semana';
+    vals.onResTabla = () => this.setState({ resTabla: !s.resTabla });
+    vals.resFilas = sem.map((x, i) => ({ semana: x.en_curso ? 'Actual' : x.etiqueta, peso: i === sel ? '700' : '500',
+      recolectas: String(x.recolectas), g: kgTxt(x.g), seps: String(x.separaciones), kg: kgTxt(x.kg) }));
+    const P = R ? R.periodo : null;
+    vals.resPeriodos = [['7', '7 días'], ['30', '30 días'], ['todo', 'Todo']].map(p =>
+      this.chip(p[1], !!P && P.clave === p[0], () => this.open('resumen', { periodo: p[0] }, { push: false })));
+    vals.resPeriodoTitulo = P ? P.titulo : '';
+    vals.resSecciones = P ? P.secciones.map(sec => {
+      const maxG = Math.max(0, ...(sec.barras || []).map(b => b.g));
+      const m = sec.medidor;
+      return {
+        titulo: sec.titulo, nota: sec.nota || '', hasNota: !!sec.nota,
+        tiles: (sec.tiles || []).map(t => ({ valor: t.valor, label: t.label, sub: t.sub, hasSub: !!t.sub })),
+        hasTiles: !!(sec.tiles && sec.tiles.length),
+        barrasTitulo: sec.barrasTitulo || '', hasBarras: !!(sec.barras && sec.barras.length),
+        barras: (sec.barras || []).map(b => ({ nombre: b.nombre, texto: b.texto,
+          ancho: maxG > 0 ? Math.round(b.g / maxG * 100) + '%' : '0%' })),
+        hasMedidor: !!m, medidorTexto: m ? m.texto : '', medidorSub: m ? m.sub : '',
+        medidorAncho: m ? m.pct + '%' : '0%', medidorResto: !!m && m.pct < 100,
+        lineas: (sec.lineas || []).map(texto => ({ texto }))
+      };
+    }) : [];
 
     /* revisar */
     vals.revisarRows = s.revisar.map(x => ({

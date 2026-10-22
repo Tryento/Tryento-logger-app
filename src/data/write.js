@@ -460,7 +460,8 @@ export async function registrarSeparaciones(data = {}) {
 export async function crearCochada(data = {}) {
   const db = await openDb();
   const v = await vistaActual(db);
-  const origenesIn = (data.origenes || []).filter(o => o && num(o.kg) > 0);
+  // Kilos as typed ("9,8"): parsed once, so the check and what is saved are the same number.
+  const origenesIn = (data.origenes || []).filter(o => o && num(o.kg) > 0).map(o => ({ ...o, kg: kg3(num(o.kg)) }));
   if (!origenesIn.length) return invalido('Elige de qué separaciones sale y cuántos kg de cada una.');
   const peso = num(data.peso_inicial_kg);
   if (peso === null || peso <= 0) return invalido('Escribe el peso inicial en kg.');
@@ -470,7 +471,7 @@ export async function crearCochada(data = {}) {
   for (const o of origenesIn) {
     const h = pendiente.get(o.separacion_id);
     if (!h) return invalido('Una de las separaciones ya no existe en este teléfono.');
-    if (kg3(o.kg) > h.kg_pendiente) {
+    if (o.kg > h.kg_pendiente) {
       const caja = v.cajas.find(c => c.id === h.caja_id);
       return invalido(`De ${caja ? caja.codigo : 'esa separación'} quedan ${h.kg_pendiente} kg del 98 %.`);
     }
@@ -483,7 +484,7 @@ export async function crearCochada(data = {}) {
     ...NUEVO, nota: str(data.nota), ...prov
   };
   const origenes = origenesIn.map(o => ({ id: uuid(), cochada_id: cochada.id, separacion_id: o.separacion_id,
-                                          kg: kg3(o.kg), ...NUEVO, ...prov }));
+                                          kg: o.kg, ...NUEVO, ...prov }));
   const blobIds = await conFoto(db, cochada, 'cochada', data.blob_id);
   const wire = r => { const { updated_at, estado, ...rest } = r; return rest; };
   await guardar(db, {
@@ -706,14 +707,15 @@ export async function crearEnsilado(data = {}) {
   const v = await vistaActual(db);
   const cont = v.por.contenedor.get(data.contenedor_id);
   if (!cont) return invalido('Elige el contenedor.');
-  const insumosIn = (data.insumos || []).filter(i => i && num(i.kg) > 0);
+  // Kilos as typed ("12,5"): parsed once, so the check and what is saved are the same number.
+  const insumosIn = (data.insumos || []).filter(i => i && num(i.kg) > 0).map(i => ({ ...i, kg: kg3(num(i.kg)) }));
   if (!insumosIn.length) return invalido('Indica qué recepciones entran y cuántos kg de cada una.');
   const f = fechaDe(data.fecha);
   if (f.error) return invalido(f.error);
   for (const i of insumosIn) {
     const r = v.stock.porRecepcion.get(i.recepcion_id);
     if (!r) return invalido('Una de las recepciones ya no existe en este teléfono.');
-    if (kg3(i.kg) > r.kg_disponible) return invalido(`De la recepción de ${r.material} quedan ${r.kg_disponible} kg.`);
+    if (i.kg > r.kg_disponible) return invalido(`De la recepción de ${r.material} quedan ${r.kg_disponible} kg.`);
   }
   const codigo = ensiladoCodigo(cont.codigo, f.iso);
   if (v.ensilados.some(e => e.codigo === codigo && e.dia0 === farmDay(f.iso))) {
@@ -723,7 +725,7 @@ export async function crearEnsilado(data = {}) {
   const ens = { id: uuid(), codigo, contenedor_id: cont.id, ensilado_at: f.iso, dia0: farmDay(f.iso),
                 abierto_at: null, abierto_por: null, ...NUEVO, nota: str(data.nota), ...prov };
   const insumos = insumosIn.map(i => ({ id: uuid(), ensilado_id: ens.id, recepcion_id: i.recepcion_id,
-                                        kg: kg3(i.kg), ...NUEVO, ...prov }));
+                                        kg: i.kg, ...NUEVO, ...prov }));
   const blobIds = await conFoto(db, ens, 'ensilado', data.blob_id);
   const wire = r => { const { updated_at, ...rest } = r; return rest; };
   await guardar(db, {

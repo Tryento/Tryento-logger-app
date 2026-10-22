@@ -27,6 +27,7 @@ import { EDITABLE, camposDe } from './registros.js';
 import { kgTxt, diaTxt, fechaHoraTxt, cuandoTxt } from './formato.js';
 import { farmDay, toNaiveLocal } from './time.js';
 import { generacionDeJaula } from './revisar.js';
+import { resumenLab } from './resumen.js';
 
 export async function getProtocolo() {
   return ok(await protocolo(await openDb()));
@@ -103,6 +104,160 @@ export async function getInicio() {
     pool_kg: v.pool.kg_pendiente,
     horno_kg: kg3(v.horno.reduce((s, h) => s + h.kg_pendiente, 0)),
     vacio: !v.jaulas.length && !v.racks.length
+  });
+}
+
+/* ── the lab in numbers ───────────────────────────────────────────────────── */
+
+const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+const diasTxt = r => (!r ? '' : r.min === r.max ? `Día ${r.min}` : `Días ${r.min}–${r.max}`);
+const medidaTxt = (m, u) => (!m ? null : m.min === m.max ? `${kgTxt(m.prom)} ${u}`
+  : `${kgTxt(m.prom)} ${u} (${kgTxt(m.min)}–${kgTxt(m.max)})`);
+const PERIODO_TXT = { 7: 'Últimos 7 días', 30: 'Últimos 30 días' };
+
+/**
+ * The Resumen tab: what there is now (each tile opens the tab it lives on),
+ * the last eight weeks, and how the chosen period went.
+ */
+export async function getResumen({ periodo = '30' } = {}) {
+  const v = await vistaActual(await openDb());
+  const { ahora: a, semanas, periodo: p } = resumenLab(v, { periodo });
+
+  const jaulasSub = a.jaulas.total
+    ? [a.jaulas.generaciones.map(g => (g.n > 1 ? `F${g.generacion} ×${g.n}` : `F${g.generacion}`)).join(' · '),
+       a.jaulas.cerradas ? plural(a.jaulas.cerradas, 'cerrada', 'cerradas') : null,
+       a.jaulas.limpias ? plural(a.jaulas.limpias, 'limpia', 'limpias') : null].filter(Boolean).join(' · ')
+    : 'Ninguna registrada';
+  const ens = a.ensilado;
+  const ahora = [
+    { valor: String(a.jaulas.con_moscas), label: a.jaulas.con_moscas === 1 ? 'jaula con moscas' : 'jaulas con moscas',
+      sub: jaulasSub, ir: 'jaulas' },
+    { valor: String(a.incubadoras.activas), label: a.incubadoras.activas === 1 ? 'incubadora activa' : 'incubadoras activas',
+      sub: diasTxt(a.incubadoras.dias), ir: 'larvas' },
+    { valor: String(a.cajas.activas), label: a.cajas.activas === 1 ? 'caja de engorde' : 'cajas de engorde',
+      sub: [a.cajas.en_ayuno ? `${a.cajas.en_ayuno} en ayuno` : null, diasTxt(a.cajas.dias)].filter(Boolean).join(' · '), ir: 'larvas' },
+    { valor: String(a.cochadas_en_horno), label: a.cochadas_en_horno === 1 ? 'cochada en el horno' : 'cochadas en el horno',
+      sub: '', ir: 'horno' },
+    { valor: `${kgTxt(a.horno_kg)} kg`, label: '98 % esperando el horno', sub: '', ir: 'horno' },
+    { valor: `${kgTxt(a.pool_kg)} kg`, label: '2 % esperando para repoblar', sub: '', ir: 'jaulas' },
+    ens.abiertos
+      ? { valor: `${kgTxt(ens.kg_restante)} kg`, label: ens.abiertos === 1 ? 'en el ensilado abierto' : `en ${ens.abiertos} ensilados abiertos`,
+          sub: `Vence ${horaLocal(ens.vence_at)}`, ir: 'alimento' }
+      : { valor: '0 kg', label: 'ningún ensilado abierto',
+          sub: ens.madurando ? `Próxima apertura ${diaTxt(ens.proxima_apertura)}` : 'Ninguno madurando', ir: 'alimento' },
+    { valor: `${kgTxt(a.bodega_kg)} kg`, label: 'material sin ensilar', sub: '', ir: 'alimento' }
+  ];
+  const alerta = a.atrasados || a.revisar
+    ? { tono: 'mal', ir: a.atrasados ? 'home' : 'revisar',
+        texto: [a.atrasados ? plural(a.atrasados, 'paso atrasado', 'pasos atrasados') : null,
+                a.revisar ? plural(a.revisar, 'registro para revisar', 'registros para revisar') : null].filter(Boolean).join(' · ') }
+    : { tono: 'bien', ir: null, texto: 'Nada atrasado ni por revisar.' };
+
+  /* the period, section by section */
+  const L = p.larvas;
+  const cerradasL = [L.cerradas.incubadoras ? plural(L.cerradas.incubadoras, 'cerrada en la incubadora', 'cerradas en la incubadora') : null,
+                     L.cerradas.cajas ? plural(L.cerradas.cajas, 'caja cerrada antes de tiempo', 'cajas cerradas antes de tiempo') : null]
+    .filter(Boolean).join(' · ');
+  const S = p.separaciones, C = p.chequeos, X = p.cierres;
+  const larvas = {
+    titulo: 'CICLO DE LAS LARVAS',
+    nota: L.n
+      ? `${plural(L.n, 'incubadora terminó su ciclo', 'incubadoras terminaron su ciclo')} en este periodo${cerradasL ? ` (${cerradasL})` : ''}.`
+      : 'Ninguna incubadora terminó su ciclo en este periodo.',
+    tiles: L.n ? [
+      { valor: `${kgTxt(L.kg_separado)} kg`, label: 'separados', sub: `De ${plural(L.n, 'incubadora', 'incubadoras')}` },
+      { valor: L.kg_por_g === null ? '—' : `${kgTxt(L.kg_por_g)} kg`, label: 'por g recolectado',
+        sub: `${kgTxt(L.kg_separado)} kg de ${kgTxt(L.g_inicial)} g` },
+      { valor: L.multiplicacion === null ? '—' : `×${kgTxt(L.multiplicacion)}`, label: 'de la distribución a la separación',
+        sub: `${kgTxt(L.kg_tamizado)} → ${kgTxt(L.kg_separado)} kg` },
+      { valor: L.fcr === null ? '—' : kgTxt(L.fcr), label: 'kg de alimento por kg separado',
+        sub: `FCR en base húmeda · ${kgTxt(L.kg_alimento)} kg dados` },
+      { valor: L.dia_distribucion === null ? '—' : `Día ${kgTxt(L.dia_distribucion)}`, label: 'distribución, en promedio',
+        sub: `Plan: día ${L.plan.distribucion}` },
+      { valor: L.dia_separacion === null ? '—' : `Día ${kgTxt(L.dia_separacion)}`, label: 'separación, en promedio',
+        sub: `Plan: día ${L.plan.separacion}` }
+    ] : [],
+    lineas: [
+      S.n ? `Separaciones: ${plural(S.n, 'caja', 'cajas')} · ${kgTxt(S.kg)} kg → ${kgTxt(S.coccion_kg)} kg al horno y ${kgTxt(S.retorno_kg)} kg al insectario`
+          : 'Ninguna separación en este periodo.',
+      C.n ? ['Chequeos: ' + C.n, medidaTxt(C.humedad, '% de humedad'), medidaTxt(C.temperatura, '°C')].filter(Boolean).join(' · ')
+          : 'Ningún chequeo en este periodo.',
+      X.n ? 'Cerrados antes de tiempo: ' + [X.incubadoras ? plural(X.incubadoras, 'incubadora', 'incubadoras') : null,
+                                            X.cajas ? plural(X.cajas, 'caja', 'cajas') : null,
+                                            X.cochadas ? plural(X.cochadas, 'cochada', 'cochadas') : null,
+                                            X.bandejas ? plural(X.bandejas, 'bandeja', 'bandejas') : null].filter(Boolean).join(', ')
+          : null
+    ].filter(Boolean)
+  };
+
+  const Rc = p.recolectas, CJ = p.ciclos_jaula, RP = p.repoblados;
+  const insectario = {
+    titulo: 'INSECTARIO',
+    nota: Rc.n ? '' : 'Ninguna recolecta en este periodo.',
+    barrasTitulo: 'Recolectado por jaula',
+    barras: Rc.por_jaula.map(j => ({ nombre: j.nombre, g: j.g,
+                                     texto: `${kgTxt(j.g)} g · ${plural(j.recolectas, 'recolecta', 'recolectas')}` })),
+    lineas: [
+      Rc.n ? `Recolectas: ${Rc.n} · ${kgTxt(Rc.g)} g · ${kgTxt(Rc.g_prom)} g por recolecta` : null,
+      CJ.n ? `${plural(CJ.n, 'ciclo de jaula cerrado', 'ciclos de jaula cerrados')}: ${kgTxt(CJ.dias_prom)} días, ` +
+             `${kgTxt(CJ.recolectas_prom)} recolectas y ${kgTxt(CJ.g_prom)} g por ciclo, en promedio`
+           : 'Ningún ciclo de jaula se cerró en este periodo.',
+      RP.n ? `${plural(RP.n, 'repoblado', 'repoblados')}: ${kgTxt(RP.kg_larvas)} kg de larvas en ${plural(RP.bandejas, 'bandeja', 'bandejas')}`
+           : 'Ningún repoblado en este periodo.'
+    ].filter(Boolean)
+  };
+
+  const H = p.horno, T = H.terminadas;
+  const rangoH = T.rango_pct && T.rango_pct.min !== T.rango_pct.max ? `Entre ${T.rango_pct.min} y ${T.rango_pct.max} %` : null;
+  const horno = {
+    titulo: 'HORNO',
+    nota: '',
+    tiles: [
+      { valor: String(T.n), label: T.n === 1 ? 'cochada terminada' : 'cochadas terminadas',
+        sub: T.n ? `${kgTxt(T.kg_entrada)} kg → ${kgTxt(T.kg_salida)} kg` : '' },
+      { valor: T.rendimiento_pct === null ? '—' : `${T.rendimiento_pct} %`, label: 'rendimiento del horno',
+        sub: [rangoH, 'Peso final ÷ peso inicial'].filter(Boolean).join(' · ') }
+    ],
+    lineas: [
+      H.al_horno.n ? `Al horno: ${plural(H.al_horno.n, 'cochada', 'cochadas')} · ${kgTxt(H.al_horno.kg)} kg`
+                   : 'Ninguna cochada entró al horno en este periodo.',
+      T.n ? `Temperatura promedio: ${T.temp_media === null ? '—' : `${kgTxt(T.temp_media)} °C`} a mitad · ${kgTxt(T.temp_final)} °C al final` : null
+    ].filter(Boolean)
+  };
+
+  const A = p.alimento, ET = A.ensilados_terminados, horas = v.cfg.horas_consumo;
+  const alimento = {
+    titulo: 'ALIMENTO',
+    nota: ET.kg > 0 ? '' : `Ningún ensilado terminó sus ${horas} h en este periodo.`,
+    medidor: ET.kg > 0 ? {
+      pct: ET.consumido_pct,
+      texto: `${ET.consumido_pct} % consumido · ${100 - ET.consumido_pct} % descartado`,
+      sub: `${plural(ET.n, 'ensilado terminó', 'ensilados terminaron')} sus ${horas} h: ${kgTxt(ET.consumido_kg)} de ${kgTxt(ET.kg)} kg comidos, ` +
+           `${kgTxt(ET.descartado_kg)} kg descartados`
+    } : null,
+    lineas: [
+      A.dado_kg ? `Alimento dado: ${kgTxt(A.dado_kg)} kg` +
+                  (A.sin_ensilado_kg > 0 ? ` · ${kgTxt(A.sin_ensilado_kg)} kg sin ensilado (${plural(A.sin_ensilado_n, 'alimentación', 'alimentaciones')})` : '')
+                : 'No se dio alimento en este periodo.',
+      A.recibido.kg ? `Recibido: ${kgTxt(A.recibido.kg)} kg · ${A.recibido.por_material.map(m => `${m.material} ${kgTxt(m.kg)} kg`).join(' · ')}`
+                    : 'No se recibió material en este periodo.',
+      A.ensilados_hechos.n ? `${plural(A.ensilados_hechos.n, 'ensilado hecho', 'ensilados hechos')}: ${kgTxt(A.ensilados_hechos.kg)} kg`
+                           : 'Ningún ensilado hecho en este periodo.'
+    ]
+  };
+
+  return ok({
+    ahora, alerta,
+    semanas: semanas.map(s => ({
+      desde: s.desde, etiqueta: diaTxt(s.desde), en_curso: s.en_curso,
+      titulo: s.en_curso ? 'Esta semana (en curso)' : `Semana del ${diaTxt(s.desde)}`,
+      recolectas: s.recolectas, g: s.recolectado_g, separaciones: s.separaciones, kg: s.separado_kg
+    })),
+    periodo: {
+      clave: p.clave,
+      titulo: p.desde ? `${PERIODO_TXT[p.clave]} · desde el ${diaTxt(p.desde)}` : 'Todo, desde el primer registro',
+      secciones: [larvas, insectario, horno, alimento]
+    }
   });
 }
 

@@ -80,6 +80,14 @@ turns that into one list: late, today, the next two days. Cajas of one
 incubadora that need the same step are one line; each line opens its form
 already filled in. Pure and clock-free, so it is tested on pinned days.
 
+**The lab in numbers (Resumen tab)** — [`src/data/resumen.js`](src/data/resumen.js)
+reads the same picture: what there is now, the last eight weeks (Monday to
+Sunday on the farm's calendar), and how 7 days, 30 days or everything went —
+yield per g recolectado, growth in the cajas, FCR, cycle days against the plan,
+recolectas per cage, the oven's yield, how much ensilado was eaten. A larvae
+cycle counts in the period it ended. The definitions are in
+[docs/LAB_SPEC.md §9](docs/LAB_SPEC.md#9-kpis-and-how-they-are-computed).
+
 To connect it to Supabase, fill in [`app-config.js`](app-config.js) and run
 [`supabase/SETUP_COMPLETO.sql`](supabase/SETUP_COMPLETO.sql) (a new database) or
 the numbered files you are missing (an existing one) — see [DEPLOY.md](DEPLOY.md).
@@ -110,6 +118,7 @@ index.html  (built from "BSF Production Log.dc.html")
               ├── alimento.js · pool.js   food used / the 2 % and 98 % (pure)
               ├── revisar.js              what a correction leaves to review (pure)
               ├── monitor.js              "para hoy" (pure)
+              ├── resumen.js              the Resumen tab: now, weeks, KPIs (pure)
               ├── registros.js            what can be corrected, per table
               ├── snapshot.js             the rows, read once and reused
               ├── idb/                    IndexedDB: the device's source of truth

@@ -19,7 +19,8 @@
  *      recolecta, its chequeo and distribución, a caja's chequeo, carga and
  *      separación, the oven, closing / cleaning / repopulating the cage with
  *      the 2 %, the next generation's recolecta, a correction and its
- *      "revisar" — then IndexedDB read directly
+ *      "revisar", the Resumen tab's numbers (also on a 360 px phone) — then
+ *      IndexedDB read directly
  */
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -117,7 +118,8 @@ async function launch() {
   await send('Page.enable');
   await send('Runtime.enable');
   // A phone-sized screen, so layouts are judged at the size staff use.
-  await send('Emulation.setDeviceMetricsOverride', { width: 412, height: 915, deviceScaleFactor: 1, mobile: true });
+  const viewport = width => send('Emulation.setDeviceMetricsOverride', { width, height: 915, deviceScaleFactor: 1, mobile: true });
+  await viewport(412);
 
   // Everything waits with a deadline: a missed browser event must fail the run
   // with a message, not hang it.
@@ -149,7 +151,7 @@ async function launch() {
     await mkdir(process.env.SHOTS, { recursive: true });
     await writeFile(path.join(process.env.SHOTS, name + '.png'), Buffer.from(data, 'base64'));
   };
-  return { navigate, evaluate, close, logs, shot };
+  return { navigate, evaluate, close, logs, shot, viewport };
 }
 
 /** Poll an expression in the page until it is truthy. */
@@ -486,10 +488,45 @@ console.log('\nEscenario 3 — el ciclo completo, en la pantalla');
     await paso('la lista de revisar', () => abrir('Revisar', 'Ingreso en ICA'), 'Cambió una separación anterior');
     await b.shot('16-revisar');
 
+    // The lab in numbers, from what was just done.
+    await paso('la pestaña Resumen', () => tab('Resumen'), 'ÚLTIMAS 8 SEMANAS');
+    await b.shot('17-resumen');
+    const r = await T();
+    check(r.includes('2 registros para revisar'), 'resumen: avisa lo que hay que revisar (el ingreso y la cochada)');
+    check(r.includes('1,96 kg') && r.includes('98 % esperando el horno'), 'resumen: el 98 % que espera el horno (11,76 − 9,8)');
+    check(r.includes('esta semana (en curso): 23,5 g en 2 recolectas'), 'resumen: lo recolectado esta semana');
+    check(r.includes('esta semana (en curso): 12 kg de 1 caja'), 'resumen: lo separado esta semana');
+    check(r.includes('separaciones: 1 caja · 12 kg → 11,76 kg al horno y 0,24 kg al insectario'), 'resumen: las separaciones del periodo');
+    check(r.includes('23,5 g · 2 recolectas'), 'resumen: lo recolectado por jaula');
+    check(r.includes('32 %') && r.includes('rendimiento del horno'), 'resumen: el rendimiento del horno (3,1 de 9,8 kg)');
+    const columnas = await b.evaluate(`(() => {
+      const x = [...document.querySelectorAll('button[aria-label]')].filter(e => e.getAttribute('aria-label').startsWith('Semana del'));
+      if (x.length) x[0].click();
+      return x.length;
+    })()`);
+    check(columnas === 14, 'resumen: cada semana anterior es una columna que se toca (7 por gráfica)', String(columnas));
+    check(Boolean(await ve(': 0 g en 0 recolectas')), 'resumen: tocar una columna lee su semana');
+    await paso('resumen: los números de cada semana', () => tap('Ver los números de cada semana'), 'KG SEP.');
+    await paso('resumen: los últimos 7 días', () => tap('7 días'), 'Últimos 7 días · desde el');
+    // Six tabs and the tiles on a narrow phone: nothing runs over, nothing scrolls sideways.
+    await b.viewport(360);
+    await settle();
+    const ancho = await b.evaluate(`(() => {
+      const tabs = [...document.querySelectorAll('button')].filter(e => ['Inicio', 'Larvas', 'Insectarios', 'Horno', 'Alimento', 'Resumen'].includes(e.innerText.trim()));
+      const corta = tabs.filter(e => [...e.children].some(c => c.scrollWidth > e.clientWidth + 1)).map(e => e.innerText.trim());
+      return { tabs: tabs.length, corta, scroll: document.documentElement.scrollWidth };
+    })()`);
+    check(ancho.tabs === 6 && !ancho.corta.length, 'a 360 px las seis pestañas caben', ancho.corta.join(', '));
+    check(ancho.scroll <= 360, 'a 360 px no hay desplazamiento lateral', ancho.scroll + ' px');
+    await b.shot('18-resumen-360');
+    await b.viewport(412);
+
     const d = await b.evaluate(DUMP);
     const codigos = (d.incubadora || []).map(i => i.codigo).sort().join(', ');
     check(codigos === 'F7A-1, F8A-1', 'incubadoras guardadas', codigos);
     check((d.caja || []).map(c => c.codigo).sort().join(', ') === 'F7A-1-01, F7A-1-02', 'cajas guardadas');
+    // "Todo" fills the box with "9,8": what is stored must be the number.
+    check((d.cochada_origen || [])[0]?.kg === 9.8, 'la cochada guardó los kg que tomó del 98 %', String((d.cochada_origen || [])[0]?.kg));
     const sep = (d.separacion || [])[0];
     check(sep && sep.peso_total_kg === 12 && sep.valores_editados_at && sep.editado_por === 'Maria', 'la corrección quedó, con quién y cuándo');
     check((d.ingreso || [])[0]?.generacion === 8 && (d.bandeja_pupacion || []).length === 1, 'ingreso F8 con su bandeja');

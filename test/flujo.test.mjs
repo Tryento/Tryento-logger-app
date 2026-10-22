@@ -82,6 +82,8 @@ test('food: a recepción, an ensilado from it, opened on its día 21', async () 
   S.rec = okData(await w.registrarRecepcion({ material: 'Bagazo de cerveza (BSG)', kg: '100' })).id;
   falla(await w.registrarRecepcion({ material: 'Arena', kg: 1 }), /material de la lista/);
   falla(await w.crearEnsilado({ contenedor_id: S.s2, insumos: [{ recepcion_id: S.rec, kg: 120 }] }), /quedan 100 kg/);
+  // Typed on a Spanish phone: a decimal comma is still checked against what is left.
+  falla(await w.crearEnsilado({ contenedor_id: S.s2, insumos: [{ recepcion_id: S.rec, kg: '100,5' }] }), /quedan 100 kg/);
 
   const e = okData(await w.crearEnsilado({ contenedor_id: S.s2, insumos: [{ recepcion_id: S.rec, kg: '80' }] }));
   S.ens = e.ensilado.id;
@@ -168,8 +170,11 @@ test('the oven: a cochada from the 98 %, part of it, and its readings', async ()
   const horno = okData(await r.getHorno());
   assert.equal(horno.kg_pendiente, 29.4);
   falla(await w.crearCochada({ peso_inicial_kg: 30, origenes: [{ separacion_id: S.sep1, kg: 10 }] }), /quedan 9.8 kg/);
+  falla(await w.crearCochada({ peso_inicial_kg: 30, origenes: [{ separacion_id: S.sep1, kg: '9,9' }] }), /quedan 9.8 kg/);
+  // The kilos as the form sends them: "Todo" writes "9,8".
   const co = okData(await w.crearCochada({ peso_inicial_kg: '19,8', origenes: [
-    { separacion_id: S.sep1, kg: 9.8 }, { separacion_id: S.sep2, kg: 10 }] }));
+    { separacion_id: S.sep1, kg: '9,8' }, { separacion_id: S.sep2, kg: '10' }] }));
+  assert.deepEqual(co.origenes.map(o => o.kg), [9.8, 10]);
   S.co = co.cochada.id;
   assert.equal(co.cochada.codigo, `H-${DDMM}-1`);
   assert.equal(okData(await r.getHorno()).kg_pendiente, 9.6, 'what is left of the second 98 %');
