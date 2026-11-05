@@ -7,6 +7,7 @@ is published by the build (`tools/build.mjs` copies an explicit allow-list into
 | Document | What it is | Update it when |
 |---|---|---|
 | [protocolo.html](protocolo.html) | The production protocols, in Spanish, for the lab: the larvae cycle, the insectario, the food, what is recorded at each task, codes, corrections | The lab changes a protocol (and LAB_SPEC §2 with it) |
+| [guia-app.html](guia-app.html) | How staff use the app, in Spanish: first use on a phone, the screens, every task and where to tap, corrections and «revisar», working without signal, common problems | A screen, a button label or a rule of the app changes |
 | [LAB_SPEC.md](LAB_SPEC.md) | How the lab is built, configured and operated: cages, sensors, pins, setpoints, lighting, data pipeline, production process, KPIs, open questions | The lab, the controller config or the production process changes |
 | [reports/Black soldier fly farms and biology.md](reports/Black%20soldier%20fly%20farms%20and%20biology.md) | Research knowledge base: BSF biology, adult mating and light, colonies and eggs, larval rearing, processing and regulation, industry and automation | New research is done, or lab results confirm or contradict it |
 | [research_notes/Black soldier fly farms and biology/](research_notes/Black%20soldier%20fly%20farms%20and%20biology/) | Source notes behind the knowledge base, with every citation | Only when new research is added (never rewrite old notes; add a new file) |

@@ -4,13 +4,13 @@
  *   npm run check:sql-applied
  *
  * The app calls RPCs by name, so pushing app code before its SQL breaks those
- * actions in production. This answers "has 0010 been run?" from the database
- * itself instead of from memory.
+ * actions in production. This answers "has 0010 (and 0011) been run?" from the
+ * database itself instead of from memory.
  *
  * Every probe is READ-ONLY or a guaranteed no-op: the multi-row calls are made
- * empty (they refuse before writing anything, 22023), and the stamps and edits
- * aim at an id that does not exist, so they match zero rows. Nothing is
- * created, changed or deleted.
+ * empty (they refuse before writing anything, 22023), and the stamps, edits
+ * and the delete aim at an id that does not exist, so they match zero rows.
+ * Nothing is created, changed or deleted.
  *
  * The test suite runs `comprobar` against a local Postgres too.
  */
@@ -74,6 +74,12 @@ export async function comprobar(db) {
     ['0010', 'los nombres de las personas', async () => {
         const { data, error } = await db.from('catalogo').select('valor').eq('tipo', 'operario');
         return !error && data.length >= 1;
+      }],
+    // Aimed at an id that does not exist: before 0011 it deletes nothing; after
+    // it, the database refuses it outright (42501).
+    ['0011', 'con la llave pública nadie borra', async () => {
+        const { error } = await db.from('rack').delete().eq('id', NOBODY);
+        return Boolean(error) && (error.code === '42501' || /permission denied/i.test(error.message));
       }]
   ];
 

@@ -14,16 +14,25 @@
  *     no longer matches).
  *
  * Nothing is stored. "Revisado" moves the record's own mark (revisado_at)
- * forward, and the time-based flags go; a disagreement stays until fixed.
- * A note or a photo is not a correction (valores_editados_at, 0010).
+ * forward and every flag goes: a disagreement the lab looked at and accepted
+ * is accepted, until the record or anything the disagreement involves changes
+ * again. A note or a photo is not a correction (valores_editados_at, 0010).
  */
 import { kg3, repartoSeparacion, PROTOCOLO_DEFAULTS } from './protocolo.js';
+import { kgTxt } from './formato.js';
 
 const vivo = r => r && !r.deleted_at;
 const max = (...v) => v.filter(Boolean).sort().pop() || '';
 
 /** When a record was last made, corrected or reviewed. */
 export const visto = r => max(r.created_at, r.valores_editados_at, r.revisado_at);
+
+/** When a record was made or had a value corrected. */
+const cambio = r => max(r.created_at, r.valores_editados_at);
+
+/** A disagreement reviewed after the last change to the record and to everything it involves. */
+const aceptado = (dep, ...inputs) =>
+  Boolean(dep.revisado_at) && [dep, ...inputs.flat()].every(x => !x || cambio(x) <= dep.revisado_at);
 
 /** `input` changed, or arrived dated before `dep`, after `dep` was last seen. */
 function cambioTras(input, dep, { fechaInput, fechaDep } = {}) {
@@ -66,7 +75,9 @@ export function revisiones(d = {}, cfg = PROTOCOLO_DEFAULTS, pool = null) {
   // The cage's generation at each recolecta.
   for (const inc of incubadoras) {
     const esperada = generacionDeJaula(inc.jaula_id, inc.recolecta_at, d);
-    if (esperada !== null && Number(inc.generacion) !== esperada) {
+    const jaula = (d.jaulas || []).find(j => j.id === inc.jaula_id);
+    const ingresosJaula = (d.ingresos || []).filter(i => vivo(i) && i.jaula_id === inc.jaula_id);
+    if (esperada !== null && Number(inc.generacion) !== esperada && !aceptado(inc, jaula, ingresosJaula)) {
       marcar('incubadora', inc.id, `Su jaula era F${esperada} en esa recolecta; esta incubadora dice F${inc.generacion}.`);
     }
   }
@@ -84,8 +95,9 @@ export function revisiones(d = {}, cfg = PROTOCOLO_DEFAULTS, pool = null) {
     const nombre = caja ? `de la caja ${caja.codigo}` : '';
     if (cambioTras(s, o)) marcar('cochada_origen', o.id, `Se corrigió la separación ${nombre}.`);
     const { coccion_kg } = repartoSeparacion(s.peso_total_kg, s.pct_coccion ?? cfg.pct_coccion);
-    if (tomado.get(s.id) > coccion_kg) {
-      marcar('cochada_origen', o.id, `Al 98 % ${nombre} (${coccion_kg} kg) se le tomaron ${tomado.get(s.id)} kg.`);
+    const deLaMisma = (d.origenes || []).filter(x => vivo(x) && x.separacion_id === s.id);
+    if (tomado.get(s.id) > coccion_kg && !aceptado(o, s, deLaMisma)) {
+      marcar('cochada_origen', o.id, `Al 98 % ${nombre} (${kgTxt(coccion_kg)} kg) se le tomaron ${kgTxt(tomado.get(s.id))} kg.`);
     }
   }
 
@@ -117,7 +129,10 @@ export function revisiones(d = {}, cfg = PROTOCOLO_DEFAULTS, pool = null) {
           break;
         }
       }
-      if (uso.generacion_larvas !== null && Number(ing.generacion) !== uso.generacion_larvas + 1) {
+      const fuentes = [...uso.partes.map(p => sepPor.get(p.separacion_id)),
+                       ...uso.cajas.map(c => incPor.get(cajaPor.get(c.caja_id)?.incubadora_id))];
+      if (uso.generacion_larvas !== null && Number(ing.generacion) !== uso.generacion_larvas + 1 &&
+          !aceptado(ing, fuentes)) {
         marcar('ingreso', ing.id, `Sus larvas son F${uso.generacion_larvas}: la jaula sería F${uso.generacion_larvas + 1}, no F${ing.generacion}.`);
       }
     }
@@ -135,8 +150,9 @@ export function revisiones(d = {}, cfg = PROTOCOLO_DEFAULTS, pool = null) {
     const r = recPor.get(i.recepcion_id), e = ensPor.get(i.ensilado_id);
     if (!r || !e) continue;
     if (cambioTras(r, e)) marcar('ensilado', e.id, `Se corrigió la recepción de ${r.material}.`);
-    if (usado.get(r.id) > Number(r.kg)) {
-      marcar('ensilado', e.id, `De la recepción de ${r.material} (${Number(r.kg)} kg) se ensilaron ${usado.get(r.id)} kg.`);
+    const deLaMisma = (d.insumos || []).filter(x => vivo(x) && x.recepcion_id === r.id);
+    if (usado.get(r.id) > Number(r.kg) && !aceptado(e, r, deLaMisma)) {
+      marcar('ensilado', e.id, `De la recepción de ${r.material} (${kgTxt(r.kg)} kg) se ensilaron ${kgTxt(usado.get(r.id))} kg.`);
     }
   }
 

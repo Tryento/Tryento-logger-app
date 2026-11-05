@@ -509,15 +509,35 @@ test('every write moves updated_at, which is what the phones pull by', async () 
 
 /* ── access ─────────────────────────────────────────────────────────────── */
 
-test('access: every table open to the app through RLS; historico is not exposed', async () => {
+/** What the public key may do on a table: its policies by command, and whether it may delete. */
+async function acceso(db, t) {
+  const pols = (await db.query(`select policyname, cmd from pg_policies where schemaname = 'app' and tablename = $1
+                                order by policyname`, [t])).rows.map(p => `${p.policyname}:${p.cmd}`);
+  const puede = async priv => (await one(db, `select has_table_privilege('anon', 'app.' || $1, $2) ok`, [t, priv])).ok;
+  return { pols, select: await puede('select'), insert: await puede('insert'), update: await puede('update'),
+           delete: await puede('delete'), truncate: await puede('truncate') };
+}
+
+const SIN_BORRAR = { pols: ['app_agregar:INSERT', 'app_corregir:UPDATE', 'app_leer:SELECT'],
+                     select: true, insert: true, update: true, delete: false, truncate: false };
+
+test('access: the app reads, adds and corrects through RLS, and never deletes; historico is not exposed', async () => {
   const db = await fresh();
   for (const t of TABLES) {
     const rls = await one(db, `select relrowsecurity from pg_class where oid = ('app.' || $1)::regclass`, [t]);
     assert.equal(rls.relrowsecurity, true, `RLS apagado en ${t}`);
-    assert.equal(await count(db, `select count(*)::int n from pg_policies
-                                   where schemaname = 'app' and tablename = $1 and policyname = 'demo_abierto'`, [t]), 1);
-    assert.equal((await one(db, `select has_table_privilege('anon', 'app.' || $1, 'insert') ok`, [t])).ok, true);
+    assert.deepEqual(await acceso(db, t), SIN_BORRAR, t);
   }
+  // Tried with the public key, a delete is refused, not quietly applied.
+  const r = await rack(db, 'R9');
+  await assert.rejects(db.transaction(async tx => {
+    await tx.query('set local role anon');
+    await tx.query('delete from app.rack where id = $1', [r]);
+  }), code('42501'));
+  assert.equal(await count(db, `select count(*)::int n from app.rack where id = $1`, [r]), 1);
+  const fotos = (await db.query(`select policyname, cmd from pg_policies where schemaname = 'storage' and tablename = 'objects'
+                                 order by policyname`)).rows.map(p => `${p.policyname}:${p.cmd}`);
+  assert.deepEqual(fotos, ['fotos_leer:SELECT', 'fotos_reemplazar:UPDATE', 'fotos_subir:INSERT']);
   for (const fn of RPCS) {
     const ok = await one(db, `select bool_and(has_function_privilege('anon', p.oid, 'execute')) ok
                                 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -525,4 +545,17 @@ test('access: every table open to the app through RLS; historico is not exposed'
     assert.equal(ok.ok, true, `anon no puede llamar ${fn}`);
   }
   assert.equal((await one(db, `select has_schema_privilege('anon', 'historico', 'usage') ok`)).ok, false);
+});
+
+test('0011 over production as 0010 left it: no more deleting, nothing else changes; twice is the same', async () => {
+  const db = await productionToday();
+  await db.exec(await MIG(R0010));
+  const before = await acceso(db, 'separacion');
+  assert.deepEqual([before.pols, before.delete], [['demo_abierto:ALL'], true], 'lo que dejó 0010');
+  const ja = await jaula(db);
+  await db.exec(await MIG('0011_sin_borrar.sql'));
+  await db.exec(await MIG('0011_sin_borrar.sql'));
+  for (const t of TABLES) assert.deepEqual(await acceso(db, t), SIN_BORRAR, t);
+  assert.equal(await count(db, `select count(*)::int n from app.jaula where id = $1`, [ja]), 1);
+  await assertOneOverloadEach(db);
 });

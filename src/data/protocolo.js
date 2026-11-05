@@ -147,7 +147,8 @@ export const cargaDistribucion = cfg =>
  *   { paso, dia, vence, dias, estado, aviso }
  * where `aviso` says whether "para hoy" should chase it. A step due before the
  * incubadora was entered (a recolecta registered late, with the excepción
- * switch) is not chased; the distribución stays doable from its page anyway.
+ * switch) is not chased, and is marked `previo`: its page shows it pending,
+ * not late. The distribución stays doable from its page anyway.
  *
  *   inc:      { dia0, created_at, estado }
  *   chequeos: the incubadora's chequeos
@@ -158,7 +159,7 @@ export function pasosIncubadora(inc, { chequeos = [] } = {}, cfg = PROTOCOLO_DEF
   const out = [];
   const paso = (p, dia, extra = {}) => {
     const vence = addDays(inc.dia0, dia);
-    out.push({ paso: p, dia, ...timing(vence, hoy), aviso: vence >= entrada, ...extra });
+    out.push({ paso: p, dia, ...timing(vence, hoy), aviso: vence >= entrada, previo: vence < entrada, ...extra });
   };
   const hechos = new Set(chequeos.filter(c => !c.deleted_at).map(c => Number(c.dia)));
   const diaChequeo = cfg.dia_chequeo_incubadora;
@@ -173,6 +174,8 @@ export function pasosIncubadora(inc, { chequeos = [] } = {}, cfg = PROTOCOLO_DEF
  *   - a carga on a chequeo day waits for that chequeo (día 10: chequeo first);
  *   - the chequeo on `dia_inicio_ayuno` starts the ayuno: no cargas after it;
  *   - a chequeo stops being asked once a later one, or the separación, is in;
+ *   - a carga stops being asked once a later carga was given (skipped, and
+ *     confirmed as such when the later one was saved);
  *   - steps due before the caja was entered are not asked at all.
  *
  *   caja:  { estado, created_at }
@@ -197,7 +200,7 @@ export function pasosCaja(caja, { dia0, chequeos = [], cargas = [], separada = f
   }
   if (!enAyuno) {
     for (const c of cargasDeCaja(cfg)) {
-      if (dadas.has(c.n) || c.dia >= cfg.dia_inicio_ayuno || vence(c.dia) < entrada) continue;
+      if (dadas.has(c.n) || [...dadas].some(n => n > c.n) || c.dia >= cfg.dia_inicio_ayuno || vence(c.dia) < entrada) continue;
       const espera = cfg.dias_chequeo_caja.includes(c.dia) && !chequeados.has(c.dia);
       pasos.push({ paso: 'carga', dia: c.dia, carga: c.n, kg: c.kg, orden: c.dia * 2 + 1,
                    bloqueado: espera ? 'chequeo' : null });

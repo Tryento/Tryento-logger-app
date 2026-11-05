@@ -80,6 +80,9 @@ test('a recolecta entered late (excepción): what was due before it is not chase
   // Entered on día 9: the distribución is still doable, just not chased.
   const tarde = { ...inc, created_at: '2026-10-22T15:00:00.000Z' };
   assert.deepEqual(resumen(pasosIncubadora(tarde, {}, cfg, '2026-10-22')), ['distribucion@7:atrasado~']);
+  // Marked as due before the record existed: its page says pending, not late.
+  assert.equal(pasosIncubadora(tarde, {}, cfg, '2026-10-22')[0].previo, true);
+  assert.equal(pasosIncubadora(inc, {}, cfg, '2026-10-18')[0].previo, false);
 });
 
 test('caja: chequeo día 10 before carga 2, carga 3, ayuno from the día-14 chequeo, separación', () => {
@@ -100,6 +103,9 @@ test('caja: chequeo día 10 before carga 2, carga 3, ayuno from the día-14 cheq
   // A chequeo nobody did stops being asked once a later one is in.
   assert.deepEqual(resumen(pasosCaja(caja, { dia0, cargas, chequeos: [{ dia: 14 }] }, cfg, '2026-11-02')),
                    ['separacion@16:proximo']);
+  // Likewise a carga: once carga 3 was given (confirmed out of order), carga 2 is not asked.
+  assert.deepEqual(resumen(pasosCaja(caja, { dia0, cargas: [{ carga: 1 }, { carga: 3 }], chequeos: ch10 }, cfg, '2026-11-01')),
+                   ['chequeo@14:proximo', 'separacion@16:proximo']);
   // Separated: nothing left.
   assert.deepEqual(pasosCaja(caja, { dia0, cargas, separada: true }, cfg, '2026-11-04'), []);
 });

@@ -244,12 +244,13 @@ export async function verificar(db, t, { bucket = 'fotos', fotos = true } = {}) 
       // Blob without an explicit type arrives as application/octet-stream.
       const PNG_1PX = Buffer.from(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
-      const key = `${PREFIX}check/${uuid()}.png`;
+      // Photos are never deleted with the public key (0011): one fixed test
+      // file, replaced on every run, the way a new photo replaces the old.
+      const key = `${PREFIX}check/sonda.png`;
       const { error } = await b.upload(key, new Blob([PNG_1PX], { type: 'image/png' }), { contentType: 'image/png', upsert: true });
       if (error) throw new Error(error.message);
-      await b.remove([key]);
-      return 'subida y borrado';
-    }, 'El bucket "fotos" y su política los crea 0010 (sección 12).');
+      return 'subida y reemplazo';
+    }, 'El bucket "fotos" lo crea 0010 (sección 12); sus políticas, 0011.');
   }
 
   await limpiar(db, t);

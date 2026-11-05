@@ -786,6 +786,10 @@ a:hover{color:#4ADE80}
 </div>
 </div>
 </sc-for>
+<!-- The cajas are portions of what was sieved: more than the total is a weight mistyped. -->
+<sc-if value="{{ distHasAviso }}" hint-placeholder-val="{{ false }}">
+<div style="font-size:14.5px;font-weight:600;color:#FB923C;background:#1F1710;border:1px solid #5A3A18;border-radius:11px;padding:11px 13px">{{ distAviso }}</div>
+</sc-if>
 <button onClick="{{ onAgregarCaja }}" style="width:100%;min-height:56px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Agregar caja</button>
 </div>
 </div>
@@ -1276,7 +1280,8 @@ const MUTED = '#9FB8A6';
 const DISABLED_BG = '#17211A';
 const DISABLED_FG = '#5A6F60';
 // How urgent a step is, as a colour: late, due today, coming up.
-const PASO_FG = { atrasado: '#F87171', hoy: '#22C55E', proximo: '#9FB8A6' };
+// "Pendiente": due before its record was entered (a recolecta registered late) — to do, but nobody missed it.
+const PASO_FG = { atrasado: '#F87171', hoy: '#22C55E', proximo: '#9FB8A6', pendiente: '#FB923C' };
 const MONITOR_TONO = {
   atrasado: { fg: '#F87171', bg: '#141C16', bd: '#5A2A2A' },
   hoy: { fg: '#22C55E', bg: '#141C16', bd: '#1E4A2F' },
@@ -1726,13 +1731,16 @@ class Component extends DCLogic {
     }[s.screen] || 'Guardar';
   }
 
-  guardar = async () => {
+  guardar = async opts => {
     const s = this.state, f = s.form || {}, api = this.api;
+    // A step out of its plan (days early, cargas out of order) comes back asking
+    // first; the person's "Guardar igual" calls this again with confirmado.
+    const confirmado = !!(opts && opts.confirmado === true);
     // An untouched time box means now, to the second: a minute-precision time
     // would put this record before one saved earlier in the same minute.
     const fecha = f.hora_tocada ? this.fechaDeHoy(f.hora) : null;
     const blob_id = s.photoId || null;
-    const comun = { fecha, nota: f.nota, blob_id };
+    const comun = { fecha, nota: f.nota, blob_id, confirmado };
     const conKg = x => numero(x.kg) > 0;
     const lleno = v => String(v == null ? '' : v).trim() !== '';
     let r = null, msg = 'Guardado', sub = () => '';
@@ -1751,18 +1759,18 @@ class Component extends DCLogic {
           msg = 'Distribución guardada'; sub = d => d.cajas.map(c => c.codigo).join(', ');
           break;
         case 'chequeo':
-          r = await api.registrarChequeos({ objeto: s.ctx.objeto, dia: s.ctx.dia, fecha,
+          r = await api.registrarChequeos({ objeto: s.ctx.objeto, dia: s.ctx.dia, fecha, confirmado,
             items: s.filas.filter(x => lleno(x.humedad) || lleno(x.temp) || lleno(x.peso))
               .map(x => ({ id: x.id, humedad_pct: x.humedad, temperatura_c: x.temp, peso: x.peso })) });
           msg = 'Chequeo del día ' + s.ctx.dia + ' guardado'; sub = d => d.length + (d.length === 1 ? ' registro' : ' registros');
           break;
         case 'cargas':
-          r = await api.registrarCargas({ carga: s.ctx.carga, fecha,
+          r = await api.registrarCargas({ carga: s.ctx.carga, fecha, confirmado,
             items: s.filas.filter(x => x.incluir).map(x => ({ caja_id: x.caja_id, kg: x.kg })) });
           msg = 'Carga ' + s.ctx.carga + ' guardada'; sub = d => d.length + (d.length === 1 ? ' caja' : ' cajas');
           break;
         case 'separacion':
-          r = await api.registrarSeparaciones({ fecha,
+          r = await api.registrarSeparaciones({ fecha, confirmado,
             items: s.filas.filter(x => lleno(x.peso)).map(x => ({ caja_id: x.caja_id, peso_total_kg: x.peso })) });
           msg = 'Separación guardada'; sub = d => d.length + (d.length === 1 ? ' caja' : ' cajas');
           break;
@@ -1813,6 +1821,10 @@ class Component extends DCLogic {
       }
     } finally {
       this.setState({ saving: false });
+    }
+    if (r && !r.ok && r.error && r.error.code === 'confirm_required') {
+      return this.ask({ title: '¿Guardar igual?', hint: r.error.message, noInput: true, confirmLabel: 'Guardar igual' },
+                      () => this.guardar({ confirmado: true }));
     }
     if (!r || !r.ok) return this.toast('No se guardó', r && r.error ? r.error.message : '', 'error');
     this.toast(msg, sub(r.data));
@@ -1992,6 +2004,8 @@ class Component extends DCLogic {
       aviso(d.cierre);
       pasos = d.pasos.map(p => this.pasoBtn(p, { tipo: p.paso, cochada_id: obj.id }));
       if (d.activa) acciones = [this.boton('Cerrar antes de tiempo', () => this.cerrar('cochada', obj.id, obj.codigo), 'peligro')];
+      // Out of the oven without its mid temperature: it can still be written down.
+      else if (!d.tiene_media && !d.cierre) acciones = [this.boton('Agregar la temperatura a mitad del horno', () => this.lecturaMedia(obj.id))];
     } else if (screen === 'ensilado' && d.ensilado) {
       obj = d.ensilado; color = ENSILADO_COLOR[obj.estado]; estado = obj.estadoTxt;
       aviso(obj.linea, obj.estado === 'abierto' ? '#4ADE80' : MUTED);
@@ -2278,12 +2292,18 @@ class Component extends DCLogic {
         onRack: e => this.setFila(i, 'rack_id', valor(e))
       }));
       vals.onAgregarCaja = () => this.setState(st => ({ filas: st.filas.concat([this.filaCaja(fr, st.filas[st.filas.length - 1])]) }));
+      const total = numero(f.peso_total_kg);
+      const suma = Math.round(s.filas.reduce((t, x) => t + (numero(x.peso) || 0), 0) * 1000) / 1000;
+      vals.distHasAviso = total !== null && suma > total;
+      vals.distAviso = 'Las cajas suman ' + kgTxt(suma) + ' kg y se tamizaron ' + kgTxt(total) + ' kg. Revisa los pesos.';
     }
 
     if (screen === 'chequeo' && fr) {
       const enCaja = fr.objeto === 'caja';
       vals.chqTitulo = 'Chequeo del día ' + fr.dia + (enCaja ? ' de las cajas' : ' de la incubadora') +
-        ': humedad y temperatura del sustrato, y el peso en ' + fr.unidad + '. Lo que quede vacío no se guarda.';
+        ': humedad y temperatura del sustrato, y el peso en ' + fr.unidad + '. ' +
+        (s.filas.length > 1 ? (enCaja ? 'Una caja' : 'Una incubadora') + ' que dejes en blanco no se guarda; las demás llevan los tres datos.'
+                            : 'Van los tres datos.');
       vals.chqFilas = s.filas.map((x, i) => ({
         codigo: x.codigo, sub: 'Día ' + x.dia_actual, humedad: x.humedad, temp: x.temp, peso: x.peso,
         pesoLabel: 'PESO · ' + fr.unidad.toUpperCase(),

@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Protocolos de producción</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -134,7 +136,7 @@
   <header>
     <div class="eyebrow">TryEnto · protocolo vigente · octubre 2026</div>
     <h1>Cómo trabaja el laboratorio, y qué anota la app en cada paso</h1>
-    <p class="lede">En <span class="proc">MAYÚSCULAS</span> van los procesos y periodos; en minúscula, las tareas que hacen los trabajadores. Lo que no aparece en este documento deja de existir en la app.</p>
+    <p class="lede">En <span class="proc">MAYÚSCULAS</span> van los procesos y periodos; en minúscula, las tareas que hacen los trabajadores. Lo que no aparece en este documento deja de existir en la app. Qué se toca en la app para cada tarea: <a href="guia-app.html">guía de la app</a>.</p>
   </header>
 
   <section>
@@ -253,7 +255,7 @@
           <tr><td><b>chequeo</b> de la caja</td><td class="when">día 14</td><td>Humedad (%), temperatura (°C), peso (<b>kg</b>).<span class="rule">Empieza el ayuno: no se alimenta hasta la separación.</span></td></tr>
           <tr><td><b>separación</b></td><td class="when">~día 16</td><td>Peso total de larvas de la caja (<b>kg</b>).<span class="rule">La app calcula el 98 % para el horno y el 2 % que vuelve. La caja queda inactiva. El día es orientativo: se anota el día real.</span></td></tr>
           <tr><td><b>cochada</b></td><td class="when">al cargar el horno</td><td>De qué separaciones sale y cuántos kg de cada una; peso inicial (<b>kg</b>).<span class="rule">La app sugiere lo que está esperando horno. El 98 % de una caja se puede repartir entre varias cochadas.</span></td></tr>
-          <tr><td><b>temperatura a mitad</b></td><td class="when">en el horno</td><td>Temperatura (°C).</td></tr>
+          <tr><td><b>temperatura a mitad</b></td><td class="when">en el horno</td><td>Temperatura (°C).<span class="rule">Si se olvidó, se puede anotar después de la salida.</span></td></tr>
           <tr><td><b>final</b></td><td class="when">al sacar</td><td>Temperatura (°C) y peso final (<b>kg</b>).<span class="rule">La cochada queda lista para empaque.</span></td></tr>
           <tr><td><b>redistribución, pesado y acondicionado</b> + <b>ingreso al insectario</b></td><td class="when">al repoblar una jaula</td><td>La jaula (cerrada y limpia), cuántos kg de larvas se toman del 2 % acumulado, y cada bandeja de pupación: peso (<b>kg</b>) y rack.<span class="rule">La app propone 4,7 kg por bandeja (larvas + acondicionamiento); se confirma o se escribe el peso real, y la última puede pesar menos. El 2 % se usa del más antiguo al más nuevo.</span></td></tr>
           <tr><td><b>cierre</b> de la jaula</td><td class="when">~14 días</td><td>Fecha y quién.<span class="rule">El día es orientativo: se cierra cuando corresponde.</span></td></tr>
@@ -310,17 +312,19 @@
     <h2>Los registros</h2>
     <ul class="plain">
       <li>Cualquier registro se puede <b>editar en cualquier momento</b>, valores y fecha incluidos. Queda el último cambio, con quién lo hizo y cuándo.</li>
-      <li>Si un cambio afecta lo calculado (98/2, el 2 % acumulado, la bodega, edades), la app lo recalcula y marca <b>«revisar»</b> en los registros posteriores que dependían de él. Quien lo comprueba toca <b>«Revisado»</b> y la marca se va. Una nota o una foto no marcan nada.</li>
+      <li>Si un cambio afecta lo calculado (98/2, el 2 % acumulado, la bodega, edades), la app lo recalcula y marca <b>«revisar»</b> en los registros posteriores que dependían de él. Quien lo comprueba toca <b>«Revisado»</b> y la marca se va, aunque el dato siga sin cuadrar si así está bien; vuelve sólo si algo de lo que depende cambia otra vez. Una nota o una foto no marcan nada.</li>
+      <li>Una corrección no puede dejar una fecha que no ha llegado, un ensilado de antes de que llegara su material, ni una apertura antes del día 21 del ensilado. La apertura se anota sólo con su botón, que guarda quién abrió.</li>
       <li>Cada registro admite <b>una foto y una nota</b>, que se pueden agregar después. Una foto nueva reemplaza a la anterior.</li>
       <li>Las tareas quedan con la fecha de hoy, y la hora se puede ajustar dentro del mismo día; si no se toca, queda la hora exacta. Solo la <b>recolecta</b> puede anotarse con fecha pasada, y solo con el interruptor <b>«excepción»</b>; el registro queda marcado. De esa recolecta no se reclaman los pasos que debían hacerse antes del día en que se anotó.</li>
     </ul>
-    <h3>Lo que la app no deja hacer, y lo que sólo avisa</h3>
+    <h3>Lo que la app no deja hacer, lo que pregunta y lo que sólo avisa</h3>
     <ul class="plain">
       <li>Recolectar de una jaula sin moscas; repoblar una jaula que no se cerró y limpió.</li>
       <li>La carga del día 10 antes del chequeo del día 10; cualquier carga después del chequeo del día 14 (empieza el ayuno).</li>
-      <li>Distribuir dos veces una incubadora, separar dos veces una caja, o dos chequeos del mismo día.</li>
-      <li>Llevar al horno más del 98 % que queda de una separación; ensilar más de lo que queda de una recepción.</li>
+      <li>Distribuir dos veces una incubadora, separar dos veces una caja, o dos chequeos del mismo día. Un chequeo lleva sus tres datos.</li>
+      <li>Llevar al horno más del 98 % que queda de una separación; ensilar más de lo que queda de una recepción, o antes de que llegara.</li>
       <li>Abrir un ensilado antes de su día 21.</li>
+      <li><b>Pregunta antes de guardar</b> («¿Guardar igual?»): un chequeo, una carga, la distribución o la separación con más de un día de anticipación (un toque equivocado no puede, por ejemplo, empezar el ayuno de una caja una semana antes); una carga sin la anterior; cajas que pesan más que lo tamizado. Una carga que quedó atrás cuando se dio la siguiente ya no se pide.</li>
       <li>Sólo avisa: repoblar con más kilos de los que el 2 % tiene registrados (manda la balanza), una mezcla de generaciones, una segunda recolecta de la misma jaula el mismo día.</li>
     </ul>
   </section>
@@ -368,7 +372,7 @@
     <h2>El día del arranque</h2>
     <ul class="plain">
       <li>Se registran los racks, los contenedores y las jaulas. Las jaulas que ya tienen moscas dan recolectas desde el primer día; sus avisos de cierre y limpieza empiezan con su próximo ciclo.</li>
-      <li>Las larvas que ya están en incubadoras o cajas se anotan como una recolecta con fecha pasada (excepción).</li>
+      <li>Las larvas que ya están en incubadoras o cajas se anotan como una recolecta con fecha pasada (excepción). Lo que debía hacerse antes de anotarlas aparece en su página como <b>pendiente</b>, no como atrasado.</li>
       <li>Los ensilados que ya están madurando no se anotan: el alimento se sigue desde el primer ensilado hecho en la app. Hasta entonces, las cargas quedan «sin ensilado».</li>
       <li>Antes de empezar se borran todos los datos anteriores de la app. El historial de AppSheet se guarda aparte, solo para consulta.</li>
     </ul>

@@ -116,6 +116,33 @@ export function pgClient(db, { schema = 'app' } = {}) {
           return b;
         },
 
+        /**
+         * delete().eq(…) / .in(…), run AS THE anon ROLE, like a PostgREST call
+         * with the public key: the grants and policies apply, so a refused
+         * DELETE is a real 42501 (0011), not the owner quietly deleting.
+         */
+        delete() {
+          const where = [], params = [];
+          const run = async () => {
+            calls.push({ kind: 'delete', table, where: [...where] });
+            try {
+              await db.transaction(async tx => {
+                await tx.query('set local role anon');
+                await tx.query(`delete from ${ident(schema)}.${ident(table)} t where ${where.join(' and ') || 'false'}`, params);
+              });
+              return { data: null, error: null };
+            } catch (e) {
+              return { data: null, error: pgErr(e) };
+            }
+          };
+          const b = {
+            eq(c, v) { params.push(v); where.push(`t.${ident(c)} = $${params.length}`); return b; },
+            in(c, vs) { params.push(vs.map(String)); where.push(`t.${ident(c)}::text = any($${params.length}::text[])`); return b; },
+            then(ok, ko) { return run().then(ok, ko); }
+          };
+          return b;
+        },
+
         // push.js always sends ignoreDuplicates: true, so only `do nothing` is modelled.
         async upsert(row, { onConflict = 'id' } = {}) {
           calls.push({ kind: 'upsert', table, row });

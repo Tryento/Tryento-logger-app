@@ -15,6 +15,9 @@ export const fail = (code, message, extra) =>
 /** Error codes the UI is allowed to branch on. */
 export const CODES = {
   VALIDATION: 'validation_error',
+  // Allowed, but out of the plan (a step days early, cargas out of order): the
+  // screen asks, and calls again with `confirmado: true`.
+  CONFIRM: 'confirm_required',
   NOT_FOUND: 'not_found',
   CONFLICT: 'conflict',
   OFFLINE: 'offline',

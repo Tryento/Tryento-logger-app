@@ -36,9 +36,19 @@ export async function getProtocolo() {
 /* ── shaping helpers ──────────────────────────────────────────────────────── */
 
 const FASE_TXT = { activa: 'Con moscas', cerrada: 'Cerrada', limpia: 'Limpia' };
-const ENSILADO_TXT = { madurando: 'Madurando', abierto: 'Abierto', vencido: 'Consumido' };
+const ENSILADO_TXT = { madurando: 'Madurando', abierto: 'Abierto', vencido: 'Vencido' };
+/** Past its 72 h: "Consumido" only if nothing was left to discard. */
+const ensiladoTxt = e => (e.estado === 'vencido' && !(e.kg_descartado > 0) ? 'Consumido' : ENSILADO_TXT[e.estado]);
 
-const paso = p => p ? { ...p, label: pasoLabel(p), cuando: cuandoLabel(p) } : null;
+/** A step for a screen. One due before its record was entered (a recolecta
+ *  registered late) is pending, not late: nobody missed it, and "para hoy"
+ *  does not chase it either. */
+const paso = p => {
+  if (!p) return null;
+  const pendiente = p.previo && p.estado === 'atrasado';
+  return { ...p, ...(pendiente ? { estado: 'pendiente' } : {}), label: pasoLabel(p),
+           cuando: pendiente ? 'pendiente' : cuandoLabel(p) };
+};
 const primerPaso = pasos => paso((pasos || []).find(p => !p.bloqueado) || null);
 
 /** Where an object's food came from, in words. */
@@ -341,7 +351,9 @@ export async function getJaula(id) {
     jaula: jaulaFila(v, j),
     facts: [
       ['Generación', `F${j.generacion}`], ['Estado', FASE_TXT[j.fase]],
-      ['Ciclo', j.ciclo_desde ? `desde ${diaTxt(j.ciclo_desde)} (día ${j.dia_ciclo})` : 'sin fecha (ya tenía moscas)'],
+      ['Ciclo', j.ciclo_desde ? `desde ${diaTxt(j.ciclo_desde)} (día ${j.dia_ciclo})`
+        : j.fase === 'activa' ? 'sin fecha (ya tenía moscas al registrarla)'
+        : j.fase === 'limpia' ? 'empieza al repoblarla' : 'sin fecha'],
       ['Lugar', j.lugar || '—']
     ],
     pasos: j.pasos.map(paso),
@@ -528,7 +540,7 @@ export async function getCochada(id) {
 
 function ensiladoFila(v, e) {
   return {
-    id: e.id, codigo: e.codigo, estado: e.estado, estadoTxt: ENSILADO_TXT[e.estado],
+    id: e.id, codigo: e.codigo, estado: e.estado, estadoTxt: ensiladoTxt(e),
     linea: e.estado === 'madurando'
       ? `${kgTxt(e.kg_total)} kg · se abre el ${diaTxt(e.apertura_prevista)}`
       : e.estado === 'abierto'

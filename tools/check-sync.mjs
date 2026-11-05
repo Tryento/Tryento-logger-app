@@ -54,12 +54,15 @@ export async function probar({ api, sync, borrarLocal, db, t }) {
     S.ens = ok(await api.crearEnsilado({ contenedor_id: S.cont, insumos: [{ recepcion_id: S.rec, kg: 10 }] }), 'ensilado').ensilado.id;
     const inc = ok(await api.registrarRecolecta({ jaula_id: S.jaula, rack_id: S.rack, peso_inicial_g: '12,5', alimento_inicial_kg: 2 }), 'recolecta');
     S.inc = inc.id;
-    ok(await api.registrarChequeos({ objeto: 'incubadora', dia: 3, items: [{ id: S.inc, humedad_pct: 68, temperatura_c: 29, peso: 40 }] }), 'chequeo día 3');
-    const d = ok(await api.distribuir({ incubadora_id: S.inc, peso_total_kg: 1, cajas: [{ peso_inicial_kg: 1, rack_id: S.rack }] }), 'distribución');
+    // The whole cycle in one moment: every scheduled step is days early, so
+    // each is confirmed, as a person would on the screen.
+    const SI = { confirmado: true };
+    ok(await api.registrarChequeos({ objeto: 'incubadora', dia: 3, ...SI, items: [{ id: S.inc, humedad_pct: 68, temperatura_c: 29, peso: 40 }] }), 'chequeo día 3');
+    const d = ok(await api.distribuir({ incubadora_id: S.inc, peso_total_kg: 1, ...SI, cajas: [{ peso_inicial_kg: 1, rack_id: S.rack }] }), 'distribución');
     S.caja = d.cajas[0].id;
-    ok(await api.registrarChequeos({ objeto: 'caja', dia: 10, items: [{ id: S.caja, humedad_pct: 60, temperatura_c: 31, peso: 2 }] }), 'chequeo día 10');
-    ok(await api.registrarCargas({ carga: 2, items: [{ caja_id: S.caja }] }), 'carga 2');
-    S.sep = ok(await api.registrarSeparaciones({ items: [{ caja_id: S.caja, peso_total_kg: 10 }] }), 'separación')[0].id;
+    ok(await api.registrarChequeos({ objeto: 'caja', dia: 10, ...SI, items: [{ id: S.caja, humedad_pct: 60, temperatura_c: 31, peso: 2 }] }), 'chequeo día 10');
+    ok(await api.registrarCargas({ carga: 2, ...SI, items: [{ caja_id: S.caja }] }), 'carga 2');
+    S.sep = ok(await api.registrarSeparaciones({ ...SI, items: [{ caja_id: S.caja, peso_total_kg: 10 }] }), 'separación')[0].id;
     S.co = ok(await api.crearCochada({ peso_inicial_kg: 9.8, origenes: [{ separacion_id: S.sep, kg: 9.8 }] }), 'cochada').cochada.id;
     ok(await api.registrarLectura({ cochada_id: S.co, momento: 'final', temperatura_c: 105, peso_kg: 3 }), 'lectura final');
     ok(await api.registrarEventoJaula({ jaula_id: S.jaula, tipo: 'cierre' }), 'cierre');

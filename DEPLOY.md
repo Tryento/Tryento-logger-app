@@ -63,6 +63,31 @@ About 20 minutes. Two services, both free tier:
 > esquema `app` → tabla `parametro`. Cada fila tiene una descripción. Los
 > teléfonos lo toman en la siguiente sincronización; no hace falta publicar.
 
+> ### 0011 — con la llave pública nadie borra (antes o después del push)
+>
+> `0011_sin_borrar.sql` quita el permiso de **borrar** a la llave pública, en
+> todas las tablas y en las fotos: la app lee, agrega y corrige, y nunca borra.
+> No cambia nada de lo que hace la app, así que puede correrse antes o después
+> del push. Supabase → SQL Editor → pega el contenido de
+> `supabase/migrations/0011_sin_borrar.sql` → Run. Después,
+> `npm run check:sql-applied` debe decir `ok` también en `[0011]`.
+>
+> Desde aquí, `node tools/cleanup-qa.mjs --purge` ya no borra: imprime el SQL
+> para pegarlo en el SQL Editor.
+>
+> ### El día del arranque: vaciar la app
+>
+> El protocolo pide empezar sin datos. **Una vez**, antes de registrar los
+> racks, contenedores y jaulas de verdad: SQL Editor → pega
+> `supabase/VACIAR_ANTES_DEL_ARRANQUE.sql` → Run. Marca como borrado todo lo
+> registrado (también las pruebas de QA) y los teléfonos lo quitan al
+> sincronizar; quedan los ajustes, los materiales y los nombres, salvo los de
+> prueba («QA Claude», check-backend, check-sync). Al final muestra la lista de
+> nombres que queda, para revisarla.
+>
+> Para quitar sólo lo de una prueba, sin vaciar todo:
+> `node tools/cleanup-qa.mjs --delete --como "QA Claude"`.
+
 ## Step 0 — be in the right folder
 
 The repo sits one level down from the GitHub folder. Every `npm` command below
@@ -302,10 +327,14 @@ Not needed for the demo. Needed before the farm depends on it:
 - [ ] **Nightly backups.** This becomes the company's only production record;
       the free tier gives daily snapshots and no point-in-time recovery. A
       `pg_dump` on a schedule is the cheapest insurance you will buy.
-- [ ] **Real logins.** Enable Google in Supabase, set `authMode: 'google'`, and
-      replace the open policy (`demo_abierto`) on each table — 0010 creates them,
-      section 10; the example is at the bottom of `0001_schema.sql`. **No schema change is required** — `created_by` is
-      already on every table waiting to be populated.
+- [ ] **Real logins.** Since `0011` the public key can no longer delete, but
+      it can still read, add and correct everything: anyone with the URL can.
+      Enable Google in Supabase (Authentication → Providers), set
+      `authMode: 'google'`, keep a list of the lab's accounts, and change the
+      `0011` policies (`app_leer`, `app_agregar`, `app_corregir`) from
+      `to anon, authenticated using (true)` to those accounts only. **No schema
+      change is required** — `created_by` is already on every table waiting to
+      be populated.
 - [ ] **A custom domain**, so the URL isn't a guessable `*.netlify.app`.
 - [ ] Deploy previews still disabled.
 

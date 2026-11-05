@@ -38,7 +38,8 @@ import {
   uuid, uuidFromString, deviceId, siguienteIncubadora, cajaCodigo, siguienteCochada,
   ensiladoCodigo, siguientesBandejas
 } from './ids.js';
-import { nowIso, utcIso, farmDay, ddmm } from './time.js';
+import { nowIso, utcIso, farmDay, addDays, daysBetween } from './time.js';
+import { kgTxt, diaTxt, fechaHoraTxt } from './formato.js';
 import { currentUserId } from './session.js';
 import { metaGet, metaSet } from './idb/tx.js';
 import { attachPhoto } from './photo.js';
@@ -90,6 +91,35 @@ const NUEVO = { nota: '', foto_key: null, editado_at: null, editado_por: null,
                 valores_editados_at: null, revisado_at: null, deleted_at: null };
 
 const invalido = msg => fail(CODES.VALIDATION, msg);
+
+/**
+ * A step out of its plan is saved only after the person confirms it: one wrong
+ * tap on a line of "Qué sigue" once started a caja's ayuno a week early.
+ * `data.confirmado` is the screen saying the person did.
+ */
+const confirmar = msg => fail(CODES.CONFIRM, msg);
+
+/** How many days before its day a scheduled step goes through without asking. */
+const ANTICIPO_DIAS = 1;
+
+/** The object's día on the day of `iso`, if that is too early for `diaPlan`; else null. */
+function temprano(dia0, diaPlan, iso) {
+  if (!dia0) return null;
+  const dia = daysBetween(dia0, farmDay(iso));
+  return dia !== null && dia < diaPlan - ANTICIPO_DIAS ? dia : null;
+}
+
+const unir = xs => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} y ${xs[xs.length - 1]}`);
+
+/** "la caja F8Q-2-02 va en el día 7", "F8Q-2-01 y F8Q-2-02 van en el día 7". */
+function vanEn(xs, que) {
+  if (xs.length === 1) return `${que} ${xs[0].codigo} va en el día ${xs[0].dia}`;
+  const dias = [...new Set(xs.map(x => x.dia))];
+  return dias.length === 1 ? `${unir(xs.map(x => x.codigo))} van en el día ${dias[0]}`
+                           : unir(xs.map(x => `${x.codigo} va en el día ${x.dia}`));
+}
+
+const vacio = v => v === null || v === undefined || String(v).trim() === '';
 
 /**
  * The moment a record is dated. `<input type="datetime-local">` gives naive
@@ -285,12 +315,18 @@ export async function registrarChequeos(data = {}) {
   if (f.error) return invalido(f.error);
   const prov = await provenance(data.operator_name);
 
-  const rows = [];
+  const rows = [], tempranos = [];
   for (const it of items) {
     const obj = enCaja ? v.por.caja.get(it.id) : v.por.incubadora.get(it.id);
     if (!obj) return invalido('Una de las elegidas ya no existe en este teléfono.');
     if (obj.estado !== 'activo') return invalido(`${obj.codigo} ya no está activa.`);
     if (obj.chequeos.some(c => Number(c.dia) === dia)) return invalido(`${obj.codigo} ya tiene el chequeo del día ${dia}.`);
+    // A chequeo is the three readings; one left blank is a reading not taken.
+    const faltan = [vacio(it.humedad_pct) ? 'la humedad' : null, vacio(it.temperatura_c) ? 'la temperatura' : null,
+                    vacio(it.peso) ? 'el peso' : null].filter(Boolean);
+    if (faltan.length) return invalido(`${obj.codigo}: falta ${unir(faltan)}. El chequeo lleva los tres datos.`);
+    const antes = temprano(obj.dia0, dia, f.iso);
+    if (antes !== null) tempranos.push({ codigo: obj.codigo, dia: antes });
     const hum = leerCampo('pct', it.humedad_pct);
     const tem = leerCampo('temp', it.temperatura_c);
     const peso = leerCampo(enCaja ? 'kg' : 'g', it.peso);
@@ -303,6 +339,10 @@ export async function registrarChequeos(data = {}) {
       peso_g: enCaja ? null : peso.value, peso_kg: enCaja ? peso.value : null,
       ...NUEVO, ...prov
     });
+  }
+  if (tempranos.length && !data.confirmado) {
+    return confirmar(`Esto es del chequeo del día ${dia} y ${vanEn(tempranos, enCaja ? 'la caja' : 'la incubadora')}.` +
+      (enCaja && dia === v.cfg.dia_inicio_ayuno ? ' Con este chequeo empieza el ayuno: después no se dan más cargas.' : ''));
   }
   for (const row of rows) {
     await guardar(db, {
@@ -355,6 +395,17 @@ export async function distribuir(data = {}) {
     cargas.push({ id: uuid(), caja_id: caja.id, carga: plan?.n ?? 1, fecha: f.iso, kg,
                   kg_plan: plan?.kg ?? null, dia_plan: plan?.dia ?? null, ...NUEVO, ...prov });
   }
+  if (!data.confirmado) {
+    const avisos = [];
+    const antes = temprano(inc.dia0, v.cfg.dia_distribucion, f.iso);
+    if (antes !== null) {
+      avisos.push(`Esto es del día ${v.cfg.dia_distribucion} y la incubadora ${inc.codigo} va en el día ${antes}; al distribuirla deja de estar activa.`);
+    }
+    // The cajas are portions of what was sieved: more than the total is a weight mistyped.
+    const suma = kg3(cajas.reduce((s, c) => s + c.peso_inicial_kg, 0));
+    if (suma > kg3(total)) avisos.push(`Las cajas suman ${kgTxt(suma)} kg y se tamizaron ${kgTxt(total)} kg.`);
+    if (avisos.length) return confirmar(avisos.join(' '));
+  }
   const blobIds = await conFoto(db, dist, 'distribucion', data.blob_id);
 
   // The call reads each field it needs by name (0010); these are those fields.
@@ -390,12 +441,17 @@ export async function registrarCargas(data = {}) {
   if (f.error) return invalido(f.error);
   const prov = await provenance(data.operator_name);
 
-  const rows = [];
+  const rows = [], tempranos = [], saltadas = [];
   for (const it of items) {
     const caja = v.por.caja.get(it.caja_id);
     if (!caja) return invalido('Una de las cajas ya no existe en este teléfono.');
     if (caja.estado !== 'activo') return invalido(`La caja ${caja.codigo} ya no está activa.`);
     if (caja.en_ayuno) return invalido(`La caja ${caja.codigo} está en ayuno: no se alimenta hasta la separación.`);
+    const antes = temprano(caja.dia0, def.dia, f.iso);
+    if (antes !== null) tempranos.push({ codigo: caja.codigo, dia: antes });
+    // The cargas go in order: carga 3 after carga 2.
+    const faltan = v.cfg.cargas.filter(c => c.n < def.n && !caja.cargas.some(x => Number(x.carga) === c.n));
+    if (faltan.length) saltadas.push(`A ${caja.codigo} le falta la carga ${unir(faltan.map(c => String(c.n)))}.`);
     if (caja.cargas.some(c => Number(c.carga) === def.n)) return invalido(`La caja ${caja.codigo} ya tiene la carga ${def.n}.`);
     if (v.cfg.dias_chequeo_caja.includes(def.dia) && !caja.chequeos.some(c => Number(c.dia) === def.dia)) {
       return invalido(`La caja ${caja.codigo}: primero el chequeo del día ${def.dia}, después la carga.`);
@@ -404,6 +460,10 @@ export async function registrarCargas(data = {}) {
     if (kg === null || kg < 0) return invalido(`La caja ${caja.codigo}: escribe los kg.`);
     rows.push({ id: uuid(), caja_id: caja.id, carga: def.n, fecha: f.iso, kg,
                 kg_plan: def.kg, dia_plan: def.dia, ...NUEVO, ...prov });
+  }
+  if ((tempranos.length || saltadas.length) && !data.confirmado) {
+    return confirmar([tempranos.length ? `Esto es de la carga ${def.n} (día ${def.dia}) y ${vanEn(tempranos, 'la caja')}.` : null,
+                      ...saltadas].filter(Boolean).join(' '));
   }
   for (const row of rows) {
     await guardar(db, {
@@ -429,7 +489,7 @@ export async function registrarSeparaciones(data = {}) {
   if (f.error) return invalido(f.error);
   const prov = await provenance(data.operator_name);
 
-  const rows = [];
+  const rows = [], tempranos = [];
   for (const it of items) {
     const caja = v.por.caja.get(it.caja_id);
     if (!caja) return invalido('Una de las cajas ya no existe en este teléfono.');
@@ -437,8 +497,13 @@ export async function registrarSeparaciones(data = {}) {
     if (caja.estado !== 'activo') return invalido(`La caja ${caja.codigo} ya no está activa.`);
     const peso = num(it.peso_total_kg);
     if (peso === null || peso < 0) return invalido(`La caja ${caja.codigo}: escribe el peso total en kg.`);
+    const antes = temprano(caja.dia0, v.cfg.dia_separacion, f.iso);
+    if (antes !== null) tempranos.push({ codigo: caja.codigo, dia: antes });
     rows.push({ id: uuid(), caja_id: caja.id, fecha: f.iso, peso_total_kg: peso,
                 pct_coccion: v.cfg.pct_coccion, ...NUEVO, ...prov });
+  }
+  if (tempranos.length && !data.confirmado) {
+    return confirmar(`La separación es hacia el día ${v.cfg.dia_separacion} y ${vanEn(tempranos, 'la caja')}; la caja deja de estar activa.`);
   }
   for (const row of rows) {
     await guardar(db, {
@@ -473,7 +538,7 @@ export async function crearCochada(data = {}) {
     if (!h) return invalido('Una de las separaciones ya no existe en este teléfono.');
     if (o.kg > h.kg_pendiente) {
       const caja = v.cajas.find(c => c.id === h.caja_id);
-      return invalido(`De ${caja ? caja.codigo : 'esa separación'} quedan ${h.kg_pendiente} kg del 98 %.`);
+      return invalido(`De ${caja ? caja.codigo : 'esa separación'} quedan ${kgTxt(h.kg_pendiente)} kg del 98 %.`);
     }
   }
   const prov = await provenance(data.operator_name);
@@ -509,8 +574,10 @@ export async function registrarLectura(data = {}) {
   const v = await vistaActual(db);
   const co = v.cochadas.find(c => c.id === data.cochada_id);
   if (!co) return invalido('Cochada no encontrada.');
-  if (co.estado !== 'activo') return invalido(`La cochada ${co.codigo} ya salió del horno.`);
+  if (co.cerrado_at) return invalido(`La cochada ${co.codigo} se cerró antes de tiempo.`);
   if (!['media', 'final'].includes(data.momento)) return invalido('¿A mitad o al final?');
+  // A mid temperature forgotten until after the final one can still be added.
+  if (data.momento === 'final' && co.final) return invalido(`La cochada ${co.codigo} ya salió del horno.`);
   if (data.momento === 'media' && co.media) return invalido('Ya tiene la temperatura de la mitad.');
   const tem = leerCampo('horno', data.temperatura_c);
   if (tem.error) return invalido(tem.error);
@@ -715,7 +782,10 @@ export async function crearEnsilado(data = {}) {
   for (const i of insumosIn) {
     const r = v.stock.porRecepcion.get(i.recepcion_id);
     if (!r) return invalido('Una de las recepciones ya no existe en este teléfono.');
-    if (i.kg > r.kg_disponible) return invalido(`De la recepción de ${r.material} quedan ${r.kg_disponible} kg.`);
+    if (i.kg > r.kg_disponible) return invalido(`De la recepción de ${r.material} quedan ${kgTxt(r.kg_disponible)} kg.`);
+    if (Date.parse(r.fecha) > Date.parse(f.iso)) {
+      return invalido(`La recepción de ${r.material} llegó el ${fechaHoraTxt(r.fecha)}: el ensilado no puede ser de antes.`);
+    }
   }
   const codigo = ensiladoCodigo(cont.codigo, f.iso);
   if (v.ensilados.some(e => e.codigo === codigo && e.dia0 === farmDay(f.iso))) {
@@ -750,7 +820,7 @@ export async function abrirEnsilado(data = {}) {
   const f = fechaDe(data.fecha);
   if (f.error) return invalido(f.error);
   if (farmDay(f.iso) < e.apertura_prevista) {
-    return invalido(`El ensilado ${e.codigo} sigue madurando: se abre el ${ddmm(e.apertura_prevista).replace(/(\d\d)(\d\d)/, '$1/$2')}.`);
+    return invalido(`El ensilado ${e.codigo} sigue madurando: se abre el ${diaTxt(e.apertura_prevista)}.`);
   }
   const por = str(data.operator_name) || (await getCurrentOperator()) || null;
   const row = await rowById(db, 'ensilado', e.id);
@@ -765,6 +835,40 @@ export async function abrirEnsilado(data = {}) {
 }
 
 /* ── corrections, notes, photos, reviews ────────────────────────────────── */
+
+/**
+ * Corrected dates must still keep the food's order: an ensilado opens on its
+ * día 21 or later, and is not made before the material in it arrived. The
+ * apertura itself is only corrected once the ensilado was opened with its
+ * button (registros.js), so who opened it is always known.
+ * @returns a message, or null
+ */
+function reglasDeCorreccion(v, tabla, row, cambios) {
+  const ms = x => Date.parse(x);
+  if (tabla === 'ensilado' && ('ensilado_at' in cambios || 'abierto_at' in cambios)) {
+    const ensAt = cambios.ensilado_at ?? row.ensilado_at;
+    const abAt = 'abierto_at' in cambios ? cambios.abierto_at : row.abierto_at;
+    const dia21 = addDays(farmDay(ensAt), v.cfg.dias_maduracion);
+    if (abAt && farmDay(abAt) < dia21) {
+      return `Se abre el día ${v.cfg.dias_maduracion} de su maduración o después: con esas fechas, desde el ${diaTxt(dia21)}.`;
+    }
+    for (const i of v.insumos.filter(x => x.ensilado_id === row.id)) {
+      const r = v.recepciones.find(x => x.id === i.recepcion_id);
+      if (r && ms(r.fecha) > ms(ensAt)) {
+        return `La recepción de ${r.material} llegó el ${fechaHoraTxt(r.fecha)}: el ensilado no puede ser de antes.`;
+      }
+    }
+  }
+  if (tabla === 'recepcion' && cambios.fecha) {
+    for (const i of v.insumos.filter(x => x.recepcion_id === row.id)) {
+      const e = v.ensilados.find(x => x.id === i.ensilado_id);
+      if (e && ms(cambios.fecha) > ms(e.ensilado_at)) {
+        return `Esta recepción entró en el ensilado ${e.codigo} el ${fechaHoraTxt(e.ensilado_at)}: no puede ser posterior.`;
+      }
+    }
+  }
+  return null;
+}
 
 /** NOT NULL on the server; everything else may be emptied. */
 const PUEDE_VACIARSE = new Set(['abierto_at', 'lugar', 'nota', 'foto_key']);
@@ -797,7 +901,13 @@ export async function editarRegistro(data = {}) {
     if (r.error) return invalido(`${c.label}: ${r.error}`);
     if (r.value === null && !PUEDE_VACIARSE.has(col)) return invalido(`${c.label}: no puede quedar vacío.`);
     if (JSON.stringify(r.value) !== JSON.stringify(row[col] ?? null)) cambios[col] = r.value;
+    // A correction is free, but it is still about something that happened.
+    if (c.kind === 'fecha' && r.value && Date.parse(r.value) > Date.now() + 60_000) {
+      return invalido(`${c.label}: no puede ser posterior a ahora.`);
+    }
   }
+  const error = reglasDeCorreccion(v, tabla, row, cambios);
+  if (error) return invalido(error);
   const blobIds = [];
   if (data.blob_id) {
     cambios.foto_key = await attachPhoto(db, data.blob_id, tabla, id);

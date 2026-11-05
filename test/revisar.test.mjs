@@ -37,12 +37,31 @@ test('a corrected separación flags the cochada that took its 98 %, until review
   assert.equal(revisiones({ ...base, separaciones: [conNota] }, cfg).size, 0);
 });
 
-test('a 98 % given out beyond what it has stays flagged until fixed', () => {
-  const origenes = [{ id: 'o1', separacion_id: 's', kg: 6, created_at: '1' },
-                    { id: 'o2', separacion_id: 's', kg: 6, created_at: '2', revisado_at: T('2030-01-01T00:00:00Z') }];
-  const r = revisiones({ incubadoras, cajas, jaulas, separaciones: [sep], origenes }, cfg);
-  assert.match(flags(r, 'cochada_origen:o2')[0], /\(9\.8 kg\) se le tomaron 12 kg/);
+test('a 98 % given out beyond what it has: flagged until someone reviews it as it is', () => {
+  const o1 = { id: 'o1', separacion_id: 's', kg: 6, created_at: T('2026-10-18T10:00:00Z') };
+  const o2 = { id: 'o2', separacion_id: 's', kg: 6, created_at: T('2026-10-18T11:00:00Z') };
+  const base = { incubadoras, cajas, jaulas, separaciones: [sep] };
+  const r = revisiones({ ...base, origenes: [o1, o2] }, cfg);
+  assert.deepEqual(flags(r, 'cochada_origen:o2'), ['Al 98 % de la caja F7A-1-01 (9,8 kg) se le tomaron 12 kg.']);
   assert.ok(flags(r, 'cochada_origen:o1').length);
+
+  // "Revisado: está bien así" on o2 clears o2; o1 was not reviewed.
+  const revisado = { ...o2, revisado_at: T('2026-10-19T09:00:00Z') };
+  const r2 = revisiones({ ...base, origenes: [o1, revisado] }, cfg);
+  assert.equal(flags(r2, 'cochada_origen:o2').length, 0);
+  assert.ok(flags(r2, 'cochada_origen:o1').length);
+
+  // Something it involves changes after the review: the mark comes back.
+  const otraVez = [{ ...o1, kg: 7, valores_editados_at: T('2026-10-19T10:00:00Z') }, revisado];
+  assert.match(flags(revisiones({ ...base, origenes: otraVez }, cfg), 'cochada_origen:o2')[0], /se le tomaron 13 kg/);
+});
+
+test('a generation mismatch, reviewed and accepted, stays accepted', () => {
+  const mal = { ...incubadoras[0], generacion: 6, revisado_at: T('2026-10-02T09:00:00Z') };
+  assert.equal(revisiones({ jaulas, incubadoras: [mal] }, cfg).size, 0);
+  // The cage is repopulated (a new ingreso, registered later): the question is open again.
+  const ingresos = [{ id: 'g', jaula_id: 'j', fecha: T('2026-09-20T13:00:00Z'), generacion: 9, created_at: T('2026-10-03T08:00:00Z') }];
+  assert.match(flags(revisiones({ jaulas, incubadoras: [mal], ingresos }, cfg), 'incubadora:i')[0], /era F9/);
 });
 
 test('ingresos: an earlier separación arriving late, or an earlier ingreso corrected', () => {

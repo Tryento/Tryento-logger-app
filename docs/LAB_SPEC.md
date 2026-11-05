@@ -7,8 +7,8 @@ log (this repo), and the physical process that connects them.
 
 | | |
 |---|---|
-| Version | 0.6 — the Resumen tab: the lab's KPIs, computed in the app |
-| Last updated | 2026-10-22 |
+| Version | 0.7 — steps out of their plan ask first; «Revisado» accepts; the public key cannot delete |
+| Last updated | 2026-10-27 |
 | Built from | `tryento-app` `main` @ `a2b5b73` (2026-04-23) plus branches `50`, `52`, `55`, `Trunk`; `Tryento-logger-app` branch `ciclo-nuevo` (2026-10-22) |
 | Companion | [BSF research knowledge base](reports/Black%20soldier%20fly%20farms%20and%20biology.md) — the biology and industry evidence behind the numbers here |
 
@@ -135,8 +135,26 @@ waiting, food used, stock) simply moves. What a person recorded or confirmed on
 top of the corrected record is flagged **«revisar»** until someone taps
 **«Revisado»**: a cochada that took a corrected separación's 98 %, a
 repopulation whose larvae came from a corrected separación or incubadora, an
-incubadora whose cage generation no longer matches. One photo and one note per
-record; a note or photo flags nothing.
+incubadora whose cage generation no longer matches. «Revisado» accepts the
+record as it is — even a disagreement that stays, such as a 98 % given out
+beyond what it has — until the record or anything it involves changes again.
+One photo and one note per record; a note or photo flags nothing.
+
+A correction still has to describe something that happened: no date in the
+future, no ensilado dated before the material in it arrived, no apertura
+before the ensilado's día 21. The apertura is recorded only with its button
+(which keeps who opened it); a correction can only move it afterwards.
+
+### Steps out of their plan
+
+A chequeo, carga, distribución or separación recorded **more than one day
+before its day**, a carga given without the previous one, or cajas weighing
+more than what was sieved are saved only after the person confirms them
+(«¿Guardar igual?»). **Reason:** QA (27 October 2026) recorded a día-14
+chequeo on día 7 with one tap, which started the caja's ayuno a week early and
+took its cargas off the schedule. A carga left behind when a later one was
+given is no longer asked. A step due before its record was entered (a
+recolecta registered late) shows as **pending**, not late.
 
 ### State machines
 
@@ -145,7 +163,7 @@ Incubadora   activa ──► inactiva   (distributed, or closed early)
 Caja         activa ──► inactiva   (separated, or closed early)        en ayuno from the día-14 chequeo
 Cochada      activa ──► inactiva   (final reading, or closed early)
 Jaula        con moscas ──► cerrada ──► limpia ──► con moscas (next generation)
-Ensilado     madurando ──► abierto ──► consumido (72 h after opening)
+Ensilado     madurando ──► abierto ──► consumido / vencido (72 h after opening; vencido = something was discarded)
 ```
 
 States come from the registries, by the same rule in the database (triggers)
@@ -417,7 +435,8 @@ lab:
 | Tabs | Inicio (what is due today), Larvas, Insectarios, Horno, Alimento, Resumen (the lab in numbers, §9) |
 | History | The AppSheet sheet goes, as it was, into schema `historico` (read-only, not used by the app) — ⚠ not loaded yet |
 | Device storage | IndexedDB (`tryento-ciclo`); every write is local first, then synced through an outbox |
-| Login | None in the demo configuration; the database is open (RLS with permissive policies) |
+| Login | None in the demo configuration: the public key reads, adds and corrects every table (RLS policies `app_leer`, `app_agregar`, `app_corregir`); since `0011` it cannot delete anything |
+| Staff guide | [`docs/guia-app.html`](guia-app.html), in Spanish: where to tap for each task |
 | Photos | Supabase Storage bucket `fotos` (public in the demo); one per record |
 | Time | Calendar days in `America/Caracas`; instants in UTC |
 | Deployment | Netlify, publishing only `dist/` (explicit allow-list) |
@@ -562,7 +581,7 @@ tryento-app `.planning/codebase/CONCERNS.md`.
 | 8 | Three unmerged feature branches (`50`, `52`, `55`) | Unclear what runs in production | Git |
 | 9 | Pi timezone unverified | Every light window shifts if it is wrong | Pi OS |
 | 10 | The dashboard reads the sensors again each cycle | The value shown can differ slightly from the value used for control | `web_panel.py` |
-| 11 | Production database open with no login (demo) | Anyone with the URL can edit records | Supabase |
+| 11 | Production database open with no login (demo) | Anyone with the URL can read, add and correct records; deleting is closed since `0011` | Supabase |
 | 12 | No link between `env_id` and `jaula` | Climate cannot be joined to recolecta output | Both systems |
 | 13 | No production KPI views in the database since 0010 | The app's Resumen tab computes the KPIs on the phone, but the dashboard's production section stays empty until views exist (§9) | Supabase |
 
@@ -626,3 +645,4 @@ bump the minor version for new content, the patch version for corrections.
 | 2026-09-30 | 0.4 | Bed temperature on días 11–12 is now recorded (`revision.temperatura_c`) and the home screen lists what the plan says is due (§2.1, §8.1, §9). **Reason:** the protocol's 36 °C limit had no record, and the fixed calendar means the app can tell each day what is late, due or coming; migration `0009_monitor.sql` (pending deployment). |
 | 2026-10-21 | 0.5 | Rewrote §2, §8 and §9 for the protocols defined with the lab on 19–20 October 2026: the larvae cycle (recolecta → incubadora → distribución into cajas → chequeos días 3/10/14 and cargas 7/10/13 → separación 98 % horno / 2 % back → cochada; the 2 % into pupation trays repopulating a closed and cleaned cage), the cage cycle (one generation per cycle) and the food (recepción → ensilado → 21 days → apertura → 72 h, oldest open ensilado first). Objects vs registries, codes that never change, corrections with "revisar". **Reason:** the earlier protocols (v1 and the "16-day v2") followed the wrong flow and asked for data the lab does not need; migration `0010_ciclo_nuevo.sql` rebuilds the schema and removes their data (pending deployment); the AppSheet history goes to schema `historico`. The views of §9 went with the old tables; new KPI views are still to be built. |
 | 2026-10-22 | 0.6 | §9.1: the KPIs are now computed in the app's new **Resumen** tab — what there is now, the last eight weeks, and yield per g recolectado, growth in the cajas, FCR (wet basis), cycle days against the plan, recolectas per cage and per cage cycle, oven yield and ensilado eaten over 7 days, 30 days or everything — each with its definition. §8: the six tabs. §2 and §8: `0010` ran in production on 22 October 2026, deleting the earlier protocols' data. **Reason:** the lab asked for a tab with the stats and an overview of the lab and its performance, and for the old data to be deleted. |
+| 2026-10-27 | 0.7 | §2.3: steps out of their plan (more than a day early, a carga without the previous one, cajas heavier than the sieved total) ask before saving; «Revisado» now also accepts a disagreement that stays; corrections keep the food dates in order (no ensilado before its material, apertura only by its button and from día 21, no future dates); a step due before its record was entered shows as pending. §8: `0011_sin_borrar.sql` takes deleting away from the public key (tables and photos), and the staff guide `docs/guia-app.html`. §10: risk 11 narrowed. **Reason:** QA round 4 on the live app (27 October 2026): a día-14 chequeo saved on día 7 started an ayuno a week early, an ensilado could be opened the day it was made through a correction, «Revisado» could not clear an accepted mark, and the public key could delete every table. |

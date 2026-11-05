@@ -1,0 +1,314 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cómo usar la app</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+  :root {
+    --paper: #FAFBF7;
+    --ink: #17221B;
+    --muted: #56655B;
+    --rule: #D5DDD3;
+    --accent: #2C8A4B;
+    --warn: #9A6410;
+    --late: #B4342C;
+    --box: #FFFFFF;
+    --btn: #E7F1E8;
+    --btn-ink: #1F5A32;
+    --font-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    --font-head: "IBM Plex Sans Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "IBM Plex Mono", "Courier New", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #121813;
+      --ink: #E6EFE7;
+      --muted: #9BAE9F;
+      --rule: #2C3A30;
+      --accent: #5CC77E;
+      --warn: #E8B45A;
+      --late: #F08A82;
+      --box: #182019;
+      --btn: #1D2E22;
+      --btn-ink: #8FE0A8;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #121813;
+    --ink: #E6EFE7;
+    --muted: #9BAE9F;
+    --rule: #2C3A30;
+    --accent: #5CC77E;
+    --warn: #E8B45A;
+    --late: #F08A82;
+    --box: #182019;
+    --btn: #1D2E22;
+    --btn-ink: #8FE0A8;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.55;
+    padding-inline: 16px;
+    padding-block: 28px 48px;
+    margin: 0;
+  }
+  a { color: var(--accent); }
+  .page { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 36px; }
+
+  header { display: flex; flex-direction: column; gap: 6px; border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
+  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-family: var(--font-head); font-weight: 700; font-size: 34px; line-height: 1.1; margin: 0; text-wrap: balance; }
+  .lede { margin: 0; max-width: 68ch; }
+
+  h2 {
+    font-family: var(--font-head); font-weight: 700; font-size: 21px; margin: 0;
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; text-wrap: balance;
+  }
+  h2 .tag { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+  h3 { font-family: var(--font-head); font-weight: 700; font-size: 17px; margin: 0; }
+  section { display: flex; flex-direction: column; gap: 14px; }
+  p { margin: 0; max-width: 70ch; }
+
+  /* A button or label exactly as the app shows it. */
+  .btn { font-family: var(--font-body); font-weight: 600; font-size: 13.5px; white-space: nowrap;
+         background: var(--btn); color: var(--btn-ink); border-radius: 5px; padding: 1px 7px; }
+  .code { font-family: var(--font-mono); font-weight: 600; }
+  .late { color: var(--late); font-weight: 600; }
+  .today { color: var(--accent); font-weight: 600; }
+  .soon { color: var(--muted); font-weight: 600; }
+  .pend { color: var(--warn); font-weight: 600; }
+
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 10px; border-bottom: 1px solid var(--rule); }
+  th { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--ink); }
+  td .rule { display: block; color: var(--muted); font-size: 13px; margin-top: 3px; }
+  td.task { font-weight: 600; min-width: 130px; }
+  /* On a phone, where staff read this, each task is a card: what, where, what to write. */
+  @media (max-width: 640px) {
+    table.stack thead { display: none; }
+    table.stack tr { display: block; border-bottom: 1px solid var(--rule); padding: 10px 0; }
+    table.stack td { display: block; border: 0; padding: 3px 0; }
+    table.stack td.task { font-family: var(--font-head); font-size: 17px; min-width: 0; }
+    table.stack td:nth-child(2)::before { content: "Dónde: "; color: var(--muted); font-weight: 600; }
+    table.stack td:nth-child(3)::before { content: "Qué se escribe: "; color: var(--muted); font-weight: 600; }
+  }
+
+  ul.plain, ol.plain { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; max-width: 70ch; }
+  .note-box { border-left: 4px solid var(--accent); background: var(--box); padding: 12px 16px; border-radius: 0 6px 6px 0; display: flex; flex-direction: column; gap: 8px; }
+  .note-box.warn { border-left-color: var(--warn); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 24px; }
+  @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+
+  footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 12px; }
+</style>
+
+<div class="page">
+  <header>
+    <div class="eyebrow">TryEnto · guía de la app · octubre 2026</div>
+    <h1>Cómo usar la app de producción</h1>
+    <p class="lede">Para quien registra en el laboratorio: qué tocar en cada tarea, qué pide la app y qué hacer cuando algo no sale. Por qué se hace cada paso, y cuándo, está en el <a href="protocolo.html">protocolo</a>. Lo que va en <span class="btn">recuadro</span> es un botón o un título tal como aparece en la pantalla.</p>
+  </header>
+
+  <section>
+    <h2>Antes de empezar <span class="tag">una vez por teléfono</span></h2>
+    <ol class="plain">
+      <li>Abre la dirección de la app (te la da el responsable del laboratorio) en Chrome, en Android, o en Safari, en iPhone.</li>
+      <li>Agrégala a la pantalla de inicio. En Chrome: menú ⋮ → «Instalar aplicación» o «Agregar a pantalla de inicio». En Safari: Compartir → «Agregar a inicio». Así se abre como una app y funciona sin señal.</li>
+      <li>Toca tu nombre. Si no estás en la lista, escríbelo en <span class="btn">¿NO ESTÁS EN LA LISTA?</span> y toca <span class="btn">Registrar como …</span>: queda en la lista de todos los teléfonos.</li>
+    </ol>
+    <p>Tu nombre queda en todo lo que guardes hasta que otra persona lo cambie con el botón de arriba a la derecha. Si prestas el teléfono, que elijan su nombre antes de registrar.</p>
+    <div class="note-box warn">
+      <p><b>No borres los datos del navegador ni desinstales la app</b> mientras el chip de arriba diga «en espera»: lo que todavía no se envió está sólo en ese teléfono.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>La pantalla</h2>
+    <p><b>Arriba:</b> el título; el chip de sincronización (<span class="btn">Al día</span>, <span class="btn">3 en espera</span>, <span class="btn">Sin conexión</span>…), que se toca para ver el detalle; y tu nombre. La flecha ← vuelve atrás.</p>
+    <p><b>Abajo, seis pestañas:</b></p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Pestaña</th><th>Qué hay</th></tr></thead>
+        <tbody>
+          <tr><td class="task">Inicio</td><td>«Para hoy», y los botones de las tareas: <span class="btn">Nueva recolecta</span> <span class="btn">Separación</span> <span class="btn">Nueva cochada</span> <span class="btn">Recepción de material</span> <span class="btn">Nuevo ensilado</span> <span class="btn">Racks y contenedores</span>. Cuando hay algo marcado aparece <span class="btn">Revisar · 2</span>.</td></tr>
+          <tr><td class="task">Larvas</td><td>Las incubadoras y las cajas de engorde activas, con su día y su próximo paso. <span class="btn">Ver también las terminadas</span> muestra las anteriores.</td></tr>
+          <tr><td class="task">Insectarios</td><td>Las jaulas, con su generación y su estado (con moscas, cerrada, limpia), y el 2 % que espera para repoblar.</td></tr>
+          <tr><td class="task">Horno</td><td>El 98 % que espera el horno, las cochadas en el horno y las anteriores.</td></tr>
+          <tr><td class="task">Alimento</td><td>El material en bodega sin ensilar, los ensilados (madurando, abierto, consumido o vencido) y las recepciones.</td></tr>
+          <tr><td class="task">Resumen</td><td>Los números del laboratorio: lo que hay ahora, las últimas 8 semanas y el rendimiento de 7 días, 30 días o todo.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><b>La página de cada cosa</b> (incubadora, caja, jaula, cochada, ensilado) tiene arriba su ficha; después <span class="btn">QUÉ SIGUE</span>, con sus pasos pendientes; lo que cuelga de ella (las cajas de una incubadora, por ejemplo); sus <span class="btn">REGISTROS</span>, que se tocan para corregirlos o agregarles nota o foto; y sus acciones (<span class="btn">Cambiar de rack</span>, <span class="btn">Cerrar antes de tiempo</span>…).</p>
+    <p>Los pasos llevan color: <span class="late">rojo, atrasado</span> · <span class="today">verde, hoy</span> · <span class="soon">gris, más adelante</span> · <span class="pend">naranja, pendiente</span> (era de antes de que ese registro se anotara: se hace cuando corresponda, pero nadie lo dejó atrasado).</p>
+  </section>
+
+  <section>
+    <h2>El día empieza en «Para hoy»</h2>
+    <p>En Inicio, la app junta <span class="late">lo atrasado</span>, <span class="today">lo de hoy</span> y <span class="soon">lo de los próximos dos días</span>. Cada línea abre su formulario ya completado, con la tarea, las cajas y los kilos del plan. Al guardar, la línea desaparece. Si no hay nada pendiente dice «Todo al día con el plan».</p>
+    <p>Las cajas de una misma incubadora van en una sola línea, por ejemplo <span class="code">Carga 3 · 2 kg · F8A-12</span> con «3 cajas: 01, 02, 03».</p>
+    <p>Aparecen: recolectas, chequeos, la distribución, las cargas 2 y 3, separaciones, el 98 % que espera horno, el 2 % que espera una jaula limpia, las lecturas del horno, jaulas por cerrar y por limpiar, ensilados por abrir, el ensilado abierto con las horas que le quedan, y los registros para revisar.</p>
+  </section>
+
+  <section>
+    <h2>Cada tarea, en la app</h2>
+    <div class="table-wrap">
+      <table class="stack">
+        <thead><tr><th>Tarea</th><th>Dónde se toca</th><th>Qué se escribe</th></tr></thead>
+        <tbody>
+          <tr><td class="task">recolecta</td><td><span class="btn">Nueva recolecta</span>, o la línea «Recolecta · ICA» de «Para hoy».</td><td>Jaula (sólo aparecen las que tienen moscas), rack, peso inicial de huevos/larvas en <b>g</b> y alimento inicial en <b>kg</b> (viene propuesto).<span class="rule">Arriba aparece el código, por ejemplo <span class="code">F8A-12</span>: escríbelo en la incubadora. Si la recolecta fue otro día (el arranque, un olvido), toca <span class="btn">Es de hoy · toca si fue otro día</span> y pon la fecha: queda marcada como excepción.</span></td></tr>
+          <tr><td class="task">chequeo<br>días 3, 10 y 14</td><td>La línea de «Para hoy», o <span class="btn">QUÉ SIGUE</span> en la incubadora o la caja.</td><td>Humedad del sustrato (%), temperatura del sustrato (°C) y peso: <b>g</b> el día 3, <b>kg</b> los días 10 y 14.<span class="rule">Van los tres datos. En un chequeo de varias cajas, una caja que dejes en blanco no se guarda. El del día 14 empieza el ayuno.</span></td></tr>
+          <tr><td class="task">tamizado, pesado y distribución<br>día 7</td><td>La incubadora → <span class="btn">Tamizado, pesado y distribución</span>.</td><td>Larvas tamizadas, total en <b>kg</b>. Por cada caja: peso (<b>kg</b>), carga 1 (1,5 kg propuesto) y rack. <span class="btn">Agregar caja</span> para la siguiente.<span class="rule">Las cajas reciben <span class="code">F8A-12-01</span>, <span class="code">-02</span>…: escríbelo en cada una. Si las cajas suman más que el total tamizado, la app avisa en naranja: revisa los pesos.</span></td></tr>
+          <tr><td class="task">carga 2 · carga 3<br>días 10 y 13</td><td>La línea de «Para hoy», o la caja → <span class="btn">QUÉ SIGUE</span>.</td><td>Marca las cajas que se alimentaron. Vienen propuestos 2 kg: cámbialos si fue otra cantidad.<span class="rule">La carga 2 espera el chequeo del día 10. Después del chequeo del día 14 ya no hay cargas (ayuno).</span></td></tr>
+          <tr><td class="task">separación<br>~día 16</td><td><span class="btn">Separación</span> en Inicio (las cajas del día 16 en adelante), o la caja → <span class="btn">Separación</span>.</td><td>Peso total de larvas de cada caja (<b>kg</b>).<span class="rule">La app muestra cuánto va al horno (98 %) y cuánto vuelve al insectario (2 %). La caja queda separada.</span></td></tr>
+          <tr><td class="task">cochada</td><td><span class="btn">Nueva cochada</span>, o la línea «98 % esperando el horno».</td><td>Los kg de cada separación que entran (<span class="btn">Todo</span> pone lo que queda) y el peso inicial pesado.<span class="rule">El código es <span class="code">H-2810-1</span>. El 98 % de una caja se puede repartir entre varias cochadas.</span></td></tr>
+          <tr><td class="task">temperatura a mitad</td><td>La cochada → <span class="btn">Temperatura a mitad del horno</span>.</td><td>°C.<span class="rule">Si se olvidó, después de la salida aparece <span class="btn">Agregar la temperatura a mitad del horno</span>.</span></td></tr>
+          <tr><td class="task">salida del horno</td><td>La cochada → <span class="btn">Temperatura y peso final</span>.</td><td>Temperatura final (°C) y peso final (<b>kg</b>).<span class="rule">La cochada queda «Lista para empacar».</span></td></tr>
+          <tr><td class="task">cierre y limpieza de la jaula</td><td>La jaula → <span class="btn">Cerrar la jaula</span>; después, <span class="btn">Limpieza de la jaula</span>.</td><td>Nada: sólo se confirma.<span class="rule">Una jaula cerrada ya no da recolectas. Sin limpieza no se puede repoblar.</span></td></tr>
+          <tr><td class="task">repoblar con el 2 %</td><td>La jaula limpia → <span class="btn">Repoblar con el 2 %</span>.</td><td>Kg de larvas del 2 %, pesadas. Cada bandeja de pupación: peso (4,7 kg propuesto; la última puede pesar menos) y rack. <span class="btn">Agregar bandeja</span> para la siguiente.<span class="rule">La app muestra la generación nueva de la jaula y los códigos de las bandejas (<span class="code">F8-B2810-1</span>). Avisa si las larvas mezclan generaciones, o si son más kg de los que el 2 % tiene registrados: manda la balanza.</span></td></tr>
+          <tr><td class="task">recepción de material</td><td><span class="btn">Recepción de material</span> en Inicio, o Alimento → <span class="btn">Recepción</span>.</td><td>Material y kg recibidos.</td></tr>
+          <tr><td class="task">ensilado</td><td><span class="btn">Nuevo ensilado</span>.</td><td>El contenedor y los kg de cada recepción que entran (<span class="btn">Todo</span> pone lo que queda).<span class="rule">El código es <span class="code">S2-2810</span>: escríbelo en el contenedor.</span></td></tr>
+          <tr><td class="task">apertura del ensilado</td><td>El día 21: la línea de «Para hoy», o el ensilado → <span class="btn">Abrir el ensilado</span>.</td><td>Nada: sólo se confirma.<span class="rule">Antes del día 21 el botón no se puede tocar. Desde la apertura corren 72 horas; cada carga descuenta sola de él.</span></td></tr>
+          <tr><td class="task">cambio de rack</td><td>La incubadora, la caja o la bandeja → <span class="btn">Cambiar de rack</span>.</td><td>El rack nuevo.</td></tr>
+          <tr><td class="task">cierre antes de tiempo</td><td>La incubadora, la caja, la bandeja o la cochada → <span class="btn">Cerrar antes de tiempo</span>.</td><td>El motivo (pérdida, contaminación…).<span class="rule">Queda inactiva; no se borra nada.</span></td></tr>
+          <tr><td class="task">racks, contenedores y jaulas</td><td><span class="btn">Racks y contenedores</span> en Inicio; Insectarios → <span class="btn">Registrar jaula</span>.</td><td>El código del rack (R1) o del contenedor (S2). La jaula: nombre, letra para los códigos, lugar, la generación que tiene hoy y si tiene moscas o está limpia.<span class="rule">Se registran una sola vez.</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>La hora, la foto y la nota</h2>
+    <ul class="plain">
+      <li>Todo queda con la fecha de hoy. En <span class="btn">HORA (HOY)</span> se puede poner la hora en que se hizo, si fue más temprano; <span class="btn">Ahora</span> la vuelve a la hora actual. Si no se toca, queda la hora exacta en que se guardó.</li>
+      <li>Sólo la recolecta puede ser de otro día, con la excepción.</li>
+      <li><span class="btn">FOTO Y NOTA (OPCIONAL)</span>: una foto y una nota por registro. También se agregan después: toca el registro en su página. Una foto nueva reemplaza a la anterior.</li>
+      <li>Una nota o una foto no cambian ningún dato y no marcan nada para revisar.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Cuando la app pregunta, avisa o no deja</h2>
+    <div class="note-box">
+      <h3>«¿Guardar igual?»</h3>
+      <p>Aparece cuando lo que vas a guardar se sale del plan, y dice por qué:</p>
+      <ul class="plain">
+        <li>un paso con más de un día de anticipación: por ejemplo, el chequeo del día 14 en una caja que va en el día 7 («Esto es del chequeo del día 14 y la caja F8A-12-02 va en el día 7»);</li>
+        <li>una carga sin la anterior (la 3 sin la 2);</li>
+        <li>cajas que pesan más que lo tamizado.</li>
+      </ul>
+      <p>Si fue un toque equivocado: <span class="btn">Cancelar</span>, y no se guarda nada. Si de verdad fue así: <span class="btn">Guardar igual</span>.</p>
+    </div>
+    <div class="grid2">
+      <div>
+        <h3>No deja</h3>
+        <ul class="plain">
+          <li>Recolectar de una jaula sin moscas, o repoblar una jaula que no se cerró y limpió.</li>
+          <li>La carga 2 antes del chequeo del día 10; cualquier carga después del chequeo del día 14.</li>
+          <li>Distribuir dos veces una incubadora, separar dos veces una caja, dos chequeos del mismo día.</li>
+          <li>Un chequeo con un dato vacío.</li>
+          <li>Llevar al horno más del 98 % que queda; ensilar más de lo que queda de una recepción, o antes de que llegara.</li>
+          <li>Abrir un ensilado antes de su día 21.</li>
+          <li>Una fecha que todavía no ha llegado.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Sólo avisa</h3>
+        <ul class="plain">
+          <li>Repoblar con más kilos de los que el 2 % tiene registrados (manda la balanza).</li>
+          <li>Larvas de generaciones mezcladas: la jaula toma la más común.</li>
+          <li>Una segunda recolecta de la misma jaula el mismo día.</li>
+        </ul>
+        <h3 style="margin-top:14px">«No se guardó»</h3>
+        <p>Debajo dice el motivo. Corrige el dato y vuelve a guardar: lo demás del formulario sigue escrito.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Corregir un registro</h2>
+    <ol class="plain">
+      <li>Abre la página de la cosa (la incubadora, la caja…) y toca el registro: «Recolecta», «Chequeo día 10», «Separación»…</li>
+      <li>Cambia el dato y toca <span class="btn">Guardar corrección</span>. El registro queda «Corregido por …», con la hora.</li>
+    </ol>
+    <ul class="plain">
+      <li>Se corrigen valores y fechas. El <b>código no cambia nunca</b>: es lo que está escrito en el recipiente.</li>
+      <li>Lo que la app calcula se recalcula solo: el 98 % y el 2 %, lo que espera el horno o la jaula, la bodega, las edades.</li>
+      <li>Lo que se anotó encima del dato corregido queda marcado «revisar» (ver abajo).</li>
+      <li>La apertura de un ensilado se corrige sólo después de abrirlo con su botón, y nunca a antes de su día 21.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>«Revisar»</h2>
+    <p>Cuando se corrige un dato, lo que dependía de él queda marcado: una cochada que tomó el 98 % de una separación corregida, un repoblado que usó su 2 %, un chequeo de una incubadora con otra fecha. En Inicio aparece <span class="btn">Revisar · N</span>, y la lista dice qué y por qué.</p>
+    <ol class="plain">
+      <li>Abre el registro marcado y compruébalo.</li>
+      <li>Si está bien así, toca <span class="btn">Revisado: está bien así</span> y la marca se va. Si no, corrige el dato.</li>
+    </ol>
+    <p>La marca vuelve sola si después cambia otra vez algo de lo que depende.</p>
+  </section>
+
+  <section>
+    <h2>Sin señal <span class="tag">la sincronización</span></h2>
+    <p>Todo se guarda primero en el teléfono, al instante, haya o no señal, y se envía solo cuando hay conexión. Se puede trabajar el día entero sin señal.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>El chip dice</th><th>Qué quiere decir</th></tr></thead>
+        <tbody>
+          <tr><td><span class="btn">Al día</span></td><td>Todo enviado.</td></tr>
+          <tr><td><span class="btn">3 en espera</span></td><td>Guardado en el teléfono, falta enviarlo. Se envía solo al haber señal.</td></tr>
+          <tr><td><span class="btn">Sin conexión</span></td><td>No hay señal. Se sigue registrando igual.</td></tr>
+          <tr><td><span class="btn">Sincronizando...</span></td><td>Enviando en este momento.</td></tr>
+          <tr><td><span class="btn">1 conflicto</span></td><td>El servidor rechazó un registro (ver abajo).</td></tr>
+          <tr><td><span class="btn">2 sin enviar</span></td><td>No se pudo enviar después de varios intentos: avisa al responsable.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ul class="plain">
+      <li>Al tocar el chip se ve el detalle y <span class="btn">Sincronizar ahora</span>.</li>
+      <li>Si algo lleva más de 12 horas sin enviarse, la app avisa: busca señal pronto.</li>
+      <li><b>Conflictos.</b> Por ejemplo, dos personas sin señal separaron la misma caja: el servidor se queda con la primera. En la pantalla de sincronización, <span class="btn">Reintentar</span> lo vuelve a enviar (si ya se arregló la causa) y <span class="btn">Descartar</span> lo quita de este teléfono.</li>
+      <li>Si la app dice que el reloj del teléfono está desfasado, corrige la hora del teléfono: las fechas salen de él.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>El resumen</h2>
+    <ul class="plain">
+      <li><b>Ahora:</b> jaulas con moscas, incubadoras, cajas, cochadas en el horno, el 98 % y el 2 % que esperan, el ensilado abierto y la bodega. Cada recuadro abre su pestaña.</li>
+      <li><b>Últimas 8 semanas:</b> los gramos recolectados y los kilos separados por semana, de lunes a domingo. Toca una semana para ver sus números; <span class="btn">Ver los números de cada semana</span> los muestra todos.</li>
+      <li><b>Rendimiento</b> de <span class="btn">7 días</span>, <span class="btn">30 días</span> o <span class="btn">Todo</span>: kg separados por g recolectado, crecimiento en las cajas, kg de alimento por kg de larva, días reales de distribución y separación contra el plan, lo recolectado por jaula, el rendimiento del horno y cuánto ensilado se comió. Un ciclo de larvas cuenta en el periodo en que terminó.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Problemas frecuentes</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Pasa esto</th><th>Por qué, y qué hacer</th></tr></thead>
+        <tbody>
+          <tr><td>«No se pudieron abrir los datos de este teléfono»</td><td>Lo registrado sigue guardado. Cierra las otras pestañas de la app y toca <span class="btn">Reintentar</span>. No borres los datos del navegador.</td></tr>
+          <tr><td>La jaula no aparece en la recolecta</td><td>No tiene moscas: está cerrada o limpia. Hay que repoblarla primero.</td></tr>
+          <tr><td>No aparece la carga 2</td><td>Falta el chequeo del día 10 de esa caja.</td></tr>
+          <tr><td>No aparecen más cargas</td><td>La caja ya tuvo el chequeo del día 14: está en ayuno.</td></tr>
+          <tr><td>No deja abrir el ensilado</td><td>Todavía no es su día 21. La fecha de apertura está en su página.</td></tr>
+          <tr><td>Una carga dice «sin ensilado»</td><td>No había ningún ensilado abierto en ese momento. Queda registrada, pero no descuenta de ninguno.</td></tr>
+          <tr><td>Un paso dice «pendiente»</td><td>Era de antes de que ese registro se anotara (una recolecta con fecha pasada). Se hace cuando corresponda; «Para hoy» no lo reclama.</td></tr>
+          <tr><td>La app se ve como antes de una actualización</td><td>Ciérrala del todo y vuelve a abrirla.</td></tr>
+          <tr><td>Un nombre que no es de nadie en la lista</td><td>Avisa al responsable: los nombres se quitan desde la base de datos.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>Acompaña al <a href="protocolo.html">protocolo</a> de octubre de 2026. Cuando la app cambia, esta guía cambia con ella.</footer>
+</div>

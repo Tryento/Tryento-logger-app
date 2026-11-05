@@ -48,6 +48,14 @@ const falla = (res, re) => {
   assert.equal(res.ok, false, 'debía rechazarse');
   assert.match(res.error.message, re);
 };
+/** Out of the plan: the phone asks before saving, and saves nothing until confirmed. */
+const pide = (res, re) => {
+  assert.equal(res.ok, false, 'debía preguntar');
+  assert.equal(res.error.code, 'confirm_required', res.error.message);
+  assert.match(res.error.message, re);
+};
+// The whole cycle happens today, so every scheduled step is days early: confirmed.
+const SI = { confirmado: true };
 
 const HOY = farmDay();
 const DDMM = ddmm(new Date());
@@ -90,10 +98,24 @@ test('food: a recepción, an ensilado from it, opened on its día 21', async () 
   assert.equal(e.ensilado.codigo, `S2-${DDMM}`);
   falla(await w.abrirEnsilado({ ensilado_id: S.ens }), /sigue madurando/);
 
-  // It was really made 22 days ago: corrected, the date is free.
+  // It was really made 22 days ago, from material that came the day before.
+  // The ensilado cannot be dated before its material, nor opened by correcting it.
+  falla(await w.editarRegistro({ tabla: 'ensilado', id: S.ens, cambios: { ensilado_at: `${addDays(HOY, -22)}T10:00` } }),
+        /no puede ser de antes/);
+  falla(await w.editarRegistro({ tabla: 'ensilado', id: S.ens, cambios: { abierto_at: `${HOY}T08:00` } }),
+        /no se puede corregir aquí/);
+  falla(await w.editarRegistro({ tabla: 'recepcion', id: S.rec, cambios: { fecha: `${addDays(HOY, 1)}T08:00` } }),
+        /posterior a ahora/);
+  okData(await w.editarRegistro({ tabla: 'recepcion', id: S.rec, cambios: { fecha: `${addDays(HOY, -23)}T09:00` } }));
   okData(await w.editarRegistro({ tabla: 'ensilado', id: S.ens,
                                   cambios: { ensilado_at: `${addDays(HOY, -22)}T10:00` } }));
+  // Now later than the ensilado that used it: refused.
+  falla(await w.editarRegistro({ tabla: 'recepcion', id: S.rec, cambios: { fecha: `${addDays(HOY, -21)}T09:00` } }),
+        /no puede ser posterior/);
   okData(await w.abrirEnsilado({ ensilado_id: S.ens }));
+  // Opened, its apertura can be corrected, but not to before its día 21.
+  falla(await w.editarRegistro({ tabla: 'ensilado', id: S.ens, cambios: { abierto_at: `${addDays(HOY, -2)}T08:00` } }),
+        /día 21/);
   falla(await w.abrirEnsilado({ ensilado_id: S.ens }), /ya está abierto/);
   const alim = okData(await r.getAlimento());
   assert.deepEqual(alim.stock.map(m => [m.material, m.kg_disponible]), [['Bagazo de cerveza (BSG)', 20]]);
@@ -126,13 +148,23 @@ test('recolecta: the incubadora F7A-1, its food from the open ensilado', async (
 
 test('chequeo día 3, then tamizado, pesado y distribución into cajas with carga 1', async () => {
   falla(await w.registrarChequeos({ objeto: 'incubadora', dia: 4, items: [{ id: S.inc1 }] }), /No hay chequeo/);
-  okData(await w.registrarChequeos({ objeto: 'incubadora', dia: 3,
-    items: [{ id: S.inc1, humedad_pct: '68', temperatura_c: '29,5', peso: 40 }] }));
+  // A reading left blank is refused, with what is missing.
+  falla(await w.registrarChequeos({ objeto: 'incubadora', dia: 3,
+    items: [{ id: S.inc1, humedad_pct: '', temperatura_c: '29,5', peso: '' }] }), /F7A-1: falta la humedad y el peso/);
+  const chequeo3 = { objeto: 'incubadora', dia: 3, items: [{ id: S.inc1, humedad_pct: '68', temperatura_c: '29,5', peso: 40 }] };
+  pide(await w.registrarChequeos(chequeo3), /chequeo del día 3 y la incubadora F7A-1 va en el día 0/);
+  assert.equal(okData(await r.getIncubadora(S.inc1)).registros.filter(x => x.tabla === 'chequeo').length, 0,
+               'nothing saved until confirmed');
+  okData(await w.registrarChequeos({ ...chequeo3, ...SI }));
   falla(await w.registrarChequeos({ objeto: 'incubadora', dia: 3,
     items: [{ id: S.inc1, humedad_pct: 68, temperatura_c: 29, peso: 41 }] }), /ya tiene el chequeo del día 3/);
 
   falla(await w.distribuir({ incubadora_id: S.inc1, peso_total_kg: 1.8, cajas: [{ peso_inicial_kg: 0.9 }] }), /rack/);
-  const d = okData(await w.distribuir({ incubadora_id: S.inc1, peso_total_kg: 1.8, cajas: [
+  // Days early, and cajas heavier than what was sieved: one question for both.
+  pide(await w.distribuir({ incubadora_id: S.inc1, peso_total_kg: 1.5, cajas: [
+    { peso_inicial_kg: 0.9, rack_id: S.r1 }, { peso_inicial_kg: '0,9', rack_id: S.r1 }] }),
+    /día 7 y la incubadora F7A-1 va en el día 0.*Las cajas suman 1,8 kg y se tamizaron 1,5 kg/);
+  const d = okData(await w.distribuir({ incubadora_id: S.inc1, peso_total_kg: 1.8, ...SI, cajas: [
     { peso_inicial_kg: 0.9, rack_id: S.r1 }, { peso_inicial_kg: '0,9', rack_id: S.r1, carga_kg: 1.4 }] }));
   S.c1 = d.cajas[0].id; S.c2 = d.cajas[1].id;
   assert.deepEqual(d.cajas.map(c => c.codigo), ['F7A-1-01', 'F7A-1-02']);
@@ -145,20 +177,27 @@ test('chequeo día 3, then tamizado, pesado y distribución into cajas with carg
 test('cajas: chequeo before carga 2, carga 3, the ayuno, the separación', async () => {
   falla(await w.registrarCargas({ carga: 2, items: [{ caja_id: S.c1 }] }), /primero el chequeo del día 10/);
   falla(await w.registrarCargas({ carga: 1, items: [{ caja_id: S.c1 }] }), /no está en el plan/);
-  okData(await w.registrarChequeos({ objeto: 'caja', dia: 10, items: [
+  // Carga 3 before carga 2: out of order, and days early.
+  pide(await w.registrarCargas({ carga: 3, items: [{ caja_id: S.c1 }] }),
+       /carga 3 \(día 13\) y la caja F7A-1-01 va en el día 0\. A F7A-1-01 le falta la carga 2/);
+  okData(await w.registrarChequeos({ objeto: 'caja', dia: 10, ...SI, items: [
     { id: S.c1, humedad_pct: 62, temperatura_c: 31, peso: '2,3' },
     { id: S.c2, humedad_pct: 63, temperatura_c: 31, peso: 2.2 }] }));
-  const c2 = okData(await w.registrarCargas({ carga: 2, items: [{ caja_id: S.c1 }, { caja_id: S.c2, kg: '2,5' }] }));
+  const c2 = okData(await w.registrarCargas({ carga: 2, ...SI, items: [{ caja_id: S.c1 }, { caja_id: S.c2, kg: '2,5' }] }));
   assert.deepEqual(c2.map(c => c.kg), [2, 2.5]);
-  okData(await w.registrarCargas({ carga: 3, items: [{ caja_id: S.c1 }] }));
+  okData(await w.registrarCargas({ carga: 3, ...SI, items: [{ caja_id: S.c1 }] }));
 
-  // Caja 2 skips carga 3: the día-14 chequeo starts the ayuno.
-  okData(await w.registrarChequeos({ objeto: 'caja', dia: 14, items: [{ id: S.c2, humedad_pct: 60, temperatura_c: 30, peso: 4 }] }));
+  // Caja 2 skips carga 3: the día-14 chequeo starts the ayuno — early, it asks first.
+  const ayuno = { objeto: 'caja', dia: 14, items: [{ id: S.c2, humedad_pct: 60, temperatura_c: 30, peso: 4 }] };
+  pide(await w.registrarChequeos(ayuno), /F7A-1-02 va en el día 0\. Con este chequeo empieza el ayuno/);
+  assert.equal(okData(await r.getCaja(S.c2)).caja.estadoTxt, 'Engorde', 'still fed until confirmed');
+  okData(await w.registrarChequeos({ ...ayuno, ...SI }));
   falla(await w.registrarCargas({ carga: 3, items: [{ caja_id: S.c2 }] }), /está en ayuno/);
   assert.equal(okData(await r.getCaja(S.c2)).caja.estadoTxt, 'En ayuno');
 
-  const seps = okData(await w.registrarSeparaciones({ items: [{ caja_id: S.c1, peso_total_kg: 10 },
-                                                               { caja_id: S.c2, peso_total_kg: '20' }] }));
+  const separar = { items: [{ caja_id: S.c1, peso_total_kg: 10 }, { caja_id: S.c2, peso_total_kg: '20' }] };
+  pide(await w.registrarSeparaciones(separar), /hacia el día 16 y F7A-1-01 y F7A-1-02 van en el día 0/);
+  const seps = okData(await w.registrarSeparaciones({ ...separar, ...SI }));
   S.sep1 = seps[0].id; S.sep2 = seps[1].id;
   falla(await w.registrarSeparaciones({ items: [{ caja_id: S.c1, peso_total_kg: 1 }] }), /ya fue separada/);
   const caja = okData(await r.getCaja(S.c1));
@@ -186,6 +225,17 @@ test('the oven: a cochada from the 98 %, part of it, and its readings', async ()
   const det = okData(await r.getCochada(S.co));
   assert.equal(det.cochada.estadoTxt, 'Lista para empacar');
   falla(await w.registrarLectura({ cochada_id: S.co, momento: 'final', temperatura_c: 1, peso_kg: 1 }), /ya salió del horno/);
+});
+
+test('a mid temperature forgotten until after the final one can still be added', async () => {
+  const co = okData(await w.crearCochada({ peso_inicial_kg: 5, origenes: [{ separacion_id: S.sep2, kg: 5 }] })).cochada;
+  okData(await w.registrarLectura({ cochada_id: co.id, momento: 'final', temperatura_c: 100, peso_kg: 1.6 }));
+  assert.equal(okData(await r.getCochada(co.id)).tiene_media, false);
+  okData(await w.registrarLectura({ cochada_id: co.id, momento: 'media', temperatura_c: 88 }));
+  const det = okData(await r.getCochada(co.id));
+  assert.deepEqual([det.tiene_media, det.cochada.estadoTxt], [true, 'Lista para empacar']);
+  assert.equal(det.facts.find(f => f[0] === 'Mitad')[1], '88 °C');
+  falla(await w.registrarLectura({ cochada_id: co.id, momento: 'media', temperatura_c: 89 }), /Ya tiene/);
 });
 
 test('the insectario: cierre, limpieza, repopulate with the 2 %; the cage becomes F8', async () => {
@@ -307,18 +357,19 @@ test('pulled back, the phone and the server tell the same story', async () => {
   const inicio = okData(await r.getInicio());
   assert.equal(inicio.conteos.revisar, 2);
   assert.equal(inicio.horno_kg, kgHorno());
-  function kgHorno() { return Math.round((11.76 - 9.8 + 19.6 - 10) * 1000) / 1000; }
+  function kgHorno() { return Math.round((11.76 - 9.8 + 19.6 - 10 - 5) * 1000) / 1000; }
 });
 
 test('two phones separate the same caja: the server keeps one, "Descartar" takes the other back', async () => {
-  const d = okData(await w.distribuir({ incubadora_id: S.inc2, peso_total_kg: 1, cajas: [{ peso_inicial_kg: 1, rack_id: S.r1 }] }));
+  const d = okData(await w.distribuir({ incubadora_id: S.inc2, peso_total_kg: 1, ...SI,
+                                        cajas: [{ peso_inicial_kg: 1, rack_id: S.r1 }] }));
   const caja = d.cajas[0].id;
   await sync();
 
   // The other phone got there first.
   await pg.query(`insert into app.separacion (id, caja_id, fecha, peso_total_kg, registrado_por)
                   values ($1, $2, now(), 15, 'Ricardo')`, [uid(), caja]);
-  okData(await w.registrarSeparaciones({ items: [{ caja_id: caja, peso_total_kg: 14 }] }));
+  okData(await w.registrarSeparaciones({ items: [{ caja_id: caja, peso_total_kg: 14 }], ...SI }));
   const { pushed } = await sync();
   assert.equal(pushed.conflicts, 1);
 

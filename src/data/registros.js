@@ -57,11 +57,13 @@ export const EDITABLE = {
 export const SIEMPRE = ['nota', 'foto_key'];
 
 /** The fields of a table the edit form shows: a chequeo shows the weight in
- *  the unit of its object. */
+ *  the unit of its object; an ensilado's apertura only once it was opened —
+ *  opening is the button's job, which records who did it and keeps día 21. */
 export function camposDe(tabla, row) {
   const def = EDITABLE[tabla];
   if (!def) return [];
   return def.campos.filter(([col]) => {
+    if (tabla === 'ensilado' && col === 'abierto_at') return Boolean(row?.abierto_at);
     if (tabla !== 'chequeo') return true;
     if (col === 'peso_g') return Boolean(row?.incubadora_id);
     if (col === 'peso_kg') return Boolean(row?.caja_id);

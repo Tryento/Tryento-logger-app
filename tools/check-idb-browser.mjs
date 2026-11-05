@@ -335,9 +335,24 @@ console.log('\nEscenario 3 — el ciclo completo, en la pantalla');
       return Boolean(visto);
     } catch (e) { bad(label, e.message); return false; }
   };
-  /** Save a form: its confirmation, then the form gone (back on the page it came from). */
-  const guardar = async (boton, toast) => {
+  /**
+   * Save a form: its confirmation, then the form gone (back on the page it
+   * came from). The whole cycle happens today, so a scheduled step is days
+   * early and the app asks «¿Guardar igual?» first: `pregunta` is what that
+   * question must say; it is answered "Guardar igual".
+   */
+  let preguntas = 0;
+  const guardar = async (boton, toast, pregunta = null) => {
     await tap(boton);
+    const visto = await waitFor(b, `(t => t.includes('¿guardar igual?') || t.includes(${JSON.stringify(toast.toLowerCase())}))(__t.text().toLowerCase())`, 8000);
+    if (!visto) throw new Error('no pasó nada al tocar «' + boton + '»');
+    if (await b.evaluate(`__t.text().toLowerCase().includes('¿guardar igual?')`)) {
+      if (pregunta && !(await ve(pregunta))) throw new Error('la pregunta no dice «' + pregunta + '»');
+      preguntas++;
+      await tap('Guardar igual');
+    } else if (pregunta) {
+      throw new Error('guardó sin preguntar');
+    }
     if (!(await ve(toast))) throw new Error('no se confirmó «' + toast + '»: ' + (await T()).slice(-300));
     // Every form has its time box or its note; no list or page has either.
     const cerrado = await waitFor(b, `!document.querySelector('textarea, input[type=time]')`, 8000);
@@ -403,17 +418,22 @@ console.log('\nEscenario 3 — el ciclo completo, en la pantalla');
     // Chequeo día 3 and distribución, from the incubadora's page.
     await paso('la incubadora F7A-1 y lo que sigue', async () => { await tab('Larvas'); await ve('EN INCUBADORA'); await abrir('F7A-1', 'QUÉ SIGUE'); }, 'Chequeo día 3');
     await b.shot('08-incubadora');
-    await paso('chequeo del día 3', async () => {
+    await paso('chequeo del día 3, en el día 0: pregunta, y «Cancelar» no guarda nada', async () => {
       await abrir('Chequeo día 3', 'HUMEDAD · %');
       await set('HUMEDAD · %', '68'); await set('TEMP. · °C', '29,5'); await set('PESO · G', '40');
-      await guardar('Guardar chequeo', 'Chequeo del día 3 guardado');
+      await tap('Guardar chequeo');
+      if (!(await ve('Esto es del chequeo del día 3 y la incubadora F7A-1 va en el día 0'))) throw new Error('no preguntó');
+      await b.shot('09a-guardar-igual');
+      await tap('Cancelar');
+      if (!(await waitFor(b, `!!document.querySelector('input[type=time]')`, 4000))) throw new Error('el formulario se cerró');
+      await guardar('Guardar chequeo', 'Chequeo del día 3 guardado', 'va en el día 0');
     }, '68 % · 29,5 °C · 40 g');
     await paso('tamizado, pesado y distribución en 2 cajas', async () => {
       await abrir('Tamizado, pesado y distribución', 'LARVAS TAMIZADAS');
       await set('LARVAS TAMIZADAS (TOTAL)', '1,8'); await set('PESO · KG', '0,9', 0);
       await tap('Agregar caja'); await ve('F7A-1-02'); await set('PESO · KG', '0,9', 1);
       await b.shot('09-distribucion');
-      await guardar('Guardar distribución', 'Distribución guardada');
+      await guardar('Guardar distribución', 'Distribución guardada', 'del día 7 y la incubadora F7A-1 va en el día 0');
     }, '1,8 kg tamizados · 2 cajas');
     check((await T()).includes('distribuida'), 'la incubadora queda distribuida (inactiva)');
 
@@ -425,17 +445,18 @@ console.log('\nEscenario 3 — el ciclo completo, en la pantalla');
     await paso('chequeo del día 10', async () => {
       await abrir('Chequeo día 10', 'PESO · KG');
       await set('HUMEDAD · %', '62'); await set('TEMP. · °C', '31'); await set('PESO · KG', '2,3');
-      await guardar('Guardar chequeo', 'Chequeo del día 10 guardado');
+      await guardar('Guardar chequeo', 'Chequeo del día 10 guardado', 'la caja F7A-1-01 va en el día 0');
     }, '62 % · 31 °C · 2,3 kg');
     await paso('carga 2 como dice el plan', async () => {
-      await abrir('Carga 2', 'Guardar carga 2'); await guardar('Guardar carga 2', 'Carga 2 guardada');
+      await abrir('Carga 2', 'Guardar carga 2'); await guardar('Guardar carga 2', 'Carga 2 guardada', 'carga 2 (día 10)');
     }, '2 kg ·');
     await paso('separación: 10 kg', async () => {
       await abrir('Separación', 'PESO TOTAL · KG'); await set('PESO TOTAL · KG', '10');
       if (!(await ve('9,8 kg al horno · 0,2 kg al insectario'))) throw new Error('no muestra el reparto 98/2');
       await b.shot('11-separacion');
-      await guardar('Guardar separación', 'Separación guardada');
+      await guardar('Guardar separación', 'Separación guardada', 'La separación es hacia el día 16');
     }, 'Separada');
+    check(preguntas === 5, 'cada paso días antes de tiempo preguntó antes de guardarse', String(preguntas));
 
     // The oven, from the home list.
     await paso('«98 % esperando el horno» en el inicio', () => tab('Inicio'), '98 % esperando el horno · 9,8 kg');
@@ -525,6 +546,9 @@ console.log('\nEscenario 3 — el ciclo completo, en la pantalla');
     const codigos = (d.incubadora || []).map(i => i.codigo).sort().join(', ');
     check(codigos === 'F7A-1, F8A-1', 'incubadoras guardadas', codigos);
     check((d.caja || []).map(c => c.codigo).sort().join(', ') === 'F7A-1-01, F7A-1-02', 'cajas guardadas');
+    // «Cancelar» saved nothing: one chequeo on día 3, one on día 10.
+    check((d.chequeo || []).map(c => c.dia).sort((x, y) => x - y).join(',') === '3,10', 'chequeos guardados, sin duplicados',
+          (d.chequeo || []).map(c => c.dia).join(','));
     // "Todo" fills the box with "9,8": what is stored must be the number.
     check((d.cochada_origen || [])[0]?.kg === 9.8, 'la cochada guardó los kg que tomó del 98 %', String((d.cochada_origen || [])[0]?.kg));
     const sep = (d.separacion || [])[0];
