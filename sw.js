@@ -22,6 +22,9 @@ importScripts('./sw-precache.js');   // defines self.__PRECACHE and self.__VERSI
 const VERSION = self.__VERSION || 'dev';
 const CACHE = `tryento-${VERSION}`;
 const PRECACHE = self.__PRECACHE || [];
+/** Precached HTML that is not the app itself, by path. */
+const PAGINAS = new Set(PRECACHE.filter(u => u.endsWith('.html') && u !== './index.html')
+  .map(u => new URL(u, self.location).pathname));
 
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
@@ -73,6 +76,25 @@ self.addEventListener('fetch', event => {
   // being offline.
   if (isSupabase(url)) return;
   if (url.origin !== self.location.origin) return;
+
+  // The lab's guide and protocol are pages of their own. Below, every other
+  // navigation is stored as the app shell: a guide stored there would be what
+  // the app opens to with no signal.
+  if (req.mode === 'navigate' && PAGINAS.has(url.pathname)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      try {
+        const fresh = await fetch(req);
+        if (fresh.ok) cache.put(url.pathname, fresh.clone()).catch(() => {});
+        return fresh;
+      } catch {
+        return (await cache.match(url.pathname)) || (await cache.match('./index.html'))
+            || new Response('Sin conexión y sin copia local.', {
+                 status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+      }
+    })());
+    return;
+  }
 
   if (req.mode === 'navigate') {
     event.respondWith((async () => {

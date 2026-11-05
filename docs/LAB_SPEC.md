@@ -7,8 +7,8 @@ log (this repo), and the physical process that connects them.
 
 | | |
 |---|---|
-| Version | 0.7 — steps out of their plan ask first; «Revisado» accepts; the public key cannot delete |
-| Last updated | 2026-10-27 |
+| Version | 0.7.1 — steps out of their plan ask first; «Revisado» accepts; the public key cannot delete |
+| Last updated | 2026-11-05 |
 | Built from | `tryento-app` `main` @ `a2b5b73` (2026-04-23) plus branches `50`, `52`, `55`, `Trunk`; `Tryento-logger-app` branch `ciclo-nuevo` (2026-10-22) |
 | Companion | [BSF research knowledge base](reports/Black%20soldier%20fly%20farms%20and%20biology.md) — the biology and industry evidence behind the numbers here |
 
@@ -436,7 +436,7 @@ lab:
 | History | The AppSheet sheet goes, as it was, into schema `historico` (read-only, not used by the app) — ⚠ not loaded yet |
 | Device storage | IndexedDB (`tryento-ciclo`); every write is local first, then synced through an outbox |
 | Login | None in the demo configuration: the public key reads, adds and corrects every table (RLS policies `app_leer`, `app_agregar`, `app_corregir`); since `0011` it cannot delete anything |
-| Staff guide | [`docs/guia-app.html`](guia-app.html), in Spanish: where to tap for each task |
+| Staff guide | [`docs/guia-app.html`](guia-app.html), in Spanish: where to tap for each task. Opens from the app's home screen («Cómo usar la app»), also offline; it links to the protocol, published with it |
 | Photos | Supabase Storage bucket `fotos` (public in the demo); one per record |
 | Time | Calendar days in `America/Caracas`; instants in UTC |
 | Deployment | Netlify, publishing only `dist/` (explicit allow-list) |
@@ -646,3 +646,4 @@ bump the minor version for new content, the patch version for corrections.
 | 2026-10-21 | 0.5 | Rewrote §2, §8 and §9 for the protocols defined with the lab on 19–20 October 2026: the larvae cycle (recolecta → incubadora → distribución into cajas → chequeos días 3/10/14 and cargas 7/10/13 → separación 98 % horno / 2 % back → cochada; the 2 % into pupation trays repopulating a closed and cleaned cage), the cage cycle (one generation per cycle) and the food (recepción → ensilado → 21 days → apertura → 72 h, oldest open ensilado first). Objects vs registries, codes that never change, corrections with "revisar". **Reason:** the earlier protocols (v1 and the "16-day v2") followed the wrong flow and asked for data the lab does not need; migration `0010_ciclo_nuevo.sql` rebuilds the schema and removes their data (pending deployment); the AppSheet history goes to schema `historico`. The views of §9 went with the old tables; new KPI views are still to be built. |
 | 2026-10-22 | 0.6 | §9.1: the KPIs are now computed in the app's new **Resumen** tab — what there is now, the last eight weeks, and yield per g recolectado, growth in the cajas, FCR (wet basis), cycle days against the plan, recolectas per cage and per cage cycle, oven yield and ensilado eaten over 7 days, 30 days or everything — each with its definition. §8: the six tabs. §2 and §8: `0010` ran in production on 22 October 2026, deleting the earlier protocols' data. **Reason:** the lab asked for a tab with the stats and an overview of the lab and its performance, and for the old data to be deleted. |
 | 2026-10-27 | 0.7 | §2.3: steps out of their plan (more than a day early, a carga without the previous one, cajas heavier than the sieved total) ask before saving; «Revisado» now also accepts a disagreement that stays; corrections keep the food dates in order (no ensilado before its material, apertura only by its button and from día 21, no future dates); a step due before its record was entered shows as pending. §8: `0011_sin_borrar.sql` takes deleting away from the public key (tables and photos), and the staff guide `docs/guia-app.html`. §10: risk 11 narrowed. **Reason:** QA round 4 on the live app (27 October 2026): a día-14 chequeo saved on día 7 started an ayuno a week early, an ensilado could be opened the day it was made through a correction, «Revisado» could not clear an accepted mark, and the public key could delete every table. |
+| 2026-11-05 | 0.7.1 | §8: the staff guide opens from the app's home screen, also offline, and the protocol it links to is published with it. **Reason:** the lab asked to open the guide from the app. |

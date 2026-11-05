@@ -574,6 +574,43 @@ console.log('\nEscenario 3 — el ciclo completo, en la pantalla');
   }
 }
 
+/* ── scenario 4: the guide, opened from the app, with and without signal ──── */
+
+console.log('\nEscenario 4 — la guía, desde la app y sin señal');
+{
+  const b = await launch();
+  const hay = (txt, ms = 8000) => waitFor(b, `document.body.innerText.includes(${JSON.stringify(txt)})`, ms);
+  const GUIA = 'Cómo usar la app de producción';
+  try {
+    await b.navigate(`${ORIGIN}/__setup.html`);
+    await b.evaluate(`localStorage.setItem('tryento.operator', 'Maria')`);
+    await b.navigate(`${ORIGIN}/index.html`);
+    await b.evaluate(HELPERS);
+    check(Boolean(await hay('Cómo usar la app')), 'el inicio ofrece «Cómo usar la app»');
+    // Precached, and this page under the worker's control, before going on.
+    check(Boolean(await waitFor(b, `navigator.serviceWorker.ready.then(() => !!navigator.serviceWorker.controller)`)), 'el service worker controla la app');
+
+    await b.evaluate(`__t.click('Cómo usar la app')`);
+    check(Boolean(await hay(GUIA)), 'el botón abre la guía');
+    await b.shot('19-guia');
+    await b.evaluate(`[...document.querySelectorAll('a')].find(a => a.textContent.includes('Volver a la app')).click()`);
+    check(Boolean(await hay('Racks y contenedores')), '«Volver a la app» vuelve al inicio');
+
+    // With no signal: the guide, the protocol it links to, and still the app.
+    await new Promise(res => { server.close(res); server.closeAllConnections(); });
+    await b.navigate(`${ORIGIN}/guia-app.html`);
+    check(Boolean(await hay(GUIA)), 'sin señal, la guía abre');
+    await b.navigate(`${ORIGIN}/protocolo.html`);
+    check(Boolean(await hay('Cómo trabaja el laboratorio')), 'sin señal, el protocolo abre');
+    await b.navigate(`${ORIGIN}/index.html`);
+    check(Boolean(await hay('Racks y contenedores')), 'sin señal, la app sigue abriendo en la app, no en la guía');
+  } catch (e) {
+    bad('escenario 4', e.message);
+  } finally {
+    await b.close();
+  }
+}
+
 server.close();
 console.log(`\n${pass} ok, ${fail} fallas.`);
 process.exitCode = fail ? 1 : 0;

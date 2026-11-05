@@ -1,9 +1,9 @@
+<!doctype html>
+<html lang="es">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Protocolos de producción</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,600;1,400&display=swap">
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
   :root {
     --paper: #FAFBF7;
@@ -19,8 +19,8 @@
     --accent: #2C8A4B;
     --warn: #9A6410;
     --box: #FFFFFF;
-    --font-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
-    --font-head: "IBM Plex Sans Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --font-body: Inter, "Helvetica Neue", Arial, sans-serif;
+    --font-head: Inter, "Helvetica Neue", Arial, sans-serif;
     --font-mono: "IBM Plex Mono", "Courier New", monospace;
   }
   @media (prefers-color-scheme: dark) {
@@ -71,6 +71,7 @@
   .page { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 36px; }
 
   header { display: flex; flex-direction: column; gap: 6px; border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
+  .volver { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; color: var(--accent); text-decoration: none; }
   .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
   h1 { font-family: var(--font-head); font-weight: 700; font-size: 34px; line-height: 1.1; margin: 0; text-wrap: balance; }
   .lede { margin: 0; max-width: 68ch; }
@@ -134,6 +135,7 @@
 
 <div class="page">
   <header>
+    <a class="volver" href="./">← Volver a la app</a>
     <div class="eyebrow">TryEnto · protocolo vigente · octubre 2026</div>
     <h1>Cómo trabaja el laboratorio, y qué anota la app en cada paso</h1>
     <p class="lede">En <span class="proc">MAYÚSCULAS</span> van los procesos y periodos; en minúscula, las tareas que hacen los trabajadores. Lo que no aparece en este documento deja de existir en la app. Qué se toca en la app para cada tarea: <a href="guia-app.html">guía de la app</a>.</p>

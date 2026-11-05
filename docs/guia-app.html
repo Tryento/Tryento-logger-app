@@ -1,9 +1,9 @@
+<!doctype html>
+<html lang="es">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cómo usar la app</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,600;1,400&display=swap">
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
   :root {
     --paper: #FAFBF7;
@@ -16,8 +16,8 @@
     --box: #FFFFFF;
     --btn: #E7F1E8;
     --btn-ink: #1F5A32;
-    --font-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
-    --font-head: "IBM Plex Sans Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --font-body: Inter, "Helvetica Neue", Arial, sans-serif;
+    --font-head: Inter, "Helvetica Neue", Arial, sans-serif;
     --font-mono: "IBM Plex Mono", "Courier New", monospace;
   }
   @media (prefers-color-scheme: dark) {
@@ -63,6 +63,7 @@
   .page { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 36px; }
 
   header { display: flex; flex-direction: column; gap: 6px; border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
+  .volver { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; color: var(--accent); text-decoration: none; }
   .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
   h1 { font-family: var(--font-head); font-weight: 700; font-size: 34px; line-height: 1.1; margin: 0; text-wrap: balance; }
   .lede { margin: 0; max-width: 68ch; }
@@ -112,6 +113,7 @@
 
 <div class="page">
   <header>
+    <a class="volver" href="./">← Volver a la app</a>
     <div class="eyebrow">TryEnto · guía de la app · octubre 2026</div>
     <h1>Cómo usar la app de producción</h1>
     <p class="lede">Para quien registra en el laboratorio: qué tocar en cada tarea, qué pide la app y qué hacer cuando algo no sale. Por qué se hace cada paso, y cuándo, está en el <a href="protocolo.html">protocolo</a>. Lo que va en <span class="btn">recuadro</span> es un botón o un título tal como aparece en la pantalla.</p>
@@ -138,7 +140,7 @@
       <table>
         <thead><tr><th>Pestaña</th><th>Qué hay</th></tr></thead>
         <tbody>
-          <tr><td class="task">Inicio</td><td>«Para hoy», y los botones de las tareas: <span class="btn">Nueva recolecta</span> <span class="btn">Separación</span> <span class="btn">Nueva cochada</span> <span class="btn">Recepción de material</span> <span class="btn">Nuevo ensilado</span> <span class="btn">Racks y contenedores</span>. Cuando hay algo marcado aparece <span class="btn">Revisar · 2</span>.</td></tr>
+          <tr><td class="task">Inicio</td><td>«Para hoy», y los botones de las tareas: <span class="btn">Nueva recolecta</span> <span class="btn">Separación</span> <span class="btn">Nueva cochada</span> <span class="btn">Recepción de material</span> <span class="btn">Nuevo ensilado</span> <span class="btn">Racks y contenedores</span> <span class="btn">Cómo usar la app</span> (esta guía; también abre sin señal). Cuando hay algo marcado aparece <span class="btn">Revisar · 2</span>.</td></tr>
           <tr><td class="task">Larvas</td><td>Las incubadoras y las cajas de engorde activas, con su día y su próximo paso. <span class="btn">Ver también las terminadas</span> muestra las anteriores.</td></tr>
           <tr><td class="task">Insectarios</td><td>Las jaulas, con su generación y su estado (con moscas, cerrada, limpia), y el 2 % que espera para repoblar.</td></tr>
           <tr><td class="task">Horno</td><td>El 98 % que espera el horno, las cochadas en el horno y las anteriores.</td></tr>

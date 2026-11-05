@@ -40,6 +40,8 @@ const COPY_FILES = [
   ['manifest.webmanifest', 'manifest.webmanifest'],
   ['sw.js', 'sw.js']
 ];
+/** The lab's own pages, opened from the app. The rest of docs/ stays out. */
+const PAGES = ['guia-app.html', 'protocolo.html'];
 const COPY_DIRS = ['src', 'vendor', 'fonts', 'img'];
 
 /** Precached so a cold launch with the radio off renders exactly as online. */
@@ -78,11 +80,18 @@ async function main() {
   await cp(p(SOURCE_HTML), d('index.html'));
   for (const [from, to] of COPY_FILES) await cp(p(from), d(to));
   for (const dir of COPY_DIRS) await cp(p(dir), d(dir), { recursive: true });
-  console.log(`  copy    index.html + ${COPY_FILES.length} files + ${COPY_DIRS.length} dirs`);
+  for (const page of PAGES) {
+    // The site's CSP allows nothing from other origins, and the shed has no signal.
+    if (/(?:href|src)\s*=\s*"https?:\/\//.test(await readFile(p('docs', page), 'utf8'))) {
+      throw new Error(`docs/${page} carga algo de otro sitio: en la app no funcionaría`);
+    }
+    await cp(p('docs', page), d(page));
+  }
+  console.log(`  copy    index.html + ${COPY_FILES.length} files + ${PAGES.length} pages + ${COPY_DIRS.length} dirs`);
 
   const found = [];
   for (const dir of COPY_DIRS) found.push(...await walk(d(dir)));
-  const urls = [...new Set([...EXTRA_PRECACHE, ...found.map(toUrl)])].sort();
+  const urls = [...new Set([...EXTRA_PRECACHE, ...PAGES.map(f => './' + f), ...found.map(toUrl)])].sort();
 
   // Version = hash of contents, so a rebuild with no changes keeps the same
   // cache and devices do not re-download the whole shell for nothing.

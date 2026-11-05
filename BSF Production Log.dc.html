@@ -2106,7 +2106,9 @@ class Component extends DCLogic {
       tile('Recepción de material', () => this.open('recepcion', {}), '#EAB308'),
       tile('Nuevo ensilado', () => this.open('ensiladoNuevo', {}), '#EAB308')
     ].concat(nRevisar ? [tile('Revisar · ' + nRevisar, () => this.open('revisar', {}), '#F87171')] : [])
-     .concat([tile('Racks y contenedores', () => this.open('racks', {}), '#5F7A68')]);
+     .concat([tile('Racks y contenedores', () => this.open('racks', {}), '#5F7A68'),
+              // A page of its own, offline too (sw.js); it links back to the app.
+              tile('Cómo usar la app', () => { window.location.href = './guia-app.html'; }, '#5F7A68')]);
 
     /* nombre */
     const typed = (f.operator_input || '').trim();
