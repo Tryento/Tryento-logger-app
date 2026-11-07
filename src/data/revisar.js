@@ -78,7 +78,7 @@ export function revisiones(d = {}, cfg = PROTOCOLO_DEFAULTS, pool = null) {
     const jaula = (d.jaulas || []).find(j => j.id === inc.jaula_id);
     const ingresosJaula = (d.ingresos || []).filter(i => vivo(i) && i.jaula_id === inc.jaula_id);
     if (esperada !== null && Number(inc.generacion) !== esperada && !aceptado(inc, jaula, ingresosJaula)) {
-      marcar('incubadora', inc.id, `Su jaula era F${esperada} en esa recolecta; esta incubadora dice F${inc.generacion}.`);
+      marcar('incubadora', inc.id, `Su insectario era F${esperada} en esa recolecta; esta incubadora dice F${inc.generacion}.`);
     }
   }
 
@@ -133,7 +133,7 @@ export function revisiones(d = {}, cfg = PROTOCOLO_DEFAULTS, pool = null) {
                        ...uso.cajas.map(c => incPor.get(cajaPor.get(c.caja_id)?.incubadora_id))];
       if (uso.generacion_larvas !== null && Number(ing.generacion) !== uso.generacion_larvas + 1 &&
           !aceptado(ing, fuentes)) {
-        marcar('ingreso', ing.id, `Sus larvas son F${uso.generacion_larvas}: la jaula sería F${uso.generacion_larvas + 1}, no F${ing.generacion}.`);
+        marcar('ingreso', ing.id, `Sus larvas son F${uso.generacion_larvas}: el insectario sería F${uso.generacion_larvas + 1}, no F${ing.generacion}.`);
       }
     }
   }

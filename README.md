@@ -56,18 +56,32 @@ delete, which phones can see). Run both before trusting the database.
 **The protocols (October 2026)** — the lab's real cycle, defined with them
 step by step: [docs/protocolo.html](docs/protocolo.html) (in Spanish, for the
 lab) and [docs/LAB_SPEC.md](docs/LAB_SPEC.md). Days, kilos and percentages
-live in the `app.parametro` table, not in code. Migration
-[`0010_ciclo_nuevo.sql`](supabase/migrations/0010_ciclo_nuevo.sql) rebuilt the
-schema for them and removed everything of the earlier protocols; 0001–0009 stay
-in the folder as history.
+live in the `app.parametro` table, not in code. [`0010_ciclo_nuevo.sql`](supabase/esquema/0010_ciclo_nuevo.sql) rebuilt the schema
+for them and removed everything of the earlier protocols (what came before it is
+in git history); [`0011_bandejas_y_reglas.sql`](supabase/esquema/0011_bandejas_y_reglas.sql)
+replaced racks with bandejas and added the two modes.
 
-**Objects and registries** — objects exist and are active or inactive (racks,
-contenedores, jaulas, incubadoras, cajas, bandejas de pupación, cochadas,
-ensilados); registries say what happened, when and who. Nothing is deleted: an
-object becomes inactive by its registries (distributed, separated, out of the
-oven, closed) or by an early close with a written reason. Every registry can be
-corrected at any time; a correction moves everything computed from it, and what
-a person recorded on top of it is marked **«revisar»** until reviewed.
+**SQL** — `supabase/esquema/` is the schema, numbered and append-only, run by hand
+before the push (not `supabase/migrations`, which Supabase's GitHub integration
+would apply to production on its own). `supabase/operaciones/` holds what is run by
+hand when decided: the full delete and the two modes. See [DEPLOY.md](DEPLOY.md).
+
+**Objects and registries** — objects exist and are active or inactive
+(contenedores, insectarios — `jaula` in the code and the tables —, incubadoras and
+cajas de engorde, each of them a **bandeja**, bandejas de pupación, cochadas,
+ensilados); registries say what happened, when and who. An object becomes inactive
+by its registries (distributed, separated, out of the oven, closed) or by an early
+close with a written reason. Every registry can be corrected at any time; a
+correction moves everything computed from it, and what a person recorded on top of
+it is marked **«revisar»** until reviewed.
+
+**Two modes** — `reglas_estrictas` in `app.parametro`, changed only by the SQL in
+`supabase/operaciones/`, which also moves what the database allows. Open: staff
+enter what they have and can delete a record (marked, with what hangs off it, so
+every phone drops it); only very odd things ask. Protected: the protocols' dates
+and order are enforced, nobody deletes, and a value is corrected only through
+`app.editar`, which keeps who and when. The public key never deletes a row and never
+changes a setting, in either mode.
 
 **Computed, never stored** — ages, the 2 % waiting and which cajas it came from
 (oldest first), the 98 % waiting for the oven, which ensilado each feeding drew
@@ -272,7 +286,7 @@ Each phone must be set up **at the office, online**, before it goes to the field
    stick; without it Safari clears site data after 7 days of non-use
 3. Confirm persistent storage was granted (the sync screen reports it)
 4. Let the first full pull finish
-5. Verify the cages (Insectarios) are listed, then go offline and reload to
+5. Verify the insectarios are listed (Laboratorio), then go offline and reload to
    prove the shell is cached
 
 Step 2 is not cosmetic. An evicted database takes every unsynced capture with
@@ -295,20 +309,23 @@ npm run check:all    # the above, plus both live checks against Supabase
   correction flags, "para hoy"
 - `test/flujo.test.mjs` — **a whole day in the lab through the data layer**:
   every action offline, then pushed by the real sync engine to a real Postgres
-  built from `SETUP_COMPLETO.sql`, pulled back, and two phones separating the
-  same caja
-- `test/sql-migrations.test.mjs` — 0010 on an empty database, over a replica of
-  production with data (people kept, everything else gone), run twice, and every
-  trigger and call
+  built from `SETUP_COMPLETO.sql`, in protected mode and as the public key, pulled
+  back, and two phones separating the same caja
+- `test/sql-migrations.test.mjs` — the schema on an empty database, 0011 over
+  production as 0010 left it, run twice, every trigger and call, both modes tried
+  with the public key, and the full delete
+- `test/vaciado.test.mjs` — the full delete as a phone lives it: it forgets its
+  rows and its queue, nothing comes back to the server, and later work stays
 - `test/contrato.test.mjs` — what the phone may correct equals what
   `app.editar` accepts; every store has its table; generated columns never sent
 - `test/herramientas.test.mjs`, `test/check-sync.test.mjs` — the production
   checks below, run against a local Postgres so their verdict can be trusted
 - `tools/check-ui.mjs` — the logic script parses; every `{{ binding }}` resolves;
   the offline blockers stay fixed
-- `tools/check-sql.mjs` — every migration parses against the real Postgres grammar
-- `tools/check-idb-browser.mjs` — **real Chrome at phone size**: the whole cycle
-  driven on screen like a person (`npm run build` first; `SHOTS=<folder>` saves
+- `tools/check-sql.mjs` — every SQL file parses against the real Postgres grammar
+- `tools/check-idb-browser.mjs` — **real Chrome at phone size**: the local database
+  upgrade, the whole cycle driven on screen like a person in protected mode, open
+  mode, and the two pages offline (`npm run build` first; `SHOTS=<folder>` saves
   screenshots)
 - `tools/check-sql-applied.mjs` — is the SQL the app needs live? Read-only
 - `tools/check-backend.mjs` — proves the live DATABASE works (schema, grants,

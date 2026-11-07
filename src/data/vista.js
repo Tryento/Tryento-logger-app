@@ -1,7 +1,7 @@
 /**
  * vista.js — the lab as the screens see it, worked out from the rows.
  *
- * One pass over everything the phone holds gives the state, age, rack and next
+ * One pass over everything the phone holds gives the state, age and next
  * steps of every object, the food cycle, the 2 % and 98 % waiting, the raw
  * material in store, and what needs a second look. Pure — read.js loads the
  * rows and the clock is passed in — so every rule is tested without storage.
@@ -23,10 +23,10 @@ import { revisiones } from './revisar.js';
 
 /** The stores a vista is built from, by the name the snapshot uses. */
 export const STORES_VISTA = [
-  'parametro', 'catalogo', 'rack', 'contenedor', 'jaula', 'recepcion', 'ensilado',
+  'parametro', 'catalogo', 'contenedor', 'jaula', 'recepcion', 'ensilado',
   'ensilado_insumo', 'incubadora', 'distribucion', 'caja', 'chequeo', 'alimentacion',
   'separacion', 'cochada', 'cochada_origen', 'cochada_lectura', 'ingreso',
-  'bandeja_pupacion', 'jaula_evento', 'movimiento'
+  'bandeja_pupacion', 'jaula_evento'
 ];
 
 const cronologico = (a, b) => String(a.fecha).localeCompare(String(b.fecha)) ||
@@ -49,25 +49,16 @@ function agrupar(rows, key) {
  */
 export function construirVista(s, cfg = PROTOCOLO_DEFAULTS, { hoy = farmDay(), ahora = Date.now() } = {}) {
   const v = k => (s[k] || []).filter(r => r && !r.deleted_at);
-  const racks = v('rack'), contenedores = v('contenedor'), jaulas = v('jaula');
+  const contenedores = v('contenedor'), jaulas = v('jaula');
   const incubadoras = v('incubadora'), distribuciones = v('distribucion'), cajas = v('caja');
   const chequeos = v('chequeo'), alimentaciones = v('alimentacion'), separaciones = v('separacion');
   const cochadas = v('cochada'), origenes = v('cochada_origen'), lecturas = v('cochada_lectura');
   const ingresos = v('ingreso'), bandejas = v('bandeja_pupacion'), eventos = v('jaula_evento');
-  const movimientos = v('movimiento'), recepciones = v('recepcion'), ensilados = v('ensilado');
+  const recepciones = v('recepcion'), ensilados = v('ensilado');
   const insumos = v('ensilado_insumo');
 
-  const rackPor = new Map(racks.map(r => [r.id, r]));
   const contPor = new Map(contenedores.map(c => [c.id, c]));
   const jaulaPor = new Map(jaulas.map(j => [j.id, j]));
-
-  // The rack an object is on: its last move, or where it started.
-  const movsPor = agrupar([...movimientos].sort(cronologico), 'objeto_id');
-  const rackDe = obj => {
-    const ms = movsPor.get(obj.id);
-    const id = ms?.length ? ms[ms.length - 1].rack_hasta : obj.rack_id;
-    return id ? { id, codigo: rackPor.get(id)?.codigo || '?' } : null;
-  };
 
   /* ── incubadoras ─────────────────────────────────────────────────────── */
   const distPor = new Map(distribuciones.map(d => [d.incubadora_id, d]));
@@ -77,14 +68,14 @@ export function construirVista(s, cfg = PROTOCOLO_DEFAULTS, { hoy = farmDay(), a
     const distribucion = distPor.get(i.id) || null;
     const estado = distribucion || i.cerrado_at ? 'inactivo' : 'activo';
     const ch = chequeosInc.get(i.id) || [];
-    const base = { ...i, dia0, estado };
+    // A recolecta from before the bandejas were counted occupies one.
+    const base = { ...i, dia0, estado, n_bandejas: Number(i.n_bandejas) || 1 };
     return {
       ...base,
       jaula: jaulaPor.get(i.jaula_id) || null,
       dia: diaCiclo(dia0, hoy),
       distribucion,
       chequeos: ch,
-      rack: rackDe(i),
       pasos: pasosIncubadora(base, { chequeos: ch }, cfg, hoy)
     };
   });
@@ -112,7 +103,6 @@ export function construirVista(s, cfg = PROTOCOLO_DEFAULTS, { hoy = farmDay(), a
       chequeos: ch,
       cargas: ca,
       en_ayuno: !separacion && ch.some(x => Number(x.dia) === cfg.dia_inicio_ayuno),
-      rack: rackDe(c),
       pasos: pasosCaja(base, { dia0: inc?.dia0, chequeos: ch, cargas: ca, separada: Boolean(separacion) }, cfg, hoy)
     };
   });
@@ -142,7 +132,7 @@ export function construirVista(s, cfg = PROTOCOLO_DEFAULTS, { hoy = farmDay(), a
   const ingresoPor = new Map(ingresosV.map(i => [i.id, i]));
   const bandejasV = bandejas.map(b => ({
     ...b, estado: 'inactivo', ingreso: ingresoPor.get(b.ingreso_id) || null,
-    jaula: jaulaPor.get(b.jaula_id) || null, rack: rackDe(b)
+    jaula: jaulaPor.get(b.jaula_id) || null
   }));
 
   /* ── the oven ────────────────────────────────────────────────────────── */
@@ -198,13 +188,13 @@ export function construirVista(s, cfg = PROTOCOLO_DEFAULTS, { hoy = farmDay(), a
 
   return {
     hoy, cfg,
-    racks, contenedores, recepciones,
+    contenedores, recepciones,
     jaulas: jaulasV, incubadoras: incs, cajas: cajasV,
     cochadas: cochadasV, ingresos: ingresosV, bandejas: bandejasV,
-    ensilados: ensiladosV, movimientos, eventos,
+    ensilados: ensiladosV, eventos,
     chequeos, alimentaciones, separaciones, origenes, lecturas, insumos, distribuciones,
     pool, horno, alimento, stock, revisar,
-    por: { jaula: jaulaPor, incubadora: incPor, caja: cajaPor, rack: rackPor, contenedor: contPor, ingreso: ingresoPor }
+    por: { jaula: jaulaPor, incubadora: incPor, caja: cajaPor, contenedor: contPor, ingreso: ingresoPor }
   };
 }
 

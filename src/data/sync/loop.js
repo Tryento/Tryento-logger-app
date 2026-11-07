@@ -1,7 +1,8 @@
 /**
  * loop.js — sync orchestration.
  *
- * Order is push -> pull -> blobs, and that order matters:
+ * Order is full-delete check -> push -> pull -> blobs, and that order matters:
+ *   the check   so what the server erased for good is not sent back to it
  *   push first  so the operator's own work leaves the device at the first
  *               opportunity, which is the thing that is irreplaceable if the
  *               phone is lost
@@ -13,7 +14,7 @@ import { canSync, isOnline, fetchSession, refreshSession, getClient, signInAnony
 import { cacheSession, hasSession, isTokenExpired, loadCachedSession } from '../session.js';
 import { AUTH_MODE } from '../config.js';
 import { pushAll } from './push.js';
-import { pullOnce, initialPull, hasInitialPull } from './pull.js';
+import { pullOnce, initialPull, hasInitialPull, revisarVaciado } from './pull.js';
 import { uploadPending } from './blobs.js';
 import { pruneDone } from '../outbox.js';
 import { setSyncing, markSynced, markSyncError, markDataChanged, refreshStatus } from '../status.js';
@@ -133,6 +134,8 @@ async function runSyncPass({ force }) {
         markSyncError(new Error('sesión no disponible'));
         return { skipped: 'sin sesión' };
       }
+
+      if (await revisarVaciado(db)) markDataChanged();
 
       const pushed = await pushAll(db);
 

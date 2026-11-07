@@ -23,9 +23,8 @@ import { ok, fail, CODES } from './envelope.js';
 /** What a queued item saves, with its article, for sentences. */
 const LABELS = {
   catalogo: 'el nombre',
-  rack: 'el rack',
   contenedor: 'el contenedor',
-  jaula: 'la jaula',
+  jaula: 'el insectario',
   recepcion: 'la recepción de material',
   ensilado: 'el ensilado',
   ensilado_insumo: 'el ensilado',
@@ -40,8 +39,7 @@ const LABELS = {
   cochada_lectura: 'la lectura del horno',
   ingreso: 'el ingreso al insectario',
   bandeja_pupacion: 'la bandeja de pupación',
-  jaula_evento: 'el cierre o la limpieza de la jaula',
-  movimiento: 'el cambio de rack',
+  jaula_evento: 'el cierre o la limpieza del insectario',
   distribuir: 'la distribución',
   crear_cochada: 'la cochada',
   ingresar: 'el ingreso al insectario',
@@ -49,7 +47,8 @@ const LABELS = {
   abrir_ensilado: 'la apertura del ensilado',
   cerrar_objeto: 'el cierre',
   editar: 'la corrección',
-  marcar_revisado: 'la revisión'
+  marcar_revisado: 'la revisión',
+  borrar_registros: 'el borrado'
 };
 
 const codigoDe = item =>
@@ -79,11 +78,13 @@ export function explain(item, err) {
       return `Ya existe el ensilado ${codigoDe(item)}: ese contenedor ya se llenó ese día.`;
     }
     if (item.rpc === 'ingresar') return 'Ya existe una bandeja de pupación con ese código. Descarta este ingreso y vuelve a registrarlo.';
-    if (item.table === 'rack' || item.table === 'contenedor') return `Ya existe ${what} con ese código.`;
-    if (item.table === 'jaula') return 'Ya existe una jaula con ese nombre o esa letra.';
+    if (item.table === 'contenedor') return `Ya existe ${what} con ese código.`;
+    if (item.table === 'jaula') return 'Ya existe un insectario con ese nombre o esa letra.';
     return `Ya hay en el servidor un registro igual: ${what}.`;
   }
-  if (code === '23514' && item.rpc === 'ingresar' && msg) return msg;
+  // These the database words for the operator; a plain check violation it does not.
+  if (code === '23514' && msg && (item.rpc === 'ingresar' || /todavía no ha llegado|quién la hizo/.test(msg))) return msg;
+  if (code === '42501' && item.rpc === 'borrar_registros' && msg) return msg;
   if (code === '23503') return `No se pudo guardar ${what}: depende de un registro que no existe en el servidor.`;
   if (code === '23514') return `No se pudo guardar ${what}: no cumple una regla del proceso.`;
   if (code === '42501' || err?.status === 403) return `No tienes permiso para guardar ${what}.`;

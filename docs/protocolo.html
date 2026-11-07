@@ -136,7 +136,7 @@
 <div class="page">
   <header>
     <a class="volver" href="./">← Volver a la app</a>
-    <div class="eyebrow">TryEnto · protocolo vigente · octubre 2026</div>
+    <div class="eyebrow">TryEnto · protocolo vigente · noviembre 2026</div>
     <h1>Cómo trabaja el laboratorio, y qué anota la app en cada paso</h1>
     <p class="lede">En <span class="proc">MAYÚSCULAS</span> van los procesos y periodos; en minúscula, las tareas que hacen los trabajadores. Lo que no aparece en este documento deja de existir en la app. Qué se toca en la app para cada tarea: <a href="guia-app.html">guía de la app</a>.</p>
   </header>
@@ -144,7 +144,7 @@
   <section>
     <h2>El ciclo completo</h2>
     <ol class="chain">
-      <li class="task"><b>recolecta</b> <span class="what">Lunes, miércoles y viernes, de cada insectario activo. Es el día 0: desde aquí se cuenta la edad.</span></li>
+      <li class="task"><b>recolecta</b> <span class="what">Lunes, miércoles y viernes, de cada insectario activo. Es el día 0: desde aquí se cuenta la edad. Los huevos se reparten en bandejas, de 2 a 5 g cada una, con 400 g de alimento inicial por bandeja.</span></li>
       <li><span class="proc">INCUBADORA</span> <span class="what">Días 0 a 7. Chequeo el día 3.</span></li>
       <li class="task"><b>tamizado, pesado y distribución</b> <span class="what">Día 7. La incubadora se reparte en varias cajas de engorde.</span></li>
       <li><span class="proc">BANDEJAS DE ENGORDE</span> <span class="what">Días 7 a ~16. Cargas los días 7, 10 y 13; chequeos los días 10 y 14; ayuno los días 14 y 15.</span></li>
@@ -155,7 +155,7 @@
         </div>
       </li>
       <li><span class="proc">BANDEJAS DE PUPACIÓN</span> <span class="what">Entran al insectario el mismo día que se arman.</span></li>
-      <li class="task"><b>ingreso al insectario</b> <span class="what">Repuebla una jaula ya cerrada y limpia: empieza una generación nueva.</span></li>
+      <li class="task"><b>ingreso al insectario</b> <span class="what">Repuebla un insectario ya cerrado y limpio: empieza una generación nueva.</span></li>
       <li><span class="proc">INSECTARIO</span> <span class="what">~14 días dando recolectas (lunes, miércoles y viernes). Luego: <b>cierre</b> → <b>limpieza</b> → nuevo <b>ingreso</b>.</span></li>
     </ol>
   </section>
@@ -238,7 +238,7 @@
         <text x="734" y="264" text-anchor="end" class="ev">chequeo; empieza el ayuno</text>
 
         <text class="strong" x="846" y="292" text-anchor="end">≈ 98 % al horno · ≈ 2 % vuelve al insectario</text>
-        <text class="note" x="40" y="326">Una recolecta = una incubadora. El día 7 esa incubadora se reparte en varias cajas de engorde; cada una se separa por su cuenta.</text>
+        <text class="note" x="40" y="326">Una recolecta = un código, en las bandejas que den sus huevos. El día 7 se reparte en cajas de engorde; cada una se separa por su cuenta.</text>
       </svg>
     </div>
   </section>
@@ -249,9 +249,9 @@
       <table>
         <thead><tr><th>Tarea</th><th>Cuándo</th><th>Qué se anota</th></tr></thead>
         <tbody>
-          <tr><td><b>recolecta</b></td><td class="when">día 0 · L/Mi/V</td><td>De qué jaula, en qué rack queda la incubadora, peso inicial de huevos/larvas (<b>g</b>), alimento inicial (<b>kg</b>).<span class="rule">La app propone el alimento habitual. Crea la incubadora con su código.</span></td></tr>
+          <tr><td><b>recolecta</b></td><td class="when">día 0 · L/Mi/V</td><td>De qué insectario, peso inicial de huevos/larvas (<b>g</b>), cuántas bandejas se arman, alimento inicial por bandeja (<b>g</b>).<span class="rule">La app calcula las bandejas con 2–5 g de huevos en cada una y propone 400 g de alimento por bandeja; se confirma o se cambia. Crea la incubadora con un solo código, un chequeo y una distribución para todas sus bandejas.</span></td></tr>
           <tr><td><b>chequeo</b> de la incubadora</td><td class="when">día 3</td><td>Humedad del sustrato (%), temperatura del sustrato (°C), peso (<b>g</b>).<span class="rule">Solo existen los chequeos programados: días 3, 10 y 14.</span></td></tr>
-          <tr><td><b>tamizado, pesado y distribución</b></td><td class="when">día 7</td><td>Peso total de larvas tamizadas (<b>kg</b>). Por cada caja: peso (<b>kg</b>), rack y carga 1.<span class="rule">La carga 1 se propone en 1,5 kg; se confirma o se cambia. La incubadora queda inactiva.</span></td></tr>
+          <tr><td><b>tamizado, pesado y distribución</b></td><td class="when">día 7</td><td>Peso total de larvas tamizadas (<b>kg</b>). Por cada caja: peso (<b>kg</b>) y carga 1.<span class="rule">La carga 1 se propone en 1,5 kg; se confirma o se cambia. La incubadora queda inactiva.</span></td></tr>
           <tr><td><b>chequeo</b> de la caja</td><td class="when">día 10</td><td>Humedad (%), temperatura (°C), peso (<b>kg</b>).<span class="rule">Va antes de la carga 2: la app pide el chequeo primero.</span></td></tr>
           <tr><td><b>carga 2</b> · <b>carga 3</b></td><td class="when">día 10 · día 13</td><td>Se confirma que se hizo, o se cambian los kg o la fecha.<span class="rule">La app propone 2 kg en cada una.</span></td></tr>
           <tr><td><b>chequeo</b> de la caja</td><td class="when">día 14</td><td>Humedad (%), temperatura (°C), peso (<b>kg</b>).<span class="rule">Empieza el ayuno: no se alimenta hasta la separación.</span></td></tr>
@@ -259,11 +259,10 @@
           <tr><td><b>cochada</b></td><td class="when">al cargar el horno</td><td>De qué separaciones sale y cuántos kg de cada una; peso inicial (<b>kg</b>).<span class="rule">La app sugiere lo que está esperando horno. El 98 % de una caja se puede repartir entre varias cochadas.</span></td></tr>
           <tr><td><b>temperatura a mitad</b></td><td class="when">en el horno</td><td>Temperatura (°C).<span class="rule">Si se olvidó, se puede anotar después de la salida.</span></td></tr>
           <tr><td><b>final</b></td><td class="when">al sacar</td><td>Temperatura (°C) y peso final (<b>kg</b>).<span class="rule">La cochada queda lista para empaque.</span></td></tr>
-          <tr><td><b>redistribución, pesado y acondicionado</b> + <b>ingreso al insectario</b></td><td class="when">al repoblar una jaula</td><td>La jaula (cerrada y limpia), cuántos kg de larvas se toman del 2 % acumulado, y cada bandeja de pupación: peso (<b>kg</b>) y rack.<span class="rule">La app propone 4,7 kg por bandeja (larvas + acondicionamiento); se confirma o se escribe el peso real, y la última puede pesar menos. El 2 % se usa del más antiguo al más nuevo.</span></td></tr>
-          <tr><td><b>cierre</b> de la jaula</td><td class="when">~14 días</td><td>Fecha y quién.<span class="rule">El día es orientativo: se cierra cuando corresponde.</span></td></tr>
-          <tr><td><b>limpieza</b> de la jaula</td><td class="when">después del cierre</td><td>Fecha y quién.<span class="rule">Sin limpieza anotada no se puede repoblar.</span></td></tr>
-          <tr><td><b>movimiento</b></td><td class="when">cuando pase</td><td>Qué incubadora, caja o bandeja, de qué rack a qué rack.</td></tr>
-          <tr><td><b>cierre antes de tiempo</b></td><td class="when">cuando pase</td><td>Motivo, escrito.<span class="rule">Para incubadoras, cajas, bandejas y cochadas que se pierden o contaminan. Nada se borra.</span></td></tr>
+          <tr><td><b>redistribución, pesado y acondicionado</b> + <b>ingreso al insectario</b></td><td class="when">al repoblar un insectario</td><td>El insectario (cerrado y limpio), cuántos kg de larvas se toman del 2 % acumulado, y cada bandeja de pupación: peso (<b>kg</b>).<span class="rule">La app propone 4,7 kg por bandeja (larvas + acondicionamiento); se confirma o se escribe el peso real, y la última puede pesar menos. El 2 % se usa del más antiguo al más nuevo.</span></td></tr>
+          <tr><td><b>cierre</b> del insectario</td><td class="when">~14 días</td><td>Fecha y quién.<span class="rule">El día es orientativo: se cierra cuando corresponde.</span></td></tr>
+          <tr><td><b>limpieza</b> del insectario</td><td class="when">después del cierre</td><td>Fecha y quién.<span class="rule">Sin limpieza anotada no se puede repoblar.</span></td></tr>
+          <tr><td><b>cierre antes de tiempo</b></td><td class="when">cuando pase</td><td>Motivo, escrito.<span class="rule">Para incubadoras, cajas, bandejas de pupación y cochadas que se pierden o contaminan. Quedan inactivas, con su motivo.</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -283,30 +282,31 @@
   </section>
 
   <section>
-    <h2>Códigos <span class="tag">los pone la app, salvo racks, contenedores y jaulas</span></h2>
+    <h2>Códigos <span class="tag">los pone la app, salvo contenedores e insectarios</span></h2>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Qué</th><th>Ejemplo</th><th>Cómo se lee</th></tr></thead>
         <tbody>
-          <tr><td>Incubadora</td><td class="code">F8A-12</td><td>Generación 8 · jaula A · recolecta 12 de esa generación (vuelve a 1 con cada generación).</td></tr>
+          <tr><td>Incubadora</td><td class="code">F8A-12</td><td>Generación 8 · insectario A · recolecta 12 de esa generación (vuelve a 1 con cada generación). Se escribe en todas sus bandejas.</td></tr>
           <tr><td>Caja de engorde</td><td class="code">F8A-12-03</td><td>Caja 3 de la incubadora F8A-12.</td></tr>
           <tr><td>Bandeja de pupación</td><td class="code">F8-B2810-1</td><td>Generación de sus larvas · armada el 28/10 · número 1 del día.</td></tr>
           <tr><td>Cochada</td><td class="code">H-2810-1</td><td>Horno · 28/10 · número 1 del día.</td></tr>
           <tr><td>Ensilado</td><td class="code">S2-2810</td><td>Contenedor S2 · ensilado el 28/10.</td></tr>
-          <tr><td>Rack · contenedor · jaula</td><td class="code">R1 · S2 · ICA (A)</td><td>Se registran una vez con el nombre que ya usa el laboratorio. Cada jaula lleva además una letra corta para los códigos.</td></tr>
+          <tr><td>Contenedor · insectario</td><td class="code">S2 · ICA (A)</td><td>Se registran una vez con el nombre que ya usa el laboratorio. Cada insectario lleva además una letra corta para los códigos.</td></tr>
         </tbody>
       </table>
     </div>
-    <p>El código es lo que se escribe en el recipiente, y <b>no cambia nunca</b>: si después se corrige la jaula, la generación o la fecha de la que salió, se corrige el dato y el código queda como estaba. La numeración sigue desde el último código dado.</p>
+    <p>El código es lo que se escribe en el recipiente, y <b>no cambia nunca</b>: si después se corrige el insectario, la generación o la fecha de la que salió, se corrige el dato y el código queda como estaba. La numeración sigue desde el último código dado.</p>
   </section>
 
   <section>
     <h2>Edad, generación y estado</h2>
     <div class="grid2">
       <div><h3>Edad</h3><p>Días desde la recolecta. Las cajas heredan la de su incubadora. Una bandeja de pupación que junta varias cajas muestra el rango de edades y trabaja con su promedio simple.</p></div>
-      <div><h3>Generación</h3><p>Cada jaula se registra una vez con su generación actual. Al repoblarla, su generación pasa a ser la de sus bandejas + 1. Si una bandeja mezcla generaciones (no debería), la app avisa y usa la más común.</p></div>
-      <div><h3>Estado</h3><p>Todo es <b>activo</b> o <b>inactivo</b>: la incubadora deja de estar activa al distribuirse, la caja al separarse, la bandeja al entrar a la jaula, la cochada al terminar el horno y la jaula al cerrarse. Nada se borra.</p></div>
-      <div><h3>Unidades</h3><p><b>Gramos</b>: peso inicial de la incubadora y peso del chequeo del día 3. <b>Kilos</b>: todo lo demás. Temperatura en °C, humedad en %.</p></div>
+      <div><h3>Bandeja</h3><p>Cada incubadora y cada caja de engorde es una bandeja, activa hasta que se distribuye o se separa. No se registran aparte: una recolecta dice cuántas ocupa. Las bandejas de pupación son otra cosa: se arman con el 2 % y entran al insectario.</p></div>
+      <div><h3>Generación</h3><p>Cada insectario se registra una vez con su generación actual. Al repoblarlo, su generación pasa a ser la de sus bandejas de pupación + 1. Si una bandeja mezcla generaciones (no debería), la app avisa y usa la más común.</p></div>
+      <div><h3>Estado</h3><p>Todo es <b>activo</b> o <b>inactivo</b>: la incubadora deja de estar activa al distribuirse, la caja al separarse, la bandeja de pupación al entrar al insectario, la cochada al terminar el horno y el insectario al cerrarse.</p></div>
+      <div><h3>Unidades</h3><p><b>Gramos</b>: peso inicial de la incubadora, alimento inicial por bandeja y peso del chequeo del día 3. <b>Kilos</b>: todo lo demás. Temperatura en °C, humedad en %.</p></div>
     </div>
   </section>
 
@@ -319,15 +319,16 @@
       <li>Cada registro admite <b>una foto y una nota</b>, que se pueden agregar después. Una foto nueva reemplaza a la anterior.</li>
       <li>Las tareas quedan con la fecha de hoy, y la hora se puede ajustar dentro del mismo día; si no se toca, queda la hora exacta. Solo la <b>recolecta</b> puede anotarse con fecha pasada, y solo con el interruptor <b>«excepción»</b>; el registro queda marcado. De esa recolecta no se reclaman los pasos que debían hacerse antes del día en que se anotó.</li>
     </ul>
-    <h3>Lo que la app no deja hacer, lo que pregunta y lo que sólo avisa</h3>
+    <div class="note-box warn"><p><b>La app trabaja en dos modos, y hoy está en el abierto.</b> En <b>modo abierto</b> se puede anotar tarde o fuera de orden, con cualquier fecha, y borrar registros; sólo lo muy raro pregunta «¿Guardar igual?». En <b>modo protegido</b> se cumple lo que sigue: nadie borra, y un dato equivocado se corrige dejando quién y cuándo, con su «revisar». Este es el protocolo que se sigue en los dos. Qué hace la app en cada caso: <a href="guia-app.html">guía de la app</a>.</p></div>
+    <h3>En modo protegido: lo que la app no deja hacer, lo que pregunta y lo que sólo avisa</h3>
     <ul class="plain">
-      <li>Recolectar de una jaula sin moscas; repoblar una jaula que no se cerró y limpió.</li>
+      <li>Recolectar de un insectario sin moscas; repoblar un insectario que no se cerró y limpió.</li>
       <li>La carga del día 10 antes del chequeo del día 10; cualquier carga después del chequeo del día 14 (empieza el ayuno).</li>
       <li>Distribuir dos veces una incubadora, separar dos veces una caja, o dos chequeos del mismo día. Un chequeo lleva sus tres datos.</li>
       <li>Llevar al horno más del 98 % que queda de una separación; ensilar más de lo que queda de una recepción, o antes de que llegara.</li>
       <li>Abrir un ensilado antes de su día 21.</li>
-      <li><b>Pregunta antes de guardar</b> («¿Guardar igual?»): un chequeo, una carga, la distribución o la separación con más de un día de anticipación (un toque equivocado no puede, por ejemplo, empezar el ayuno de una caja una semana antes); una carga sin la anterior; cajas que pesan más que lo tamizado. Una carga que quedó atrás cuando se dio la siguiente ya no se pide.</li>
-      <li>Sólo avisa: repoblar con más kilos de los que el 2 % tiene registrados (manda la balanza), una mezcla de generaciones, una segunda recolecta de la misma jaula el mismo día.</li>
+      <li><b>Pregunta antes de guardar</b> («¿Guardar igual?»): un chequeo, una carga, la distribución o la separación con más de un día de anticipación (un toque equivocado no puede, por ejemplo, empezar el ayuno de una caja una semana antes); una carga sin la anterior; cajas que pesan más que lo tamizado; una recolecta con bandejas fuera de los 2–5 g de huevos. Una carga que quedó atrás cuando se dio la siguiente ya no se pide.</li>
+      <li>Sólo avisa: repoblar con más kilos de los que el 2 % tiene registrados (manda la balanza), una mezcla de generaciones, una segunda recolecta del mismo insectario el mismo día.</li>
     </ul>
   </section>
 
@@ -335,14 +336,14 @@
     <h2>«Para hoy» <span class="tag">la pantalla de inicio</span></h2>
     <p>La app junta lo atrasado, lo de hoy y lo de los próximos dos días; cada línea abre su formulario ya completado.</p>
     <ul class="plain">
-      <li>Recolectas (L/Mi/V, por cada jaula activa).</li>
+      <li>Recolectas (L/Mi/V, por cada insectario activo).</li>
       <li>Chequeos de los días 3, 10 y 14.</li>
       <li>Distribución del día 7.</li>
       <li>Cargas 2 y 3.</li>
       <li>Separaciones.</li>
-      <li>El 2 % que espera una jaula limpia y el 98 % que espera horno.</li>
+      <li>El 2 % que espera un insectario limpio y el 98 % que espera horno.</li>
       <li>Las lecturas de la cochada.</li>
-      <li>Jaulas por cerrar y por limpiar.</li>
+      <li>Insectarios por cerrar y por limpiar.</li>
       <li>Ensilados por abrir y el plazo de 72 horas de los abiertos.</li>
       <li>Los registros marcados «revisar».</li>
     </ul>
@@ -361,10 +362,11 @@
           <tr><td>Separación</td><td>día 16 (orientativo)</td></tr>
           <tr><td>Reparto</td><td>98 % horno · 2 % retorno</td></tr>
           <tr><td>Bandeja de pupación</td><td>4,7 kg</td></tr>
-          <tr><td>Ciclo de la jaula</td><td>~14 días</td></tr>
+          <tr><td>Ciclo del insectario</td><td>~14 días</td></tr>
           <tr><td>Días de recolecta</td><td>lunes, miércoles y viernes</td></tr>
           <tr><td>Maduración</td><td>21 días · consumo en 72 horas</td></tr>
-          <tr><td>Alimento inicial habitual de la incubadora</td><td><b>por definir antes del arranque</b></td></tr>
+          <tr><td>Huevos por bandeja</td><td>de 2 a 5 g</td></tr>
+          <tr><td>Alimento inicial por bandeja</td><td>400 g</td></tr>
         </tbody>
       </table>
     </div>
@@ -373,7 +375,7 @@
   <section>
     <h2>El día del arranque</h2>
     <ul class="plain">
-      <li>Se registran los racks, los contenedores y las jaulas. Las jaulas que ya tienen moscas dan recolectas desde el primer día; sus avisos de cierre y limpieza empiezan con su próximo ciclo.</li>
+      <li>Se registran los contenedores y los insectarios. Los insectarios que ya tienen moscas dan recolectas desde el primer día; sus avisos de cierre y limpieza empiezan con su próximo ciclo.</li>
       <li>Las larvas que ya están en incubadoras o cajas se anotan como una recolecta con fecha pasada (excepción). Lo que debía hacerse antes de anotarlas aparece en su página como <b>pendiente</b>, no como atrasado.</li>
       <li>Los ensilados que ya están madurando no se anotan: el alimento se sigue desde el primer ensilado hecho en la app. Hasta entonces, las cargas quedan «sin ensilado».</li>
       <li>Antes de empezar se borran todos los datos anteriores de la app. El historial de AppSheet se guarda aparte, solo para consulta.</li>
@@ -383,10 +385,10 @@
   <section>
     <h2>Lo que deja de existir</h2>
     <div class="note-box warn">
-      <p>Biomasa, proyecciones, atractante y población del insectario · gramos de huevos, peso de ovipositores y «atrayente cambiado» de la recolecta · gramos de huevos e iniciador de la bandeja · el ayuno con peso al entrar y al salir · larva limpia y reserva de la separación · lotes, control de calidad (color, prueba crujiente), horas de secado, empaque, despacho y rechazo en la app · los pasos armado, sellado, listo, en uso y agotado del ensilaje y sus lecturas de temperatura · la temperatura de cama de los días 11 y 12 · las listas de tipo de alimento, tipo de iniciador y color dorado.</p>
+      <p>Los racks y los cambios de rack · biomasa, proyecciones, atractante y población del insectario · gramos de huevos, peso de ovipositores y «atrayente cambiado» de la recolecta · gramos de huevos e iniciador de la bandeja · el ayuno con peso al entrar y al salir · larva limpia y reserva de la separación · lotes, control de calidad (color, prueba crujiente), horas de secado, empaque, despacho y rechazo en la app · los pasos armado, sellado, listo, en uso y agotado del ensilaje y sus lecturas de temperatura · la temperatura de cama de los días 11 y 12 · las listas de tipo de alimento, tipo de iniciador y color dorado.</p>
     </div>
     <p>Más adelante, cada uno como proceso propio: el empaque y el inventario de lo horneado, el frass y la limpieza del laboratorio.</p>
   </section>
 
-  <footer>Definido con el laboratorio el 19 y 20 de octubre de 2026. Reemplaza al «protocolo de 16 días».</footer>
+  <footer>Definido con el laboratorio el 19 y 20 de octubre de 2026, y ajustado en noviembre: bandejas en vez de racks, e insectarios en vez de jaulas. Reemplaza al «protocolo de 16 días».</footer>
 </div>

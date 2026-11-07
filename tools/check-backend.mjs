@@ -111,15 +111,15 @@ export async function verificar(db, t, { bucket = 'fotos', fotos = true } = {}) 
     if (error) throw new Error(error.message);
     const p = Object.fromEntries(data.map(r => [r.clave, r.valor]));
     igual(p.pct_coccion, 98, 'pct_coccion');
-    return `${data.length} ajustes · alimento inicial usual: ${p.alimento_inicial_incubadora_kg ?? 'POR DEFINIR'}`;
-  }, 'Ejecuta 0010_ciclo_nuevo.sql.');
+    if (p.reglas_estrictas === undefined) throw new Error('falta el ajuste reglas_estrictas');
+    return `${data.length} ajustes · ${p.huevos_bandeja_min_g}–${p.huevos_bandeja_max_g} g por bandeja, ${p.alimento_bandeja_g} g de alimento · modo ${p.reglas_estrictas ? 'protegido' : 'abierto'}`;
+  }, 'Ejecuta supabase/esquema/0011_bandejas_y_reglas.sql.');
 
   const S = {};
   const sello = Date.now().toString(36).toUpperCase();
 
   /* 2 ── objects registered once */
-  const base = await paso('rack, contenedor y jaula', async () => {
-    S.rack = await insertar('rack', { id: uuid(), codigo: PREFIX + 'R' + sello });
+  const base = await paso('contenedor e insectario', async () => {
     S.cont = await insertar('contenedor', { id: uuid(), codigo: PREFIX + 'S' + sello });
     for (let i = 0; i < 4 && !S.jaula; i++) {
       const letra = 'Z' + String(Math.floor(Math.random() * 100)).padStart(2, '0');
@@ -129,18 +129,18 @@ export async function verificar(db, t, { bucket = 'fotos', fotos = true } = {}) 
       } catch (e) { if (e.code !== '23505') throw e; }
     }
     const j = await fila('jaula', S.jaula, 'fase, generacion, estado');
-    igual(`${j.fase}/${j.generacion}/${j.estado}`, 'activa/7/activo', 'jaula registrada con moscas, F7');
-    return 'la jaula toma su fase y generación al registrarse';
+    igual(`${j.fase}/${j.generacion}/${j.estado}`, 'activa/7/activo', 'insectario registrado con moscas, F7');
+    return 'el insectario toma su fase y generación al registrarse';
   }, 'Si dice "permission denied": faltan los grants o las políticas (0010, sección 10).');
   if (!base) { await limpiar(db, t); return; }
 
   /* 3 ── the larvae cycle */
   await paso('recolecta → incubadora (día 0 en hora de la granja)', async () => {
     S.inc = await insertar('incubadora', { id: uuid(), codigo: PREFIX + 'F7-' + sello, jaula_id: S.jaula, generacion: 7,
-      numero: 1, recolecta_at: new Date().toISOString(), rack_id: S.rack, peso_inicial_g: 12.5, alimento_inicial_kg: 2 });
-    const i = await fila('incubadora', S.inc, 'dia0, estado');
+      numero: 1, recolecta_at: new Date().toISOString(), n_bandejas: 3, peso_inicial_g: 12.5, alimento_inicial_kg: 1.2 });
+    const i = await fila('incubadora', S.inc, 'dia0, estado, n_bandejas');
     if (!i.dia0) throw new Error('el trigger no puso el día 0');
-    igual(i.estado, 'activo', 'estado');
+    igual(`${i.estado}/${i.n_bandejas}`, 'activo/3', 'estado y bandejas');
     return `día 0 ${i.dia0}`;
   });
 
@@ -154,7 +154,7 @@ export async function verificar(db, t, { bucket = 'fotos', fotos = true } = {}) 
   await paso('distribución: caja y carga 1 juntas, una sola vez', async () => {
     const dist = { id: uuid(), incubadora_id: S.inc, fecha: new Date().toISOString(), peso_total_kg: 1.8, registrado_por: POR };
     S.caja = uuid();
-    const cajas = [{ id: S.caja, codigo: PREFIX + 'F7-' + sello + '-01', numero: 1, rack_id: S.rack, peso_inicial_kg: 0.9 }];
+    const cajas = [{ id: S.caja, codigo: PREFIX + 'F7-' + sello + '-01', numero: 1, peso_inicial_kg: 0.9 }];
     const cargas = [{ id: uuid(), caja_id: S.caja, carga: 1, fecha: dist.fecha, kg: 1.5, kg_plan: 1.5, dia_plan: 7 }];
     await llamar('distribuir', { p_distribucion: dist, p_cajas: cajas, p_cargas: cargas });
     await llamar('distribuir', { p_distribucion: dist, p_cajas: cajas, p_cargas: cargas });
@@ -196,18 +196,18 @@ export async function verificar(db, t, { bucket = 'fotos', fotos = true } = {}) 
   });
 
   /* 4 ── the insectario */
-  await paso('jaula: cierre, limpieza y repoblado con el 2 %', async () => {
+  await paso('insectario: cierre, limpieza y repoblado con el 2 %', async () => {
     const ing = { id: uuid(), jaula_id: S.jaula, fecha: null, kg_larvas: 0.24, generacion: 8, registrado_por: POR };
-    const bandejas = [{ id: uuid(), codigo: PREFIX + 'B' + sello, numero: 1, rack_id: S.rack, peso_kg: 4.7 }];
+    const bandejas = [{ id: uuid(), codigo: PREFIX + 'B' + sello, numero: 1, peso_kg: 4.7 }];
     await rechaza(() => llamar('ingresar', { p_ingreso: { ...ing, fecha: new Date().toISOString() }, p_bandejas: bandejas }),
-                  '23514', 'repoblar una jaula con moscas');
+                  '23514', 'repoblar un insectario con moscas');
     const ahora = Date.now();
     await insertar('jaula_evento', { id: uuid(), jaula_id: S.jaula, tipo: 'cierre', fecha: new Date(ahora).toISOString() });
     await insertar('jaula_evento', { id: uuid(), jaula_id: S.jaula, tipo: 'limpieza', fecha: new Date(ahora + 1000).toISOString() });
-    igual((await fila('jaula', S.jaula, 'fase')).fase, 'limpia', 'jaula limpia');
+    igual((await fila('jaula', S.jaula, 'fase')).fase, 'limpia', 'insectario limpio');
     await llamar('ingresar', { p_ingreso: { ...ing, fecha: new Date(ahora + 2000).toISOString() }, p_bandejas: bandejas });
     const j = await fila('jaula', S.jaula, 'fase, generacion, ciclo_desde');
-    igual(`${j.fase}/${j.generacion}`, 'activa/8', 'jaula repoblada');
+    igual(`${j.fase}/${j.generacion}`, 'activa/8', 'insectario repoblado');
     return `F8 desde ${j.ciclo_desde}`;
   }, 'Revisa que la función app.ingresar exista (0010).');
 
@@ -225,18 +225,25 @@ export async function verificar(db, t, { bucket = 'fotos', fotos = true } = {}) 
     igual(`${new Date(e.abierto_at).toISOString()}/${e.abierto_por}`, `${at}/${POR}`, 'la primera apertura queda');
   });
 
-  /* 6 ── moves and early closing */
-  await paso('cambio de rack y cierre antes de tiempo', async () => {
-    await insertar('movimiento', { id: uuid(), objeto: 'caja', objeto_id: S.caja, rack_desde: S.rack, rack_hasta: S.rack,
-                                   fecha: new Date().toISOString() });
+  /* 6 ── early closing */
+  await paso('cierre antes de tiempo', async () => {
     S.inc2 = await insertar('incubadora', { id: uuid(), codigo: PREFIX + 'F7-' + sello + 'B', jaula_id: S.jaula, generacion: 8,
-      numero: 2, recolecta_at: new Date().toISOString(), rack_id: S.rack, peso_inicial_g: 10, alimento_inicial_kg: 2 });
+      numero: 2, recolecta_at: new Date().toISOString(), peso_inicial_g: 10, alimento_inicial_kg: 0.4 });
     await llamar('cerrar_objeto', { p_tabla: 'incubadora', p_id: S.inc2, p_motivo: 'prueba', p_at: null, p_por: POR });
     const i = await fila('incubadora', S.inc2, 'estado, motivo_cierre');
     igual(`${i.estado}/${i.motivo_cierre}`, 'inactivo/prueba', 'cerrada');
   });
 
-  /* 7 ── photo storage */
+  /* 7 ── what the public key may not do */
+  await paso('la llave pública no borra filas ni cambia los ajustes', async () => {
+    const { error: e1 } = await db.from('contenedor').delete().eq('id', S.cont);
+    igual(e1?.code, '42501', 'DELETE con la llave pública');
+    // Aimed at a setting that does not exist, so it changes nothing even if allowed.
+    const { error: e2 } = await db.from('parametro').update({ descripcion: 'prueba' }).eq('clave', 'no-existe');
+    igual(e2?.code, '42501', 'cambiar un ajuste con la llave pública');
+  }, 'Ejecuta supabase/esquema/0011_bandejas_y_reglas.sql.');
+
+  /* 8 ── photo storage */
   if (fotos) {
     await paso('almacenamiento de fotos', async () => {
       const b = db.storage.from(bucket);

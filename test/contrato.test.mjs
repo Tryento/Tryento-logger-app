@@ -15,28 +15,29 @@ import { toWire } from '../src/data/sync/push.js';
 
 const sql = (await setupFiles()).map(f => f.body).join('\n');
 
-/** The body of a plpgsql function, by name. */
+/** The body of a plpgsql function, by name: the last definition is the one in force. */
 function funcion(nombre) {
-  const m = new RegExp(`create or replace function app\\.${nombre}\\(([\\s\\S]*?)\\$\\$;`, 'i').exec(sql);
-  assert.ok(m, `no encuentro app.${nombre}`);
-  return m[1];
+  const todas = [...sql.matchAll(new RegExp(`create or replace function app\\.${nombre}\\(([\\s\\S]*?)\\$\\$;`, 'gi'))];
+  assert.ok(todas.length, `no encuentro app.${nombre}`);
+  return todas[todas.length - 1][1];
 }
 
-/** CREATE TABLE app.x ( … ) bodies. */
+/** CREATE TABLE app.x ( … ) bodies, without the tables a later file dropped. */
 function tablas() {
   const out = new Map();
   const re = /create table if not exists app\.(\w+)\s*\(([\s\S]*?)\n\);/gi;
   let m;
   while ((m = re.exec(sql))) out.set(m[1], m[2]);
+  for (const d of sql.matchAll(/drop table if exists app\.(\w+)/gi)) out.delete(d[1]);
   return out;
 }
+
+const lista = texto => [...texto.matchAll(/'(\w+)'/g)].map(x => x[1]).sort();
 
 test('every correction the phone offers, app.editar accepts — and nothing more', () => {
   const cuerpo = funcion('editar');
   const servidor = {};
-  for (const m of cuerpo.matchAll(/when '(\w+)'\s+then array\[([^\]]*)\]/g)) {
-    servidor[m[1]] = [...m[2].matchAll(/'(\w+)'/g)].map(x => x[1]).sort();
-  }
+  for (const m of cuerpo.matchAll(/when '(\w+)'\s+then array\[([^\]]*)\]/g)) servidor[m[1]] = lista(m[2]);
   const telefono = {};
   for (const [tabla, def] of Object.entries(EDITABLE)) {
     telefono[tabla] = [...def.campos.map(c => c[0]), ...SIEMPRE].sort();
@@ -45,11 +46,13 @@ test('every correction the phone offers, app.editar accepts — and nothing more
 });
 
 test('"Revisado" is offered on exactly the records app.marcar_revisado takes', () => {
-  const cuerpo = funcion('marcar_revisado');
-  const lista = /p_tabla not in \(([\s\S]*?)\)/.exec(cuerpo)[1];
-  const servidor = [...lista.matchAll(/'(\w+)'/g)].map(x => x[1]).sort();
-  const telefono = Object.keys(EDITABLE).filter(t => !['rack', 'contenedor'].includes(t)).sort();
-  assert.deepEqual(telefono, servidor);
+  const servidor = lista(/p_tabla not in \(([\s\S]*?)\)/.exec(funcion('marcar_revisado'))[1]);
+  assert.deepEqual(Object.keys(EDITABLE).filter(t => t !== 'contenedor').sort(), servidor);
+});
+
+test('every record the phone can delete, app.borrar_registros takes', () => {
+  const servidor = lista(/t not in \(([\s\S]*?)\)/.exec(funcion('borrar_registros'))[1]);
+  assert.deepEqual(Object.keys(EDITABLE).sort(), servidor);
 });
 
 test('every synced store has its table, and every table its store', () => {

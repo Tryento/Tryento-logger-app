@@ -28,6 +28,7 @@ import { kgTxt, diaTxt, fechaHoraTxt, cuandoTxt } from './formato.js';
 import { farmDay, toNaiveLocal } from './time.js';
 import { generacionDeJaula } from './revisar.js';
 import { resumenLab } from './resumen.js';
+import { avisoBorrado } from './borrado.js';
 
 export async function getProtocolo() {
   return ok(await protocolo(await openDb()));
@@ -35,7 +36,7 @@ export async function getProtocolo() {
 
 /* ── shaping helpers ──────────────────────────────────────────────────────── */
 
-const FASE_TXT = { activa: 'Con moscas', cerrada: 'Cerrada', limpia: 'Limpia' };
+const FASE_TXT = { activa: 'Con moscas', cerrada: 'Cerrado', limpia: 'Limpio' };
 const ENSILADO_TXT = { madurando: 'Madurando', abierto: 'Abierto', vencido: 'Vencido' };
 /** Past its 72 h: "Consumido" only if nothing was left to discard. */
 const ensiladoTxt = e => (e.estado === 'vencido' && !(e.kg_descartado > 0) ? 'Consumido' : ENSILADO_TXT[e.estado]);
@@ -50,6 +51,13 @@ const paso = p => {
            cuando: pendiente ? 'pendiente' : cuandoLabel(p) };
 };
 const primerPaso = pasos => paso((pasos || []).find(p => !p.bloqueado) || null);
+
+/** In open mode, what was never recorded can still be entered late: scheduled
+ *  chequeos and cargas missing from an object and not among its steps. */
+function atrasables(cfg, dias, hechos, pasos, tipo) {
+  if (cfg.reglas_estrictas) return [];
+  return dias.filter(d => !hechos.includes(d) && !pasos.some(p => p.paso === tipo && (p.carga ?? p.dia) === d));
+}
 
 /** Where an object's food came from, in words. */
 function origenAlimento(v, id) {
@@ -78,17 +86,11 @@ function registro(v, tabla, r, titulo, detalle, { fecha } = {}) {
     foto_key: r.foto_key || null,
     revisar: motivosRevisar(v, tabla, r.id),
     editable: Boolean(EDITABLE[tabla]),
-    revisable: !['rack', 'contenedor'].includes(tabla)
+    revisable: tabla !== 'contenedor'
   };
 }
 
 const porFechaDesc = (a, b) => String(b.fecha).localeCompare(String(a.fecha));
-
-function registrosMovimiento(v, objId) {
-  return v.movimientos.filter(m => m.objeto_id === objId).map(m =>
-    registro(v, 'movimiento', m, 'Cambio de rack',
-             `${v.por.rack.get(m.rack_desde)?.codigo || '—'} → ${v.por.rack.get(m.rack_hasta)?.codigo || '?'}`));
-}
 
 const chequeoTxt = c =>
   `${kgTxt(c.humedad_pct)} % · ${kgTxt(c.temperatura_c)} °C · ${c.peso_g != null ? `${kgTxt(c.peso_g)} g` : `${kgTxt(c.peso_kg)} kg`}`;
@@ -113,7 +115,7 @@ export async function getInicio() {
     },
     pool_kg: v.pool.kg_pendiente,
     horno_kg: kg3(v.horno.reduce((s, h) => s + h.kg_pendiente, 0)),
-    vacio: !v.jaulas.length && !v.racks.length
+    vacio: !v.jaulas.length || !v.contenedores.length
   });
 }
 
@@ -135,21 +137,21 @@ export async function getResumen({ periodo = '30' } = {}) {
 
   const jaulasSub = a.jaulas.total
     ? [a.jaulas.generaciones.map(g => (g.n > 1 ? `F${g.generacion} ×${g.n}` : `F${g.generacion}`)).join(' · '),
-       a.jaulas.cerradas ? plural(a.jaulas.cerradas, 'cerrada', 'cerradas') : null,
-       a.jaulas.limpias ? plural(a.jaulas.limpias, 'limpia', 'limpias') : null].filter(Boolean).join(' · ')
-    : 'Ninguna registrada';
+       a.jaulas.cerradas ? plural(a.jaulas.cerradas, 'cerrado', 'cerrados') : null,
+       a.jaulas.limpias ? plural(a.jaulas.limpias, 'limpio', 'limpios') : null].filter(Boolean).join(' · ')
+    : 'Ninguno registrado';
   const ens = a.ensilado;
   const ahora = [
-    { valor: String(a.jaulas.con_moscas), label: a.jaulas.con_moscas === 1 ? 'jaula con moscas' : 'jaulas con moscas',
-      sub: jaulasSub, ir: 'jaulas' },
+    { valor: String(a.jaulas.con_moscas), label: a.jaulas.con_moscas === 1 ? 'insectario con moscas' : 'insectarios con moscas',
+      sub: jaulasSub, ir: 'lab', filtro: 'insectarios' },
     { valor: String(a.incubadoras.activas), label: a.incubadoras.activas === 1 ? 'incubadora activa' : 'incubadoras activas',
-      sub: diasTxt(a.incubadoras.dias), ir: 'larvas' },
+      sub: diasTxt(a.incubadoras.dias), ir: 'lab', filtro: 'bandejas' },
     { valor: String(a.cajas.activas), label: a.cajas.activas === 1 ? 'caja de engorde' : 'cajas de engorde',
-      sub: [a.cajas.en_ayuno ? `${a.cajas.en_ayuno} en ayuno` : null, diasTxt(a.cajas.dias)].filter(Boolean).join(' · '), ir: 'larvas' },
+      sub: [a.cajas.en_ayuno ? `${a.cajas.en_ayuno} en ayuno` : null, diasTxt(a.cajas.dias)].filter(Boolean).join(' · '), ir: 'lab', filtro: 'bandejas' },
     { valor: String(a.cochadas_en_horno), label: a.cochadas_en_horno === 1 ? 'cochada en el horno' : 'cochadas en el horno',
       sub: '', ir: 'horno' },
     { valor: `${kgTxt(a.horno_kg)} kg`, label: '98 % esperando el horno', sub: '', ir: 'horno' },
-    { valor: `${kgTxt(a.pool_kg)} kg`, label: '2 % esperando para repoblar', sub: '', ir: 'jaulas' },
+    { valor: `${kgTxt(a.pool_kg)} kg`, label: '2 % esperando para repoblar', sub: '', ir: 'lab', filtro: 'insectarios' },
     ens.abiertos
       ? { valor: `${kgTxt(ens.kg_restante)} kg`, label: ens.abiertos === 1 ? 'en el ensilado abierto' : `en ${ens.abiertos} ensilados abiertos`,
           sub: `Vence ${horaLocal(ens.vence_at)}`, ir: 'alimento' }
@@ -195,7 +197,7 @@ export async function getResumen({ periodo = '30' } = {}) {
       X.n ? 'Cerrados antes de tiempo: ' + [X.incubadoras ? plural(X.incubadoras, 'incubadora', 'incubadoras') : null,
                                             X.cajas ? plural(X.cajas, 'caja', 'cajas') : null,
                                             X.cochadas ? plural(X.cochadas, 'cochada', 'cochadas') : null,
-                                            X.bandejas ? plural(X.bandejas, 'bandeja', 'bandejas') : null].filter(Boolean).join(', ')
+                                            X.bandejas ? plural(X.bandejas, 'bandeja de pupación', 'bandejas de pupación') : null].filter(Boolean).join(', ')
           : null
     ].filter(Boolean)
   };
@@ -204,15 +206,15 @@ export async function getResumen({ periodo = '30' } = {}) {
   const insectario = {
     titulo: 'INSECTARIO',
     nota: Rc.n ? '' : 'Ninguna recolecta en este periodo.',
-    barrasTitulo: 'Recolectado por jaula',
+    barrasTitulo: 'Recolectado por insectario',
     barras: Rc.por_jaula.map(j => ({ nombre: j.nombre, g: j.g,
                                      texto: `${kgTxt(j.g)} g · ${plural(j.recolectas, 'recolecta', 'recolectas')}` })),
     lineas: [
       Rc.n ? `Recolectas: ${Rc.n} · ${kgTxt(Rc.g)} g · ${kgTxt(Rc.g_prom)} g por recolecta` : null,
-      CJ.n ? `${plural(CJ.n, 'ciclo de jaula cerrado', 'ciclos de jaula cerrados')}: ${kgTxt(CJ.dias_prom)} días, ` +
+      CJ.n ? `${plural(CJ.n, 'ciclo de insectario cerrado', 'ciclos de insectario cerrados')}: ${kgTxt(CJ.dias_prom)} días, ` +
              `${kgTxt(CJ.recolectas_prom)} recolectas y ${kgTxt(CJ.g_prom)} g por ciclo, en promedio`
-           : 'Ningún ciclo de jaula se cerró en este periodo.',
-      RP.n ? `${plural(RP.n, 'repoblado', 'repoblados')}: ${kgTxt(RP.kg_larvas)} kg de larvas en ${plural(RP.bandejas, 'bandeja', 'bandejas')}`
+           : 'Ningún ciclo de insectario se cerró en este periodo.',
+      RP.n ? `${plural(RP.n, 'repoblado', 'repoblados')}: ${kgTxt(RP.kg_larvas)} kg de larvas en ${plural(RP.bandejas, 'bandeja de pupación', 'bandejas de pupación')}`
            : 'Ningún repoblado en este periodo.'
     ].filter(Boolean)
   };
@@ -271,18 +273,41 @@ export async function getResumen({ periodo = '30' } = {}) {
   });
 }
 
-/* ── racks, containers ────────────────────────────────────────────────────── */
+/* ── the lab ──────────────────────────────────────────────────────────────── */
 
-export async function listRacks() {
+const URGENCIA = { atrasado: 0, hoy: 1, pendiente: 2, proximo: 3 };
+const urgencia = f => (f.paso ? URGENCIA[f.paso.estado] ?? 4 : 4);
+
+/**
+ * The lab in one list: every insectario and every bandeja (each incubadora and
+ * each caja de engorde) with how it is doing and what it needs next, the most
+ * pressing first. All that are active; of the rest, the most recent, with the
+ * true totals so the counts on screen are never short.
+ */
+const INACTIVAS_A_LA_VISTA = 60;
+
+export async function getLaboratorio() {
   const v = await vistaActual(await openDb());
-  const enRack = id => [
-    ...v.incubadoras.filter(i => i.estado === 'activo' && i.rack?.id === id).map(i => i.codigo),
-    ...v.cajas.filter(c => c.estado === 'activo' && c.rack?.id === id).map(c => c.codigo)
+  const insectarios = v.jaulas.map(j => ({ ...jaulaFila(v, j), activo: j.fase === 'activa' }))
+    .sort((a, b) => Number(b.activo) - Number(a.activo) || urgencia(a) - urgencia(b) || a.nombre.localeCompare(b.nombre, 'es'));
+  const filas = [
+    ...v.incubadoras.map(i => ({ ...incubadoraFila(v, i), tipo: 'incubadora', n: i.n_bandejas, activo: i.estado === 'activo', dia0: i.dia0 })),
+    ...v.cajas.map(c => ({ ...cajaFila(v, c), tipo: 'caja', n: 1, activo: c.estado === 'activo', dia0: c.dia0 }))
   ];
-  return ok(v.racks.map(r => ({ id: r.id, codigo: r.codigo, objetos: enRack(r.id),
-                                registro: registro(v, 'rack', r, `Rack ${r.codigo}`, '') }))
-    .sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true })));
+  const activas = filas.filter(b => b.activo)
+    .sort((a, b) => urgencia(a) - urgencia(b) || String(a.dia0).localeCompare(String(b.dia0)) || a.codigo.localeCompare(b.codigo));
+  const inactivas = filas.filter(b => !b.activo)
+    .sort((a, b) => String(b.dia0).localeCompare(String(a.dia0)) || a.codigo.localeCompare(b.codigo));
+  return ok({
+    insectarios,
+    bandejas: [...activas, ...inactivas.slice(0, INACTIVAS_A_LA_VISTA)],
+    bandejas_total: filas.reduce((t, b) => t + b.n, 0),
+    inactivas_sin_ver: Math.max(0, inactivas.length - INACTIVAS_A_LA_VISTA),
+    pool_kg: v.pool.kg_pendiente
+  });
 }
+
+/* ── containers ───────────────────────────────────────────────────────────── */
 
 export async function listContenedores() {
   const v = await vistaActual(await openDb());
@@ -301,18 +326,9 @@ function jaulaFila(v, j) {
     id: j.id, nombre: j.nombre, letra: j.letra, lugar: j.lugar,
     fase: j.fase, faseTxt: FASE_TXT[j.fase], generacion: j.generacion,
     dia_ciclo: j.dia_ciclo,
-    linea: [`F${j.generacion}`, FASE_TXT[j.fase],
-            j.dia_ciclo !== null ? `día ${j.dia_ciclo} del ciclo` : null, j.lugar || null].filter(Boolean).join(' · '),
+    linea: [`F${j.generacion}`, j.dia_ciclo !== null ? `día ${j.dia_ciclo} del ciclo` : null, j.lugar || null].filter(Boolean).join(' · '),
     paso: primerPaso(j.pasos.filter(p => p.aviso))
   };
-}
-
-export async function listJaulas() {
-  const v = await vistaActual(await openDb());
-  return ok({
-    jaulas: v.jaulas.map(j => jaulaFila(v, j)).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
-    pool_kg: v.pool.kg_pendiente
-  });
 }
 
 function ingresoRegistros(v, i) {
@@ -325,8 +341,7 @@ function ingresoRegistros(v, i) {
     (l?.mezcla ? ` · mezcla de F${l.generaciones.join(', F')}` : '') +
     (l?.faltan_kg > 0 ? ` · ${kgTxt(l.faltan_kg)} kg sin registro en el 2 %` : ''))];
   for (const b of i.bandejas) {
-    out.push(registro(v, 'bandeja_pupacion', b, `Bandeja ${b.codigo}`,
-      `${kgTxt(b.peso_kg)} kg · rack ${v.por.rack.get(b.rack_id)?.codigo || '—'}`, { fecha: i.fecha }));
+    out.push(registro(v, 'bandeja_pupacion', b, `Bandeja de pupación ${b.codigo}`, `${kgTxt(b.peso_kg)} kg`, { fecha: i.fecha }));
   }
   return out;
 }
@@ -334,11 +349,11 @@ function ingresoRegistros(v, i) {
 export async function getJaula(id) {
   const v = await vistaActual(await openDb());
   const j = v.jaulas.find(x => x.id === id);
-  if (!j) return fail(CODES.NOT_FOUND, 'Jaula no encontrada.');
+  if (!j) return fail(CODES.NOT_FOUND, 'Insectario no encontrado.');
   const ingresos = v.ingresos.filter(i => i.jaula_id === id);
   const registros = [
-    registro(v, 'jaula', j, 'Registro de la jaula',
-             `Letra ${j.letra} · F${j.generacion_inicial} al registrarla · ${FASE_TXT[j.fase_inicial]}`,
+    registro(v, 'jaula', j, 'Registro del insectario',
+             `Letra ${j.letra} · F${j.generacion_inicial} al registrarlo · ${FASE_TXT[j.fase_inicial]}`,
              { fecha: j.created_at }),
     ...ingresos.flatMap(i => ingresoRegistros(v, i)),
     ...j.eventos.map(e => registro(v, 'jaula_evento', e, e.tipo === 'cierre' ? 'Cierre' : 'Limpieza', ''))
@@ -352,8 +367,8 @@ export async function getJaula(id) {
     facts: [
       ['Generación', `F${j.generacion}`], ['Estado', FASE_TXT[j.fase]],
       ['Ciclo', j.ciclo_desde ? `desde ${diaTxt(j.ciclo_desde)} (día ${j.dia_ciclo})`
-        : j.fase === 'activa' ? 'sin fecha (ya tenía moscas al registrarla)'
-        : j.fase === 'limpia' ? 'empieza al repoblarla' : 'sin fecha'],
+        : j.fase === 'activa' ? 'sin fecha (ya tenía moscas al registrarlo)'
+        : j.fase === 'limpia' ? 'empieza al repoblarlo' : 'sin fecha'],
       ['Lugar', j.lugar || '—']
     ],
     pasos: j.pasos.map(paso),
@@ -365,25 +380,18 @@ export async function getJaula(id) {
 
 /* ── incubadoras ──────────────────────────────────────────────────────────── */
 
+const bandejasTxt = n => (n === 1 ? '1 bandeja' : `${n} bandejas`);
+
 function incubadoraFila(v, i) {
   return {
     id: i.id, codigo: i.codigo, estado: i.estado, dia: i.dia,
     jaula: i.jaula?.nombre || '?',
-    linea: [`Día ${i.dia}`, i.jaula?.nombre, i.rack ? `rack ${i.rack.codigo}` : null,
+    linea: [`Día ${i.dia}`, bandejasTxt(i.n_bandejas), i.jaula?.nombre,
             i.excepcion ? 'registrada tarde' : null].filter(Boolean).join(' · '),
     paso: primerPaso(i.pasos.filter(p => p.aviso)),
     revisar: motivosRevisar(v, 'incubadora', i.id).length > 0,
     estadoTxt: i.estado === 'activo' ? 'En incubadora' : i.distribucion ? 'Distribuida' : 'Cerrada'
   };
-}
-
-export async function listIncubadoras({ inactivas = false } = {}) {
-  const v = await vistaActual(await openDb());
-  const rows = v.incubadoras
-    .filter(i => inactivas || i.estado === 'activo')
-    .sort((a, b) => (a.estado === b.estado ? 0 : a.estado === 'activo' ? -1 : 1) ||
-                    String(b.recolecta_at).localeCompare(String(a.recolecta_at)));
-  return ok(rows.slice(0, inactivas ? 60 : 500).map(i => incubadoraFila(v, i)));
 }
 
 export async function getIncubadora(id) {
@@ -393,20 +401,20 @@ export async function getIncubadora(id) {
   const cajas = v.cajas.filter(c => c.incubadora_id === id).sort((a, b) => a.numero - b.numero);
   const registros = [
     registro(v, 'incubadora', i, 'Recolecta',
-             `${kgTxt(i.peso_inicial_g)} g · ${kgTxt(i.alimento_inicial_kg)} kg de alimento` +
+             `${kgTxt(i.peso_inicial_g)} g · ${bandejasTxt(i.n_bandejas)} · ${kgTxt(i.alimento_inicial_kg)} kg de alimento` +
              (origenAlimento(v, i.id) ? ` (${origenAlimento(v, i.id)})` : ''),
              { fecha: i.recolecta_at }),
     ...i.chequeos.map(c => registro(v, 'chequeo', c, `Chequeo día ${c.dia}`, chequeoTxt(c))),
     ...(i.distribucion ? [registro(v, 'distribucion', i.distribucion, 'Tamizado, pesado y distribución',
-        `${kgTxt(i.distribucion.peso_total_kg)} kg tamizados · ${cajas.length} caja${cajas.length === 1 ? '' : 's'}`)] : []),
-    ...registrosMovimiento(v, id)
+        `${kgTxt(i.distribucion.peso_total_kg)} kg tamizados · ${cajas.length} caja${cajas.length === 1 ? '' : 's'}`)] : [])
   ].sort(porFechaDesc);
   return ok({
     incubadora: incubadoraFila(v, i),
     facts: [
-      ['Jaula', `${i.jaula?.nombre || '?'} · F${i.generacion}`], ['Día', String(i.dia)],
-      ['Recolecta', fechaHoraTxt(i.recolecta_at)], ['Rack', i.rack?.codigo || '—'],
-      ['Peso inicial', `${kgTxt(i.peso_inicial_g)} g`], ['Alimento inicial', `${kgTxt(i.alimento_inicial_kg)} kg`]
+      ['Insectario', `${i.jaula?.nombre || '?'} · F${i.generacion}`], ['Día', String(i.dia)],
+      ['Recolecta', fechaHoraTxt(i.recolecta_at)], ['Bandejas', String(i.n_bandejas)],
+      ['Peso inicial', `${kgTxt(i.peso_inicial_g)} g`],
+      ['Alimento inicial', `${kgTxt(i.alimento_inicial_kg)} kg · ${kgTxt(Math.round(i.alimento_inicial_kg * 1000 / i.n_bandejas))} g por bandeja`]
     ],
     sin_ensilado: sinEnsilado(v, i.id),
     cierre: cierreTxt(i),
@@ -414,6 +422,7 @@ export async function getIncubadora(id) {
     pasos: i.pasos.map(paso),
     cajas: cajas.map(c => cajaFila(v, c)),
     registros,
+    faltan_chequeos: i.cerrado_at ? [] : atrasables(v.cfg, [v.cfg.dia_chequeo_incubadora], i.chequeos.map(c => Number(c.dia)), i.pasos, 'chequeo'),
     activa: i.estado === 'activo'
   });
 }
@@ -426,20 +435,10 @@ function cajaFila(v, c) {
   return {
     id: c.id, codigo: c.codigo, estado: c.estado, estadoTxt, dia: c.dia, en_ayuno: c.en_ayuno,
     incubadora_id: c.incubadora_id, incubadora: c.incubadora_codigo, numero: c.numero,
-    linea: [`Día ${c.dia}`, c.rack ? `rack ${c.rack.codigo}` : null,
-            `cargas ${c.cargas.map(x => x.carga).join(', ') || '—'}`].filter(Boolean).join(' · '),
+    linea: [`Día ${c.dia}`, `cargas ${c.cargas.map(x => x.carga).join(', ') || '—'}`].join(' · '),
     paso: primerPaso(c.pasos.filter(p => p.aviso)),
     revisar: motivosRevisar(v, 'caja', c.id).length > 0
   };
-}
-
-export async function listCajas({ inactivas = false } = {}) {
-  const v = await vistaActual(await openDb());
-  const rows = v.cajas
-    .filter(c => inactivas || c.estado === 'activo')
-    .sort((a, b) => (a.estado === b.estado ? 0 : a.estado === 'activo' ? -1 : 1) ||
-                    String(a.dia0).localeCompare(String(b.dia0)) || a.codigo.localeCompare(b.codigo));
-  return ok(rows.slice(0, inactivas ? 80 : 1000).map(c => cajaFila(v, c)));
 }
 
 export async function getCaja(id) {
@@ -448,27 +447,28 @@ export async function getCaja(id) {
   if (!c) return fail(CODES.NOT_FOUND, 'Caja no encontrada.');
   const sep = c.separacion;
   const registros = [
-    registro(v, 'caja', c, 'Caja creada en la distribución',
-             `${kgTxt(c.peso_inicial_kg)} kg · rack ${v.por.rack.get(c.rack_id)?.codigo || '—'}`, { fecha: c.created_at }),
+    registro(v, 'caja', c, 'Caja creada en la distribución', `${kgTxt(c.peso_inicial_kg)} kg`, { fecha: c.created_at }),
     ...c.cargas.map(a => registro(v, 'alimentacion', a, `Carga ${a.carga}`,
       `${kgTxt(a.kg)} kg${a.kg_plan != null && Number(a.kg_plan) !== Number(a.kg) ? ` (plan ${kgTxt(a.kg_plan)})` : ''}` +
       (origenAlimento(v, a.id) ? ` · ${origenAlimento(v, a.id)}` : ''))),
     ...c.chequeos.map(x => registro(v, 'chequeo', x, `Chequeo día ${x.dia}`, chequeoTxt(x))),
     ...(sep ? [registro(v, 'separacion', sep, 'Separación',
-        `${kgTxt(sep.peso_total_kg)} kg → ${kgTxt(c.reparto.coccion_kg)} kg al horno · ${kgTxt(c.reparto.retorno_kg)} kg al insectario`)] : []),
-    ...registrosMovimiento(v, id)
+        `${kgTxt(sep.peso_total_kg)} kg → ${kgTxt(c.reparto.coccion_kg)} kg al horno · ${kgTxt(c.reparto.retorno_kg)} kg al insectario`)] : [])
   ].sort(porFechaDesc);
   return ok({
     caja: cajaFila(v, c),
     facts: [
       ['Incubadora', c.incubadora_codigo], ['Día', String(c.dia)],
-      ['Rack', c.rack?.codigo || '—'], ['Peso inicial', `${kgTxt(c.peso_inicial_kg)} kg`],
+      ['Peso inicial', `${kgTxt(c.peso_inicial_kg)} kg`],
       ['Estado', cajaFila(v, c).estadoTxt], ['Generación', c.generacion !== null ? `F${c.generacion}` : '—']
     ],
     cierre: cierreTxt(c),
     sin_ensilado: c.cargas.some(a => sinEnsilado(v, a.id)),
     pasos: c.pasos.map(paso),
     registros,
+    faltan_chequeos: c.cerrado_at ? [] : atrasables(v.cfg, v.cfg.dias_chequeo_caja, c.chequeos.map(x => Number(x.dia)), c.pasos, 'chequeo'),
+    faltan_cargas: c.cerrado_at ? [] : atrasables(v.cfg, v.cfg.cargas.filter(x => x.dia !== v.cfg.dia_distribucion).map(x => x.n),
+                                                  c.cargas.map(x => Number(x.carga)), c.pasos, 'carga'),
     activa: c.estado === 'activo'
   });
 }
@@ -608,7 +608,7 @@ export async function getEnsilado(id) {
     pasos: e.pasos.map(paso),
     consumos: consumos.map(c => ({ ...c, cuando: cuandoTxt(c.fecha, v.hoy) })),
     registros,
-    puede_abrir: e.estado === 'madurando' && v.hoy >= e.apertura_prevista
+    puede_abrir: e.estado === 'madurando' && (!v.cfg.reglas_estrictas || v.hoy >= e.apertura_prevista)
   });
 }
 
@@ -653,20 +653,18 @@ export async function getRevisar() {
 
 /* ── forms: what each one starts from ─────────────────────────────────────── */
 
-const rackOpciones = v => v.racks.map(r => ({ id: r.id, codigo: r.codigo }))
-  .sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true }));
-
 export async function getFormRecolecta() {
   const v = await vistaActual(await openDb());
   const codigos = v.incubadoras.map(i => i.codigo);
   return ok({
-    jaulas: v.jaulas.filter(j => j.fase === 'activa')
+    jaulas: v.jaulas.filter(j => !v.cfg.reglas_estrictas || j.fase === 'activa')
       .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
       .map(j => ({ id: j.id, nombre: j.nombre, letra: j.letra, generacion: j.generacion,
                    siguiente: siguienteIncubadora(j.generacion, j.letra, codigos).codigo,
                    hoy: v.incubadoras.some(i => i.jaula_id === j.id && i.dia0 === v.hoy) })),
-    racks: rackOpciones(v),
-    alimento_kg: v.cfg.alimento_inicial_incubadora_kg,
+    // What the screen works the bandejas out with, as it is typed (protocolo.js).
+    ajustes: { huevos_bandeja_min_g: v.cfg.huevos_bandeja_min_g, huevos_bandeja_max_g: v.cfg.huevos_bandeja_max_g },
+    alimento_bandeja_g: v.cfg.alimento_bandeja_g,
     hoy: v.hoy
   });
 }
@@ -700,11 +698,10 @@ export async function getFormDistribucion(incubadora_id) {
   if (!i) return fail(CODES.NOT_FOUND, 'Incubadora no encontrada.');
   const plan = cargaDistribucion(v.cfg);
   return ok({
-    incubadora: { id: i.id, codigo: i.codigo, dia: i.dia, rack_id: i.rack?.id || null, activa: i.estado === 'activo' },
+    incubadora: { id: i.id, codigo: i.codigo, dia: i.dia, activa: i.estado === 'activo' },
     carga: plan ? { n: plan.n, kg: plan.kg } : null,
     // The cajas will be {codigo}-01, -02… (ids.js cajaCodigo).
-    primera: cajaCodigo(i.codigo, 1),
-    racks: rackOpciones(v)
+    primera: cajaCodigo(i.codigo, 1)
   });
 }
 
@@ -714,9 +711,9 @@ export async function getFormCargas({ caja_ids = [], carga } = {}) {
   return ok({
     carga: def,
     items: caja_ids.map(id => v.por.caja.get(id)).filter(Boolean).map(c => ({
-      id: c.id, codigo: c.codigo, dia: c.dia, en_ayuno: c.en_ayuno,
+      id: c.id, codigo: c.codigo, dia: c.dia, en_ayuno: v.cfg.reglas_estrictas && c.en_ayuno,
       dada: c.cargas.some(x => Number(x.carga) === Number(carga)),
-      espera_chequeo: Boolean(def && v.cfg.dias_chequeo_caja.includes(def.dia) &&
+      espera_chequeo: Boolean(v.cfg.reglas_estrictas && def && v.cfg.dias_chequeo_caja.includes(def.dia) &&
                               !c.chequeos.some(x => Number(x.dia) === def.dia))
     }))
   });
@@ -747,8 +744,7 @@ export async function getFormIngreso(jaula_id) {
     jaulas_limpias: v.jaulas.filter(x => x.fase === 'limpia').map(x => ({ id: x.id, nombre: x.nombre })),
     pool_kg: v.pool.kg_pendiente,
     pendientes: v.pool.pendientes.map(p => ({ caja: p.caja_codigo, kg: p.kg, dia0: p.dia0, generacion: p.generacion })),
-    kg_bandeja: v.cfg.kg_bandeja_pupacion,
-    racks: rackOpciones(v)
+    kg_bandeja: v.cfg.kg_bandeja_pupacion
   });
 }
 
@@ -804,13 +800,19 @@ export async function getRegistro(tabla, id) {
     nota: row.nota || '',
     foto_key: row.foto_key || null,
     revisar: motivosRevisar(v, tabla, id),
+    borrable: !v.cfg.reglas_estrictas,
     opciones: {
-      racks: rackOpciones(v),
       jaulas: v.jaulas.map(j => ({ id: j.id, nombre: j.nombre })),
       materiales,
-      fases: [{ id: 'activa', nombre: 'Con moscas' }, { id: 'limpia', nombre: 'Limpia' }]
+      fases: [{ id: 'activa', nombre: 'Con moscas' }, { id: 'limpia', nombre: 'Limpio' }]
     }
   });
+}
+
+/** The warning before deleting a record. */
+export async function getBorrado({ tabla, id } = {}) {
+  const v = await vistaActual(await openDb());
+  return ok({ aviso: avisoBorrado(v, tabla, id) });
 }
 
 /* ── people and lists ─────────────────────────────────────────────────────── */

@@ -2,7 +2,7 @@
  * protocolo.js — the lab's protocols (October 2026): their settings, the day
  * count, and what each object needs next.
  *
- *   día 0        recolecta → incubadora
+ *   día 0        recolecta → incubadora, en las bandejas que den sus huevos
  *   día 3        chequeo de la incubadora
  *   día 7        tamizado, pesado y distribución en cajas + carga 1
  *   día 10       chequeo, y después la carga 2
@@ -16,8 +16,8 @@
  *
  * Every number lives in the `parametro` table so the lab can change the
  * protocol without a new version of the app. The defaults below are the SAME
- * values 0010_ciclo_nuevo.sql seeds, so a phone that has not pulled yet still
- * does the right thing.
+ * values supabase/esquema seeds, so a phone that has not pulled yet still does
+ * the right thing.
  *
  * Everything here is pure: no storage, no clock unless one is passed in. Days
  * are the FARM's calendar days (time.js), never the phone's time zone.
@@ -41,7 +41,12 @@ export const PROTOCOLO_DEFAULTS = Object.freeze({
   dias_recolecta: [1, 3, 5],
   dias_maduracion: 21,
   horas_consumo: 72,
-  alimento_inicial_incubadora_kg: null
+  huevos_bandeja_min_g: 2,
+  huevos_bandeja_max_g: 5,
+  alimento_bandeja_g: 400,
+  // The mode of the data: false open, true protected. Changed only by the SQL in
+  // supabase/operaciones, which also moves what the database allows.
+  reglas_estrictas: false
 });
 
 const isNum = v => typeof v === 'number' && Number.isFinite(v);
@@ -63,7 +68,10 @@ const VALIDATORS = {
   dias_recolecta: v => Array.isArray(v) && v.every(d => Number.isInteger(d) && d >= 1 && d <= 7),
   dias_maduracion: isDia,
   horas_consumo: v => isNum(v) && v > 0 && v <= 24 * 30,
-  alimento_inicial_incubadora_kg: v => v === null || (isNum(v) && v >= 0 && v < 1000)
+  huevos_bandeja_min_g: v => isNum(v) && v > 0 && v < 1000,
+  huevos_bandeja_max_g: v => isNum(v) && v > 0 && v < 1000,
+  alimento_bandeja_g: v => isNum(v) && v >= 0 && v < 100000,
+  reglas_estrictas: v => typeof v === 'boolean'
 };
 
 /**
@@ -83,6 +91,11 @@ export function mergeProtocolo(rows = []) {
   }
   out.cargas = [...out.cargas].sort((a, b) => a.n - b.n);
   out.dias_chequeo_caja = [...out.dias_chequeo_caja].sort((a, b) => a - b);
+  // A range the wrong way round is a typo too.
+  if (out.huevos_bandeja_min_g > out.huevos_bandeja_max_g) {
+    out.huevos_bandeja_min_g = PROTOCOLO_DEFAULTS.huevos_bandeja_min_g;
+    out.huevos_bandeja_max_g = PROTOCOLO_DEFAULTS.huevos_bandeja_max_g;
+  }
   return out;
 }
 
@@ -104,6 +117,33 @@ export function repartoSeparacion(pesoKg, pct = PROTOCOLO_DEFAULTS.pct_coccion) 
 
 /** Kilos, rounded to the gram, without floating-point dust (0.1 + 0.2). */
 export const kg3 = v => Math.round(Number(v || 0) * 1000) / 1000;
+
+/**
+ * How many bandejas a recolecta's eggs make, each with 2–5 g (the settings):
+ *   min, max   the fewest and the most that stay within the range
+ *   sugerida   what the form proposes: the middle of the range per bandeja
+ * Too few eggs for even one bandeja still make one. Null without a weight.
+ */
+export function bandejasParaHuevos(g, cfg = PROTOCOLO_DEFAULTS) {
+  const peso = Number(g);
+  if (!Number.isFinite(peso) || peso <= 0) return null;
+  const bajo = cfg.huevos_bandeja_min_g, alto = cfg.huevos_bandeja_max_g;
+  const min = Math.max(1, Math.ceil(peso / alto));
+  const max = Math.max(min, Math.floor(peso / bajo));
+  const sugerida = Math.min(max, Math.max(min, Math.round(peso / ((bajo + alto) / 2))));
+  return { min, max, sugerida };
+}
+
+/** Grams per bandeja with `n` of them, and whether that leaves the range. Eggs
+ *  too few for one bandeja cannot do better, so one bandeja is not "out". */
+export function huevosPorBandeja(g, n, cfg = PROTOCOLO_DEFAULTS) {
+  const peso = Number(g), cuantas = Number(n);
+  if (!Number.isFinite(peso) || peso <= 0 || !Number.isFinite(cuantas) || cuantas < 1) return null;
+  const g_bandeja = Math.round((peso / cuantas) * 100) / 100;
+  const bajo = peso / cuantas < cfg.huevos_bandeja_min_g;
+  const alto = peso / cuantas > cfg.huevos_bandeja_max_g;
+  return { g_bandeja, fuera: alto || (bajo && cuantas > 1) };
+}
 
 /* ── days ─────────────────────────────────────────────────────────────────── */
 
@@ -171,7 +211,8 @@ export function pasosIncubadora(inc, { chequeos = [] } = {}, cfg = PROTOCOLO_DEF
 /**
  * Steps of a caja de engorde still to do, in order, on its incubadora's
  * calendar. Rules:
- *   - a carga on a chequeo day waits for that chequeo (día 10: chequeo first);
+ *   - a carga on a chequeo day comes after that chequeo (día 10: chequeo first):
+ *     "para hoy" does not chase it yet, and in protected mode it waits (bloqueado);
  *   - the chequeo on `dia_inicio_ayuno` starts the ayuno: no cargas after it;
  *   - a chequeo stops being asked once a later one, or the separación, is in;
  *   - a carga stops being asked once a later carga was given (skipped, and
@@ -202,15 +243,15 @@ export function pasosCaja(caja, { dia0, chequeos = [], cargas = [], separada = f
     for (const c of cargasDeCaja(cfg)) {
       if (dadas.has(c.n) || [...dadas].some(n => n > c.n) || c.dia >= cfg.dia_inicio_ayuno || vence(c.dia) < entrada) continue;
       const espera = cfg.dias_chequeo_caja.includes(c.dia) && !chequeados.has(c.dia);
-      pasos.push({ paso: 'carga', dia: c.dia, carga: c.n, kg: c.kg, orden: c.dia * 2 + 1,
-                   bloqueado: espera ? 'chequeo' : null });
+      pasos.push({ paso: 'carga', dia: c.dia, carga: c.n, kg: c.kg, orden: c.dia * 2 + 1, espera,
+                   bloqueado: espera && cfg.reglas_estrictas ? 'chequeo' : null });
     }
   }
   pasos.push({ paso: 'separacion', dia: cfg.dia_separacion, orden: cfg.dia_separacion * 2 + 1 });
 
   return pasos
     .sort((a, b) => a.orden - b.orden)
-    .map(({ orden, ...p }) => ({ ...p, ...timing(vence(p.dia), hoy), aviso: !p.bloqueado }));
+    .map(({ orden, espera, ...p }) => ({ ...p, ...timing(vence(p.dia), hoy), aviso: !espera }));
 }
 
 /**
@@ -296,8 +337,8 @@ export function pasoLabel(p) {
     case 'carga': return `Carga ${p.carga} · ${kgTxt(p.kg)} kg${p.bloqueado ? ' (después del chequeo)' : ''}`;
     case 'separacion': return 'Separación';
     case 'recolecta': return 'Recolecta';
-    case 'cierre': return 'Cierre de la jaula';
-    case 'limpieza': return 'Limpieza de la jaula';
+    case 'cierre': return 'Cierre del insectario';
+    case 'limpieza': return 'Limpieza del insectario';
     case 'repoblado': return 'Repoblar con el 2 %';
     case 'lectura_media': return 'Temperatura a mitad del horno';
     case 'lectura_final': return 'Temperatura y peso final';

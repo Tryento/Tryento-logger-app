@@ -24,7 +24,7 @@ import { listConflicts as _listConflicts, resolveConflict as _resolveConflict } 
 import { capturePhoto, localPhotoUrl, photoUrlFor } from './src/data/photo.js';
 import { signInWithGoogle, signOut, fetchSession } from './src/data/supabase.js';
 import { invalidarSnapshot } from './src/data/snapshot.js';
-import { repartoSeparacion } from './src/data/protocolo.js';
+import { repartoSeparacion, bandejasParaHuevos, huevosPorBandeja } from './src/data/protocolo.js';
 import { kgTxt, diaTxt, fechaHoraTxt, cuandoTxt } from './src/data/formato.js';
 
 /* ── catalogues ─────────────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ const CATALOGOS = { material_alimento: MATERIALES_ALIMENTO };
 /** Values seeded only when the table is empty so a brand-new or fully-offline
  *  install is still usable. The server copy wins as soon as one arrives. */
 const CATALOGO_DEFAULTS = {
-  // Mirrors 0010_ciclo_nuevo.sql.
+  // Mirrors supabase/esquema/0010_ciclo_nuevo.sql.
   material_alimento: ['Bagazo de cerveza (BSG)', 'Desecho de panadería', 'Desecho de fruta', 'Otro'],
   // The registered roster, so the name screen is usable before the first sync.
   operario: ['Maria', 'Ricardo']
@@ -133,13 +133,10 @@ function guard(fn, { isWrite = false } = {}) {
 export const getInicio = guard(reads.getInicio);
 export const getProtocolo = guard(reads.getProtocolo);
 export const listOperators = guard(reads.listOperators);
-export const listRacks = guard(reads.listRacks);
+export const getLaboratorio = guard(reads.getLaboratorio);
 export const listContenedores = guard(reads.listContenedores);
-export const listJaulas = guard(reads.listJaulas);
 export const getJaula = guard(reads.getJaula);
-export const listIncubadoras = guard(reads.listIncubadoras);
 export const getIncubadora = guard(reads.getIncubadora);
-export const listCajas = guard(reads.listCajas);
 export const getCaja = guard(reads.getCaja);
 export const getHorno = guard(reads.getHorno);
 export const getCochada = guard(reads.getCochada);
@@ -148,6 +145,7 @@ export const getEnsilado = guard(reads.getEnsilado);
 export const getRevisar = guard(reads.getRevisar);
 export const getResumen = guard(reads.getResumen);
 export const getRegistro = guard(reads.getRegistro);
+export const getBorrado = guard(reads.getBorrado);
 
 /* What each form starts from. */
 export const getFormRecolecta = guard(reads.getFormRecolecta);
@@ -176,7 +174,6 @@ export const setOperator = guard(async nombre => {
   return n ? { ok: true, data: { nombre: n } } : { ok: false, error: { code: 'validation_error', message: 'Nombre vacío.' } };
 });
 
-export const registrarRack = W(writes.registrarRack);
 export const registrarContenedor = W(writes.registrarContenedor);
 export const registrarJaula = W(writes.registrarJaula);
 export const registrarRecolecta = W(writes.registrarRecolecta);
@@ -188,20 +185,20 @@ export const crearCochada = W(writes.crearCochada);
 export const registrarLectura = W(writes.registrarLectura);
 export const registrarIngreso = W(writes.registrarIngreso);
 export const registrarEventoJaula = W(writes.registrarEventoJaula);
-export const registrarMovimiento = W(writes.registrarMovimiento);
 export const cerrarObjeto = W(writes.cerrarObjeto);
 export const registrarRecepcion = W(writes.registrarRecepcion);
 export const crearEnsilado = W(writes.crearEnsilado);
 export const abrirEnsilado = W(writes.abrirEnsilado);
 export const editarRegistro = W(writes.editarRegistro);
 export const marcarRevisado = W(writes.marcarRevisado);
+export const borrarRegistro = W(writes.borrarRegistro);
 
 /* ── helpers for the screens ───────────────────────────────────────────── */
 
 /** Farm-calendar helpers, so a preview never disagrees with what is saved. */
 export const fechas = { farmDay, ddmm, toNaiveLocal, addDays };
 /** The same arithmetic and wording the data layer uses. */
-export const calc = { repartoSeparacion, kgTxt, diaTxt, fechaHoraTxt, cuandoTxt };
+export const calc = { repartoSeparacion, bandejasParaHuevos, huevosPorBandeja, kgTxt, diaTxt, fechaHoraTxt, cuandoTxt };
 
 export { getSyncStatus, onChange, statusLabel };
 export const sync = () => syncNow({ force: true });
@@ -233,16 +230,16 @@ export const getSession = fetchSession;
  */
 const api = {
   MATERIALES_ALIMENTO,
-  getInicio, getProtocolo, listOperators, listRacks, listContenedores, listJaulas, getJaula,
-  listIncubadoras, getIncubadora, listCajas, getCaja, getHorno, getCochada, getAlimento,
-  getEnsilado, getRevisar, getResumen, getRegistro,
+  getInicio, getProtocolo, listOperators, getLaboratorio, listContenedores, getJaula,
+  getIncubadora, getCaja, getHorno, getCochada, getAlimento,
+  getEnsilado, getRevisar, getResumen, getRegistro, getBorrado,
   getFormRecolecta, previewRecolecta, getFormChequeo, getFormDistribucion, getFormCargas,
   getFormSeparacion, getFormCochada, getFormIngreso, previewIngreso, getFormEnsilado,
   rememberOperator, setOperator,
-  registrarRack, registrarContenedor, registrarJaula, registrarRecolecta, registrarChequeos,
+  registrarContenedor, registrarJaula, registrarRecolecta, registrarChequeos,
   distribuir, registrarCargas, registrarSeparaciones, crearCochada, registrarLectura,
-  registrarIngreso, registrarEventoJaula, registrarMovimiento, cerrarObjeto,
-  registrarRecepcion, crearEnsilado, abrirEnsilado, editarRegistro, marcarRevisado,
+  registrarIngreso, registrarEventoJaula, cerrarObjeto,
+  registrarRecepcion, crearEnsilado, abrirEnsilado, editarRegistro, marcarRevisado, borrarRegistro,
   fechas, calc,
   getSyncStatus, onChange, statusLabel, sync, initErrors,
   listConflicts, resolveConflict,

@@ -22,9 +22,9 @@ export const NOMBRES_QA = ['check-backend', 'check-sync'];
 
 /** Children before parents, so nothing alive ever points at a deleted row. */
 export const ORDEN = [
-  'cochada_lectura', 'cochada_origen', 'cochada', 'movimiento', 'separacion', 'alimentacion',
+  'cochada_lectura', 'cochada_origen', 'cochada', 'separacion', 'alimentacion',
   'chequeo', 'caja', 'distribucion', 'bandeja_pupacion', 'ingreso', 'jaula_evento', 'incubadora',
-  'ensilado_insumo', 'ensilado', 'recepcion', 'jaula', 'contenedor', 'rack'
+  'ensilado_insumo', 'ensilado', 'recepcion', 'jaula', 'contenedor'
 ];
 
 export async function loadConfig() {
@@ -57,7 +57,12 @@ export async function marcarQa(db, nombres = NOMBRES_QA) {
     const ids = filas[t].filter(r => !r.deleted_at).map(r => r.id);
     if (!ids.length) continue;
     const { error } = await db.from(t).update({ deleted_at: now }).in('id', ids);
-    if (error) { quedan += ids.length; console.log(`        no se pudo marcar ${t}: ${error.message}`); }
+    if (error) {
+      quedan += ids.length;
+      console.log(`        no se pudo marcar ${t}: ${error.message}`);
+      // In protected mode the public key changes no row directly.
+      if (error.code === '42501') console.log('        ¿Modo protegido? Corre supabase/operaciones/permitir_cambios.sql y repite.');
+    }
   }
   return quedan;
 }

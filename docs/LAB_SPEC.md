@@ -7,8 +7,8 @@ log (this repo), and the physical process that connects them.
 
 | | |
 |---|---|
-| Version | 0.7.1 — steps out of their plan ask first; «Revisado» accepts; the public key cannot delete |
-| Last updated | 2026-11-05 |
+| Version | 0.9 — bandejas instead of racks, insectarios by name, two data modes, one lab view |
+| Last updated | 2026-11-06 |
 | Built from | `tryento-app` `main` @ `a2b5b73` (2026-04-23) plus branches `50`, `52`, `55`, `Trunk`; `Tryento-logger-app` branch `ciclo-nuevo` (2026-10-22) |
 | Companion | [BSF research knowledge base](reports/Black%20soldier%20fly%20farms%20and%20biology.md) — the biology and industry evidence behind the numbers here |
 
@@ -95,22 +95,25 @@ INSECTARIO (one cage, one generation per cycle):
 
 | When | Task | What happens physically | Recorded as | Rules and defaults |
 |---|---|---|---|---|
-| día 0, Mon/Wed/Fri | **recolecta** | Eggs/larvae collected from a cage with flies; they become **one incubadora** on a rack | `incubadora`: code **`F8A-12`** (generation 8, cage letter A, recolecta 12 of that generation), cage, rack, initial weight **g** (eggs/larvae only), initial food **kg** | The food usual amount is proposed (`alimento_inicial_incubadora_kg`, ⚠ to be set before go-live) and is taken from the open ensilado. Date = today; a past date only with the **excepción** switch (marked; steps due before it was entered are not chased) |
+| día 0, Mon/Wed/Fri | **recolecta** | Eggs/larvae collected from a cage with flies; they become **one incubadora**, split over the bandejas their weight calls for | `incubadora`: code **`F8A-12`** (generation 8, cage letter A, recolecta 12 of that generation), cage, initial weight **g** (eggs/larvae only), `n_bandejas`, initial food **kg** (the total given) | One code, one chequeo and one distribución for the whole recolecta. The form proposes the bandejas from the eggs (`huevos_bandeja_min_g`–`huevos_bandeja_max_g`, 2–5 g each) and 400 g of food per bandeja (`alimento_bandeja_g`); the person confirms or changes them. The food is taken from the open ensilado. Date = today; a past date only with the **excepción** switch (marked; steps due before it was entered are not chased) |
 | día 3 | **chequeo** | Substrate humidity and temperature, weight | `chequeo` (`humedad_pct`, `temperatura_c`, `peso_g`) | Only the scheduled checks exist |
-| día 7 | **tamizado, pesado y distribución** | Larvae sieved and weighed, split into cajas de engorde; carga 1 | `distribucion` (total kg) + N `caja` (`F8A-12-01…`, weight kg, rack) + carga 1 per caja — one atomic call | One incubadora → N cajas, never mixed; the incubadora becomes inactive. Carga 1: 1.5 kg proposed |
+| día 7 | **tamizado, pesado y distribución** | Larvae sieved and weighed, split into cajas de engorde; carga 1 | `distribucion` (total kg) + N `caja` (`F8A-12-01…`, weight kg) + carga 1 per caja — one atomic call | One incubadora → N cajas, never mixed; the incubadora becomes inactive. Carga 1: 1.5 kg proposed |
 | día 10 | **chequeo**, then **carga 2** | Check, then feed 2 kg | `chequeo` (`peso_kg`) + `alimentacion` (`carga=2`) | The carga waits for the chequeo |
 | día 13 | **carga 3** | 2 kg | `alimentacion` (`carga=3`) | Each carga: confirm the plan, or change the kg |
 | día 14 | **chequeo** — starts the **AYUNO** | Check; no more feed until separación | `chequeo` | A carga not given by then is no longer asked |
 | ~día 16 | **separación** | Per caja: total weight; 98 % to the oven, 2 % back to the cages | `separacion` (`peso_total_kg`; `coccion_kg`, `retorno_kg` computed by the database from `pct_coccion` 98) | Flexible day; the caja becomes inactive |
 | — | **cochada** | The 98 % of several separaciones, weighed, into the oven; a mid temperature; a final temperature and weight | `cochada` (`H-2810-1`, initial kg) + `cochada_origen` (kg from each separación — one separación's 98 % may be split) + `cochada_lectura` (media; final with weight) | After the final reading it is ready for packing (inactive). Packing and inventory: not built yet |
-| — | **redistribución, pesado y acondicionado + ingreso** | The 2 % waiting, weighed, into trays of ~4.7 kg (larvae + conditioning material) that go into a closed and cleaned cage the same day | `ingreso` (cage, kg of larvae, the cage's new generation) + `bandeja_pupacion` (`F7-B2810-1`, weight kg, rack) | The 2 % is used **oldest first**; ages = range and simple average of the cajas used; mixed generations → warning, most common wins; the cage becomes generation + 1 |
+| — | **redistribución, pesado y acondicionado + ingreso** | The 2 % waiting, weighed, into trays of ~4.7 kg (larvae + conditioning material) that go into a closed and cleaned cage the same day | `ingreso` (cage, kg of larvae, the cage's new generation) + `bandeja_pupacion` (`F7-B2810-1`, weight kg) | The 2 % is used **oldest first**; ages = range and simple average of the cajas used; mixed generations → warning, most common wins; the cage becomes generation + 1 |
 | ~14 days after | **cierre**, then **limpieza** | The cage's cycle ends; it is cleaned | `jaula_evento` | Only a closed and cleaned cage can be repopulated |
-| any time | **cambio de rack** | An incubadora, caja or tray moves | `movimiento` | — |
-| any time | **cierre antes de tiempo** | Loss, contamination… | `cerrado_at`, `motivo_cierre` (free text) | Incubadora, caja, tray, cochada; nothing is deleted |
+| any time | **cierre antes de tiempo** | Loss, contamination… | `cerrado_at`, `motivo_cierre` (free text) | Incubadora, caja, tray, cochada; it becomes inactive |
 
-**Age** is days since the recolecta (día 0); cajas inherit it. **Units:** grams
-for the incubadora's initial weight and the día-3 chequeo weight, kilos for
-everything else. **Codes** are written on the container and never change, even
+**A bandeja** is each incubadora and each caja de engorde, active until it is
+distributed or separated. They are not registered objects: a recolecta only counts
+how many it occupies. Bandejas de pupación are a different thing: the trays of the
+2 % that go into a cage. **Names:** the lab says *insectario* where the code and the
+tables say `jaula`. **Age** is days since the recolecta (día 0); cajas inherit it.
+**Units:** grams for the incubadora's initial weight, the food per bandeja and the
+día-3 chequeo weight, kilos for everything else. **Codes** are written on the container and never change, even
 if the cage, generation or date they came from is corrected.
 
 ### 2.2 The food
@@ -145,11 +148,14 @@ future, no ensilado dated before the material in it arrived, no apertura
 before the ensilado's día 21. The apertura is recorded only with its button
 (which keeps who opened it); a correction can only move it afterwards.
 
+> **The data has two modes** (`reglas_estrictas` in `app.parametro`, changed only by `supabase/operaciones/permitir_cambios.sql` and `proteger_datos.sql`, which also move what the database allows). **Protected:** the rules in this section and the correction limits above are enforced, nobody deletes, and values are corrected only through `app.editar`, keeping who and when; the database itself also refuses dates over a day ahead, and direct row changes with the public key. **Open, as of November 2026:** the rules are off. Staff enter any date and order and can delete records, with what hangs off them. Only very odd entries ask «¿Guardar igual?»: a date in the future or over 60 days old, a step over 3 days early, more kilos than exist, cajas heavier than the sieved total, a recolecta from a cage without flies, an ensilado opened before día 21 or dated before its material. What the database refuses (a second separación, a chequeo without its readings, repopulating an uncleaned cage) stays refused. Flagged data shows in «revisar» as usual; KPIs in §9 count what was entered, so treat them with care until the data is protected. In both modes the public key never deletes a row and never changes a setting.
+
 ### Steps out of their plan
 
 A chequeo, carga, distribución or separación recorded **more than one day
-before its day**, a carga given without the previous one, or cajas weighing
-more than what was sieved are saved only after the person confirms them
+before its day**, a carga given without the previous one, cajas weighing
+more than what was sieved, or a recolecta with bandejas outside the 2–5 g are
+saved only after the person confirms them
 («¿Guardar igual?»). **Reason:** QA (27 October 2026) recorded a día-14
 chequeo on día 7 with one tap, which started the caja's ayuno a week early and
 took its cargas off the schedule. A carga left behind when a later one was
@@ -176,7 +182,7 @@ and on the phone.
 | `material_alimento` | Bagazo de cerveza (BSG), Desecho de panadería, Desecho de fruta, Otro | What arrives and goes into an ensilado |
 | `operario` | Self-maintaining roster | Names are typed or tapped; not an audit identity |
 
-Racks, containers and cages are not catalogue values: they are objects,
+Containers and cages are not catalogue values: they are objects,
 registered once in the app (a cage with its name, letter, place, current
 generation and whether it has flies).
 
@@ -431,12 +437,12 @@ lab:
 | Aspect | Value |
 |---|---|
 | Replaces | AppSheet app on the Google Sheet `Tryento_App_Data` (in use until September 2026) |
-| Backend | Supabase Postgres, schema `app`; migrations in `supabase/migrations/` (append-only). `0010_ciclo_nuevo.sql` rebuilt it for the October 2026 protocols (run in production on 2026-10-22) |
-| Tabs | Inicio (what is due today), Larvas, Insectarios, Horno, Alimento, Resumen (the lab in numbers, §9) |
+| Backend | Supabase Postgres, schema `app`; schema files in `supabase/esquema/` (append-only, run by hand before the push), operations in `supabase/operaciones/` (the full delete and the two modes). `0010_ciclo_nuevo.sql` rebuilt it for the October 2026 protocols (run in production on 2026-10-22) |
+| Tabs | Inicio (what is due today), Laboratorio (every insectario and bandeja, how each is doing; a filter, and a toggle that hides inactive ones, on by default), Horno, Alimento, Resumen (the lab in numbers, §9) |
 | History | The AppSheet sheet goes, as it was, into schema `historico` (read-only, not used by the app) — ⚠ not loaded yet |
 | Device storage | IndexedDB (`tryento-ciclo`); every write is local first, then synced through an outbox |
-| Login | None in the demo configuration: the public key reads, adds and corrects every table (RLS policies `app_leer`, `app_agregar`, `app_corregir`); since `0011` it cannot delete anything |
-| Staff guide | [`docs/guia-app.html`](guia-app.html), in Spanish: where to tap for each task. Opens from the app's home screen («Cómo usar la app»), also offline; it links to the protocol, published with it |
+| Login | None in the demo configuration: the public key reads, adds and corrects every data table (RLS policies `app_leer`, `app_agregar`, `app_corregir`); since `0011` it cannot delete anything or change a setting, and in protected mode it changes rows only through functions that keep who and when |
+| Staff pages | [`docs/protocolo.html`](protocolo.html) and [`docs/guia-app.html`](guia-app.html), in Spanish. Both open from small buttons at the bottom of the app's home screen, also offline |
 | Photos | Supabase Storage bucket `fotos` (public in the demo); one per record |
 | Time | Calendar days in `America/Caracas`; instants in UTC |
 | Deployment | Netlify, publishing only `dist/` (explicit allow-list) |
@@ -450,13 +456,12 @@ reviewed.
 
 | Table | Group | One row = | Key fields |
 |---|---|---|---|
-| `rack` | object | a rack | `codigo` |
 | `contenedor` | object | an ensilado container | `codigo` |
 | `jaula` | object | a cage (insectario) | `nombre`, `letra`, `lugar`, `generacion_inicial` / `fase_inicial` (as registered); `fase`, `generacion`, `ciclo_desde` kept by trigger |
-| `incubadora` | object | one recolecta's incubadora | `codigo`, `jaula_id`, `generacion`, `recolecta_at`, `dia0`, `excepcion`, `rack_id`, `peso_inicial_g`, `alimento_inicial_kg`, `estado` |
-| `caja` | object | one caja de engorde | `codigo`, `incubadora_id`, `rack_id`, `peso_inicial_kg`, `estado` |
+| `incubadora` | object | one recolecta's incubadora | `codigo`, `jaula_id`, `generacion`, `recolecta_at`, `dia0`, `excepcion`, `n_bandejas`, `peso_inicial_g`, `alimento_inicial_kg`, `estado` |
+| `caja` | object | one caja de engorde | `codigo`, `incubadora_id`, `peso_inicial_kg`, `estado` |
 | `cochada` | object | one oven run | `codigo`, `horno_at`, `peso_inicial_kg`, `estado` |
-| `bandeja_pupacion` | object | one tray of the 2 % into a cage | `codigo`, `ingreso_id`, `jaula_id`, `rack_id`, `peso_kg` |
+| `bandeja_pupacion` | object | one tray of the 2 % into a cage | `codigo`, `ingreso_id`, `jaula_id`, `peso_kg` |
 | `ensilado` | object | one ensilado | `codigo`, `contenedor_id`, `ensilado_at`, `dia0`, `abierto_at` |
 | `recepcion` | registry | a delivery | `material`, `kg` |
 | `ensilado_insumo` | registry | kg of a reception in an ensilado | `ensilado_id`, `recepcion_id`, `kg` |
@@ -468,7 +473,6 @@ reviewed.
 | `cochada_lectura` | registry | the mid or final oven reading | `momento`, `temperatura_c`, `peso_kg` (final) |
 | `ingreso` | registry | a cage repopulated | `jaula_id`, `kg_larvas`, `generacion` (the cage's new one) |
 | `jaula_evento` | registry | a cierre or limpieza | `jaula_id`, `tipo` |
-| `movimiento` | registry | an object changing rack | `objeto`, `objeto_id`, `rack_desde`, `rack_hasta` |
 | `catalogo` | support | a pick-list value | `tipo`, `valor` |
 | `parametro` | support | a protocol setting | `clave`, `valor` (JSON), `descripcion` |
 
@@ -560,7 +564,11 @@ replace the constant with a measured one. Research notes 01 and 03.
 Five independent measurements put an egg at 25–29 µg: **about 38,000 eggs/g**,
 or roughly 26,000–36,000 hatched larvae per gram. A figure of about 77,000/g
 comes from a single study. Count the farm's own eggs per gram before relying on
-egg mass to set tray density (note 03).
+egg mass to set tray density (note 03). The lab's 2–5 g per bandeja (November
+2026) is about 76,000–190,000 eggs per tray at that figure, and those 2–5 g are the
+recolecta's whole weight, which may include more than eggs; ⚠ CONFIRM against a
+count on the farm. The range is a setting (`huevos_bandeja_min_g`,
+`huevos_bandeja_max_g`), so it changes without a new version of the app.
 
 ---
 
@@ -581,7 +589,7 @@ tryento-app `.planning/codebase/CONCERNS.md`.
 | 8 | Three unmerged feature branches (`50`, `52`, `55`) | Unclear what runs in production | Git |
 | 9 | Pi timezone unverified | Every light window shifts if it is wrong | Pi OS |
 | 10 | The dashboard reads the sensors again each cycle | The value shown can differ slightly from the value used for control | `web_panel.py` |
-| 11 | Production database open with no login (demo) | Anyone with the URL can read, add and correct records; deleting is closed since `0011` | Supabase |
+| 11 | Production database open with no login (demo) | Anyone with the URL can read, add and correct records; deleting is closed since `0011`, and in protected mode changes go only through functions that keep who and when | Supabase |
 | 12 | No link between `env_id` and `jaula` | Climate cannot be joined to recolecta output | Both systems |
 | 13 | No production KPI views in the database since 0010 | The app's Resumen tab computes the KPIs on the phone, but the dashboard's production section stays empty until views exist (§9) | Supabase |
 
@@ -647,3 +655,5 @@ bump the minor version for new content, the patch version for corrections.
 | 2026-10-22 | 0.6 | §9.1: the KPIs are now computed in the app's new **Resumen** tab — what there is now, the last eight weeks, and yield per g recolectado, growth in the cajas, FCR (wet basis), cycle days against the plan, recolectas per cage and per cage cycle, oven yield and ensilado eaten over 7 days, 30 days or everything — each with its definition. §8: the six tabs. §2 and §8: `0010` ran in production on 22 October 2026, deleting the earlier protocols' data. **Reason:** the lab asked for a tab with the stats and an overview of the lab and its performance, and for the old data to be deleted. |
 | 2026-10-27 | 0.7 | §2.3: steps out of their plan (more than a day early, a carga without the previous one, cajas heavier than the sieved total) ask before saving; «Revisado» now also accepts a disagreement that stays; corrections keep the food dates in order (no ensilado before its material, apertura only by its button and from día 21, no future dates); a step due before its record was entered shows as pending. §8: `0011_sin_borrar.sql` takes deleting away from the public key (tables and photos), and the staff guide `docs/guia-app.html`. §10: risk 11 narrowed. **Reason:** QA round 4 on the live app (27 October 2026): a día-14 chequeo saved on día 7 started an ayuno a week early, an ensilado could be opened the day it was made through a correction, «Revisado» could not clear an accepted mark, and the public key could delete every table. |
 | 2026-11-05 | 0.7.1 | §8: the staff guide opens from the app's home screen, also offline, and the protocol it links to is published with it. **Reason:** the lab asked to open the guide from the app. |
+| 2026-11-05 | 0.8 | §2.3: the app's strict rules are off for now (`reglasEstrictas`): any date, any order, and staff can delete records (`0012_borrar_registros.sql`; marked, with what hangs off them). Only very odd entries ask first. The database's own rules stay. **Reason:** the lab wants staff entering data freely for now, with stricter protocols later. |
+| 2026-11-06 | 0.9 | §2.1: racks and rack moves are gone; each incubadora and caja is a bandeja, a recolecta keeps one code and counts its bandejas (`n_bandejas`), proposed from its weight at 2–5 g each, with 400 g of food per bandeja, all three settings. Cages are called insectarios everywhere staff read (`jaula` stays in the code and the tables). §8: the Larvas and Insectarios tabs became one Laboratorio tab, the home screen has one Alimento button and small Protocolo and guide buttons. §2.3: the mode moved from `app-config.js` to `app.parametro`, with `permitir_cambios.sql` and `proteger_datos.sql` to switch it, and protected mode now also holds at the database. `borrar_todos_los_datos.sql` erases every record for good, and phones learn of it through `datos_vaciados_at`. §8: SQL moved to `supabase/esquema` and `supabase/operaciones`; 0011 and 0012, which never ran, merged into a new 0011; everything before 0010 left the folder (it is in git). **Reason:** the lab's request of 6 November 2026, to match how the trays and cages are really worked and to have a clear way to open or protect the data. |

@@ -18,11 +18,11 @@ const d = (dia, hora = '13:00') => T(`${dia}T${hora}:00Z`);
 const HOY = '2026-10-22', AHORA = Date.parse('2026-10-22T15:00:00Z');
 
 const inc = (id, codigo, jaula_id, generacion, dia, g, extra = {}) => ({
-  id, codigo, jaula_id, generacion, recolecta_at: d(dia), dia0: dia, rack_id: 'r1',
+  id, codigo, jaula_id, generacion, recolecta_at: d(dia), dia0: dia,
   peso_inicial_g: g, alimento_inicial_kg: 2, created_at: d(dia), ...extra
 });
 const caja = (id, codigo, incubadora_id, numero, dia, kg) => ({
-  id, codigo, incubadora_id, numero, rack_id: 'r1', peso_inicial_kg: kg, created_at: d(dia)
+  id, codigo, incubadora_id, numero, peso_inicial_kg: kg, created_at: d(dia)
 });
 /** Cargas 1, 2 and 3 of a caja: 1,5 · 2 · 2 kg. */
 const cargas = (caja_id, dias) => dias.map((dia, k) => ({
@@ -32,7 +32,6 @@ const sep = (id, caja_id, fecha, kg) => ({ id, caja_id, fecha, peso_total_kg: kg
 
 function lab() {
   return {
-    rack: [{ id: 'r1', codigo: 'R1' }],
     contenedor: [{ id: 'x1', codigo: 'S1' }, { id: 'x2', codigo: 'S2' }],
     jaula: [
       // ICA was clean when registered; the app saw its cycle begin and end.
@@ -45,8 +44,8 @@ function lab() {
       { id: 'g2', jaula_id: 'jA', fecha: d('2026-10-16', '15:00'), kg_larvas: 1, generacion: 8, created_at: d('2026-10-16', '15:00') }
     ],
     bandeja_pupacion: [
-      { id: 'b1', ingreso_id: 'g1', jaula_id: 'jA', rack_id: 'r1', numero: 1, codigo: 'F7-B2109-1', peso_kg: 4.7 },
-      { id: 'b2', ingreso_id: 'g2', jaula_id: 'jA', rack_id: 'r1', numero: 1, codigo: 'F7-B1610-1', peso_kg: 4.7 }
+      { id: 'b1', ingreso_id: 'g1', jaula_id: 'jA', numero: 1, codigo: 'F7-B2109-1', peso_kg: 4.7 },
+      { id: 'b2', ingreso_id: 'g2', jaula_id: 'jA', numero: 1, codigo: 'F7-B1610-1', peso_kg: 4.7 }
     ],
     jaula_evento: [
       { id: 'v1', jaula_id: 'jA', tipo: 'cierre', fecha: d('2026-10-06', '20:00'), created_at: d('2026-10-06', '20:00') },

@@ -12,80 +12,98 @@ About 20 minutes. Two services, both free tier:
 
 ---
 
-> ### ⚠ Base que ya existe: los protocolos nuevos (0010), ANTES del push
+> ### ⚠ El SQL va ANTES del push
 >
-> `0010_ciclo_nuevo.sql` reconstruye la base para los protocolos de octubre de
-> 2026. **Borra todos los datos de la app del protocolo anterior** y conserva
-> sólo los nombres de las personas. El historial de AppSheet nunca se cargó; va
-> aparte, al esquema `historico` (ver *Loading your historical data*).
+> La app llama a las funciones de la base por su nombre: si haces push antes del
+> SQL, todo lo que se registre queda en *Conflictos* hasta correrlo. Los archivos
+> se pegan en Supabase → SQL Editor → New query (el CONTENIDO, no el nombre) → Run.
 >
-> En este orden:
+> | Archivo (en `supabase/`) | Qué es | Cuándo se corre |
+> |---|---|---|
+> | `esquema/0010_ciclo_nuevo.sql` | Los protocolos de octubre de 2026 | Ya corrió en producción (2026-10-22) |
+> | `esquema/0011_bandejas_y_reglas.sql` | Sin racks, las bandejas de la recolecta, los dos modos, la llave pública sin borrar | **Una vez, antes del próximo push** |
+> | `operaciones/permitir_cambios.sql` | Pasa a modo abierto | Cuando se decida, las veces que se quiera |
+> | `operaciones/proteger_datos.sql` | Pasa a modo protegido | Cuando se decida, las veces que se quiera |
+> | `operaciones/borrar_todos_los_datos.sql` | Borra todos los datos, para siempre | Sólo para empezar de cero |
+> | `SETUP_COMPLETO.sql` | Todo `esquema/` junto | Sólo en una base nueva y vacía |
 >
-> 1. Si el proyecto de Supabase está pausado, restáuralo (Dashboard → *Restore*).
-> 2. Averigua qué falta (sólo lee, no cambia nada):
+> Nada de esto vive en `supabase/migrations`, a propósito: la integración de
+> Supabase con GitHub aplica esa carpeta a producción en cada push a `main`, y
+> aquí el SQL se corre a mano, antes del push. Lo anterior a 0010 está en el
+> historial de git.
+>
+> ### Actualizar producción: 0011, ANTES del push
+>
+> 1. Averigua qué falta (sólo lee, no cambia nada):
 >    ```powershell
 >    npm run check:sql-applied
 >    ```
-> 3. Supabase → SQL Editor → New query: pega el CONTENIDO de
->    **`supabase/migrations/0010_ciclo_nuevo.sql`** y Run.
-> 4. `npm run check:sql-applied` otra vez: **todas las líneas deben decir `ok`.**
-> 5. Pon el alimento inicial habitual de la incubadora: Table Editor → esquema
->    `app` → `parametro` → `alimento_inicial_incubadora_kg` (por ejemplo `2`).
->    Mientras no tenga valor, la recolecta no propone los kg.
-> 6. Recién entonces, push. Entre el paso 3 y el push la app publicada no puede
+>    Hoy dice `FALTA` en las líneas `[0011]`.
+> 2. SQL Editor → pega el contenido de
+>    **`supabase/esquema/0011_bandejas_y_reglas.sql`** → Run. Elimina para siempre
+>    los racks y los cambios de rack; lo demás queda. Correrlo otra vez no cambia
+>    nada, y tampoco cambia de modo.
+> 3. `npm run check:sql-applied` otra vez: **todas las líneas deben decir `ok`**, y
+>    abajo dice el modo: abierto.
+> 4. Recién entonces, push. Entre el paso 2 y el push la app publicada no puede
 >    sincronizar: que nadie registre en ese rato.
-> 7. `npm run check:backend` y `npm run check:sync`: ambos limpios.
+> 5. `npm run check:backend` y `npm run check:sync`: ambos limpios.
 >
-> **El orden importa.** La app llama a las funciones de la base por su nombre:
-> si haces push antes del SQL, todo lo que se registre queda en *Conflictos*
-> hasta correrlo.
+> **En los teléfonos**, la versión nueva actualiza su base sola al abrir: conserva
+> la cola, sin lo que sólo hablaba de racks.
 >
-> Correr `0010` dos veces no borra nada nuevo: la parte que borra sólo actúa si
-> encuentra las tablas del protocolo anterior.
->
-> **En los teléfonos**, la versión nueva borra la base local del protocolo
-> anterior al abrir (no hay nada en ella que pueda sincronizar) y cada persona
-> elige su nombre otra vez. Las fotos viejas quedan en el bucket `fotos`; se
-> vacían desde Storage si se quiere, no desde SQL.
->
-> **Después del arranque**: registra los racks, los contenedores y las jaulas
-> (con la generación que tienen hoy). Las larvas que ya están en incubadoras o
-> cajas se anotan como recolecta con fecha pasada (interruptor *excepción*) y se
-> distribuyen ese mismo día. Detalle en `docs/protocolo.html`.
->
-> **`SETUP_COMPLETO.sql` es `0010` más lo que venga después**: para una base
-> nueva y vacía. En una con el protocolo anterior hace lo mismo que `0010`
-> (borra sus datos).
+> **Después del arranque**: registra los contenedores y los insectarios (con la
+> generación que tienen hoy). Las larvas que ya están en incubadoras o cajas se
+> anotan como recolecta con fecha pasada (interruptor *excepción*) y se distribuyen
+> ese mismo día. Detalle en `docs/protocolo.html`.
 >
 > **Cambiar el plan** (días de chequeo, cargas y kilos, día de separación,
-> porcentaje al horno, kilos por bandeja de pupación, días de recolecta,
-> maduración y horas de consumo del ensilado): Supabase → Table Editor →
-> esquema `app` → tabla `parametro`. Cada fila tiene una descripción. Los
-> teléfonos lo toman en la siguiente sincronización; no hace falta publicar.
+> porcentaje al horno, gramos de huevos y de alimento por bandeja, kilos por
+> bandeja de pupación, días de recolecta, maduración y horas de consumo del
+> ensilado): Supabase → Table Editor → esquema `app` → tabla `parametro`. Cada fila
+> tiene una descripción. Los teléfonos lo toman en la siguiente sincronización; no
+> hace falta publicar. El modo no se cambia ahí: se cambia con los archivos de abajo.
 
-> ### 0011 — con la llave pública nadie borra (antes o después del push)
+> ### Los dos modos
 >
-> `0011_sin_borrar.sql` quita el permiso de **borrar** a la llave pública, en
-> todas las tablas y en las fotos: la app lee, agrega y corrige, y nunca borra.
-> No cambia nada de lo que hace la app, así que puede correrse antes o después
-> del push. Supabase → SQL Editor → pega el contenido de
-> `supabase/migrations/0011_sin_borrar.sql` → Run. Después,
-> `npm run check:sql-applied` debe decir `ok` también en `[0011]`.
+> | | Modo abierto (`permitir_cambios.sql`) | Modo protegido (`proteger_datos.sql`) |
+> |---|---|---|
+> | Fechas y orden de los protocolos | Se anota lo que haya; sólo lo muy raro pregunta | Se exigen |
+> | Borrar desde la app | Sí (marca el registro y lo que cuelga de él) | No: la base lo rechaza y el botón desaparece |
+> | Corregir un dato | Sí, queda quién y cuándo | Sí, queda quién y cuándo; sin nombre, la base lo rechaza |
+> | Fechas de un día que no ha llegado | Pregunta | La base las rechaza |
+> | Cambiar filas directamente con la llave pública | Sí (lo usan las herramientas de QA) | No: sólo las funciones que dejan constancia |
+> | DELETE, TRUNCATE y cambiar ajustes con la llave pública | **Nunca** | **Nunca** |
 >
-> Desde aquí, `node tools/cleanup-qa.mjs --purge` ya no borra: imprime el SQL
+> Cada archivo se corre cuando se quiera, las veces que se quiera, y no toca ningún
+> dato. Los teléfonos cambian de modo en su siguiente sincronización. Una base nueva
+> empieza en modo abierto.
+>
+> En modo protegido las herramientas de QA ya no limpian lo suyo: para
+> `npm run check:backend`, `npm run check:sync` o
+> `node tools/cleanup-qa.mjs --delete`, primero `permitir_cambios.sql`, y después
+> `proteger_datos.sql` otra vez. `cleanup-qa --purge` nunca borra: imprime el SQL
 > para pegarlo en el SQL Editor.
 >
-> ### El día del arranque: vaciar la app
+> ### Borrar todos los datos
 >
-> El protocolo pide empezar sin datos. **Una vez**, antes de registrar los
-> racks, contenedores y jaulas de verdad: SQL Editor → pega
-> `supabase/VACIAR_ANTES_DEL_ARRANQUE.sql` → Run. Marca como borrado todo lo
-> registrado (también las pruebas de QA) y los teléfonos lo quitan al
-> sincronizar; quedan los ajustes, los materiales y los nombres, salvo los de
-> prueba («QA Claude», check-backend, check-sync). Al final muestra la lista de
+> **`supabase/operaciones/borrar_todos_los_datos.sql` no se puede deshacer.** Elimina
+> de verdad todo lo registrado en la app: insectarios, contenedores, recolectas,
+> bandejas, cochadas, ensilados, recepciones y todos sus registros. Quedan los
+> ajustes, la lista de materiales y los nombres (salvo los de prueba: «QA Claude»,
+> check-backend, check-sync), y el modo no cambia. Al final muestra la lista de
 > nombres que queda, para revisarla.
 >
-> Para quitar sólo lo de una prueba, sin vaciar todo:
+> Las fotos no salen con SQL: se vacían en Supabase → Storage → `fotos`. El esquema
+> `historico` no se toca.
+>
+> **Los teléfonos:** una fila eliminada no les llega por sincronización, así que el
+> archivo deja la hora del borrado en `parametro` (`datos_vaciados_at`). Cada teléfono
+> la ve al sincronizar, ANTES de enviar nada, y borra lo suyo de antes de esa hora,
+> también lo que tenía sin subir. Lo que registre después se conserva; si dependía de
+> algo borrado, aparece en *Conflictos*.
+>
+> Para quitar sólo lo de una prueba, sin borrar todo:
 > `node tools/cleanup-qa.mjs --delete --como "QA Claude"`.
 
 ## Step 0 — be in the right folder
@@ -146,8 +164,8 @@ the built-in terminal always starts in the right place.
 6. Wait for the green **Success. No rows returned**. It takes a few seconds.
 
 **Confirm it worked** — click **Table Editor** in the sidebar, and in the schema
-dropdown at the top (it says `public`) choose **`app`**. You should see 21
-tables, among them `jaula`, `incubadora`, `caja`, `chequeo`, `separacion`,
+dropdown at the top (it says `public`) choose **`app`**. You should see 19
+tables, among them `jaula` (the insectarios), `incubadora`, `caja`, `chequeo`, `separacion`,
 `cochada`, `ensilado` and `parametro`. Then run `npm run check:sql-applied`:
 every line must say `ok`.
 
@@ -265,8 +283,8 @@ Open the Netlify URL on a phone and do these **in order**:
    name in the box below it — it then appears for everyone.)
 3. **Header chip says "Al día"** within a few seconds. Anything else — tap it;
    the sync screen explains the problem in plain Spanish.
-4. Create: **Racks y contenedores → Agregar rack**, then **Insectarios →
-   Registrar jaula** (with flies), then **Inicio → Nueva recolecta**.
+4. Create: **Laboratorio → Registrar insectario** (with flies), then **Inicio →
+   Nueva recolecta**.
 5. **Check Supabase** → Table Editor → `app.incubadora`. Your incubadora is there.
 6. **Airplane mode. Reload the page.** The app must still open and show your
    data. ← *If this fails, nothing else matters. Fix it first.*
@@ -305,12 +323,14 @@ query it from the Supabase dashboard.
 |---|---|---|
 | `syntax error at or near "supabase"` | You pasted the file NAME, not its contents | Open the file, `Ctrl+A`, `Ctrl+C`, paste that |
 | Everything 404s / no data ever loads | `app` not in Exposed schemas | **A3** — this is almost always it |
-| `permission denied for schema app` | Migration didn't finish | Re-run `0010_ciclo_nuevo.sql` to the end |
+| `permission denied for schema app` | The SQL didn't finish | Re-run the file in `supabase/esquema` to the end |
 | Chip says "Sólo local" | `app-config.js` is empty or wrong | **B1**, then redeploy |
 | Data saves but never syncs | Wrong URL or key | Tap the chip; the sync screen shows the error |
 | Blank page offline | Service worker not installed | Must be HTTPS (Netlify is). Force-close and reopen |
-| Materials list is empty | `0010` not run | Run it |
+| Materials list is empty | `supabase/esquema` not run | Run it |
 | Photos don't upload | Bucket missing | `0010` creates it (section 12) |
+| "Los datos están protegidos" in Conflictos | A delete queued offline while the data went to protected mode | *Descartar* it; correct the record instead |
+| QA cleanup says `permission denied` | Protected mode | `permitir_cambios.sql`, repeat, then `proteger_datos.sql` |
 | "Ya existe una incubadora F…" in Conflictos | Two phones gave out the same code offline | A real duplicate: keep one, *Descartar* the other |
 | Dates a day off | Device clock wrong | The sync screen warns above 5 minutes of drift |
 | Old version stuck on a phone | Cached | Force-close the app and reopen; `sw.js` is sent no-cache |
@@ -327,8 +347,10 @@ Not needed for the demo. Needed before the farm depends on it:
 - [ ] **Nightly backups.** This becomes the company's only production record;
       the free tier gives daily snapshots and no point-in-time recovery. A
       `pg_dump` on a schedule is the cheapest insurance you will buy.
-- [ ] **Real logins.** Since `0011` the public key can no longer delete, but
-      it can still read, add and correct everything: anyone with the URL can.
+- [ ] **Real logins.** Since `0011` the public key can no longer delete, and in
+      protected mode it changes rows only through the functions that record who
+      and when, but it can still read, add and correct everything: anyone with
+      the URL can.
       Enable Google in Supabase (Authentication → Providers), set
       `authMode: 'google'`, keep a list of the lab's accounts, and change the
       `0011` policies (`app_leer`, `app_agregar`, `app_corregir`) from

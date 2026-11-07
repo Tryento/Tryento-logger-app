@@ -5,7 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  PROTOCOLO_DEFAULTS, mergeProtocolo, repartoSeparacion, diaCiclo, diaSemana, timing,
+  PROTOCOLO_DEFAULTS, mergeProtocolo, repartoSeparacion, bandejasParaHuevos, huevosPorBandeja,
+  diaCiclo, diaSemana, timing,
   pasosIncubadora, pasosCaja, estadoJaula, pasosJaula, pasosCochada, cargasDeCaja, cargaDistribucion
 } from '../src/data/protocolo.js';
 import {
@@ -19,11 +20,13 @@ const resumen = pasos => pasos.map(p =>
 test('settings: the seeded values, and a bad value in the table never wins', () => {
   assert.deepEqual(cfg.cargas, [{ n: 1, dia: 7, kg: 1.5 }, { n: 2, dia: 10, kg: 2 }, { n: 3, dia: 13, kg: 2 }]);
   assert.equal(cfg.pct_coccion, 98);
-  assert.equal(cfg.alimento_inicial_incubadora_kg, null, 'por definir antes del arranque');
+  assert.deepEqual([cfg.huevos_bandeja_min_g, cfg.huevos_bandeja_max_g, cfg.alimento_bandeja_g], [2, 5, 400]);
+  assert.equal(cfg.reglas_estrictas, false, 'modo abierto hasta que la base diga otra cosa');
 
   const c = mergeProtocolo([
     { clave: 'pct_coccion', valor: 97 },
-    { clave: 'alimento_inicial_incubadora_kg', valor: '1.25' },
+    { clave: 'alimento_bandeja_g', valor: '350' },
+    { clave: 'reglas_estrictas', valor: 'tal vez' },
     { clave: 'dias_recolecta', valor: [1, 9] },              // 9 is not a weekday
     { clave: 'cargas', valor: 'no es json' },
     { clave: 'dias_maduracion', valor: 21.5 },
@@ -31,7 +34,12 @@ test('settings: the seeded values, and a bad value in the table never wins', () 
     { clave: 'horas_consumo', valor: 48, deleted_at: '2026-10-01T00:00:00Z' }
   ]);
   assert.equal(c.pct_coccion, 97);
-  assert.equal(c.alimento_inicial_incubadora_kg, 1.25);
+  assert.equal(c.alimento_bandeja_g, 350);
+  assert.equal(c.reglas_estrictas, false);
+  assert.equal(mergeProtocolo([{ clave: 'reglas_estrictas', valor: true }]).reglas_estrictas, true);
+  // A range the wrong way round is a typo.
+  const alReves = mergeProtocolo([{ clave: 'huevos_bandeja_min_g', valor: 6 }, { clave: 'huevos_bandeja_max_g', valor: 5 }]);
+  assert.deepEqual([alReves.huevos_bandeja_min_g, alReves.huevos_bandeja_max_g], [2, 5]);
   assert.deepEqual(c.dias_recolecta, [1, 3, 5]);
   assert.deepEqual(c.cargas, PROTOCOLO_DEFAULTS.cargas);
   assert.equal(c.dias_maduracion, 21);
@@ -47,6 +55,36 @@ test('the 98/2 split rounds exactly like Postgres numeric', () => {
   assert.deepEqual(repartoSeparacion(0.125, 98), { coccion_kg: 0.123, retorno_kg: 0.002 });
   assert.deepEqual(repartoSeparacion('7,3'.replace(',', '.'), 97.5), { coccion_kg: 7.118, retorno_kg: 0.182 });
   assert.deepEqual(repartoSeparacion(0, 98), { coccion_kg: 0, retorno_kg: 0 });
+});
+
+test('bandejas from the eggs: within 2–5 g each, proposing the middle of the range', () => {
+  const b = g => { const r = bandejasParaHuevos(g, cfg); return r && [r.min, r.max, r.sugerida]; };
+  assert.deepEqual(b(12), [3, 6, 3]);
+  assert.deepEqual(b(20), [4, 10, 6]);
+  assert.deepEqual(b(7), [2, 3, 2]);
+  assert.deepEqual(b(5.5), [2, 2, 2]);
+  assert.deepEqual(b(5), [1, 2, 1]);
+  assert.deepEqual(b(2), [1, 1, 1]);
+  assert.deepEqual(b(1), [1, 1, 1], 'muy pocos huevos: una bandeja igual');
+  assert.equal(b(0), null);
+  assert.equal(b(''), null);
+  assert.equal(b('abc'), null);
+  // The range is a setting. Where no count fits it, the closest one is proposed.
+  const otro = mergeProtocolo([{ clave: 'huevos_bandeja_min_g', valor: 1 }, { clave: 'huevos_bandeja_max_g', valor: 3 }]);
+  assert.deepEqual(bandejasParaHuevos(12, otro), { min: 4, max: 12, sugerida: 6 });
+  const estrecho = mergeProtocolo([{ clave: 'huevos_bandeja_min_g', valor: 4 }, { clave: 'huevos_bandeja_max_g', valor: 5 }]);
+  assert.deepEqual(bandejasParaHuevos(5.5, estrecho), { min: 2, max: 2, sugerida: 2 });
+});
+
+test('grams per bandeja, and whether that leaves the range', () => {
+  assert.deepEqual(huevosPorBandeja(12, 3, cfg), { g_bandeja: 4, fuera: false });
+  assert.deepEqual(huevosPorBandeja(12, 1, cfg), { g_bandeja: 12, fuera: true });
+  assert.deepEqual(huevosPorBandeja(12, 8, cfg), { g_bandeja: 1.5, fuera: true });
+  assert.deepEqual(huevosPorBandeja(10, 3, cfg), { g_bandeja: 3.33, fuera: false });
+  assert.deepEqual(huevosPorBandeja(1, 1, cfg), { g_bandeja: 1, fuera: false }, 'con menos no se puede hacer otra cosa');
+  assert.deepEqual(huevosPorBandeja(1, 2, cfg), { g_bandeja: 0.5, fuera: true });
+  assert.equal(huevosPorBandeja(0, 2, cfg), null);
+  assert.equal(huevosPorBandeja(12, 0, cfg), null);
 });
 
 test('days are farm days; weekdays Monday = 1', () => {
@@ -89,8 +127,12 @@ test('caja: chequeo día 10 before carga 2, carga 3, ayuno from the día-14 cheq
   const caja = { estado: 'activo', created_at: '2026-10-26T13:00:00.000Z' };   // distributed on día 7
   const dia0 = '2026-10-19';
   const cargas = [{ carga: 1 }];
-  // Día 10: the chequeo is due; carga 2 waits for it.
+  // Día 10: the chequeo is due; "para hoy" does not chase carga 2 until it is in…
   assert.deepEqual(resumen(pasosCaja(caja, { dia0, cargas }, cfg, '2026-10-29')),
+                   ['chequeo@10:hoy', 'carga2@10:hoy~', 'carga3@13:proximo', 'chequeo@14:proximo', 'separacion@16:proximo']);
+  // …and in protected mode carga 2 waits for it.
+  const estricta = mergeProtocolo([{ clave: 'reglas_estrictas', valor: true }]);
+  assert.deepEqual(resumen(pasosCaja(caja, { dia0, cargas }, estricta, '2026-10-29')),
                    ['chequeo@10:hoy', 'carga2@10:hoy!~', 'carga3@13:proximo', 'chequeo@14:proximo', 'separacion@16:proximo']);
   // Chequeo done: carga 2 is free.
   const ch10 = [{ dia: 10 }];

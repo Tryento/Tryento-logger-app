@@ -99,8 +99,9 @@ a:hover{color:#4ADE80}
 <div style="display:flex;flex-direction:column;gap:10px">
 <div style="background:#111A14;border:1px solid #1E4A2F;border-radius:12px;padding:14px 15px;display:flex;flex-direction:column;gap:10px">
 <div style="font-size:16px;font-weight:700">Para empezar</div>
-<div style="font-size:14.5px;color:#9FB8A6">Registra los racks, los contenedores de ensilado y las jaulas, con la generación que tienen hoy. Después, cada recolecta crea su incubadora.</div>
-<button onClick="{{ onEmpezar }}" style="width:100%;min-height:58px;border-radius:12px;border:none;background:#22C55E;color:#061308;font-size:17px;font-weight:700;cursor:pointer">Racks, contenedores y jaulas</button>
+<div style="font-size:14.5px;color:#9FB8A6">Registra los insectarios, con la generación que tienen hoy, y los contenedores de ensilado. Después, cada recolecta crea su incubadora.</div>
+<button onClick="{{ onNuevaJaula }}" style="width:100%;min-height:58px;border-radius:12px;border:none;background:#22C55E;color:#061308;font-size:17px;font-weight:700;cursor:pointer">Registrar insectario</button>
+<button onClick="{{ onNuevoContenedor }}" style="width:100%;min-height:56px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Registrar contenedor</button>
 </div>
 </div>
 </sc-if>
@@ -148,6 +149,16 @@ a:hover{color:#4ADE80}
 </sc-for>
 </div>
 </sc-if>
+<!-- The lab's own pages, offline too (sw.js). Small on purpose: on hand for whoever
+     needs them, without competing with the day's work. -->
+<div style="display:flex;justify-content:center;flex-wrap:wrap;gap:10px">
+  <sc-for list="{{ homePaginas }}" as="p" hint-placeholder-count="2">
+    <button onClick="{{ p.onClick }}" style="display:flex;align-items:center;gap:7px;min-height:44px;padding:0 13px;border:1px solid #1D2A21;border-radius:10px;background:#0E150F;color:#9FB8A6;font-size:13.5px;font-weight:600;white-space:nowrap;cursor:pointer">
+      <img src="{{ p.icono }}" alt="" style="width:18px;height:18px;display:block;flex:none" />
+      <span>{{ p.label }}</span>
+    </button>
+  </sc-for>
+</div>
 </div>
     </sc-if>
 
@@ -175,65 +186,35 @@ a:hover{color:#4ADE80}
       </div>
     </sc-if>
 
-    <sc-if value="{{ isLarvas }}" hint-placeholder-val="{{ false }}">
-<div style="display:flex;flex-direction:column;gap:22px">
-<div style="display:flex;flex-direction:column;gap:10px">
-<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ incLabel }}</div>
-<sc-for list="{{ incRows }}" as="x" hint-placeholder-count="3">
-  <button onClick="{{ x.onOpen }}" style="display:flex;align-items:stretch;gap:12px;width:100%;text-align:left;background:#141C16;border:1px solid {{ x.bd }};border-radius:12px;padding:12px;min-height:70px;cursor:pointer;color:#EAF7EC">
-    <div style="width:6px;flex:none;border-radius:3px;background:{{ x.color }}"></div>
-    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;justify-content:center">
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="flex:1;min-width:0;font-family:'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:16px;font-weight:600;letter-spacing:-0.02em">{{ x.titulo }}</span>
-        <sc-if value="{{ x.hasEtiqueta }}" hint-placeholder-val="{{ true }}">
-          <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;flex:none;padding:3px 7px;border-radius:5px;background:{{ x.color }};color:#061308">{{ x.etiqueta }}</span>
-        </sc-if>
-      </div>
-      <div style="font-size:14px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.linea }}</div>
-      <sc-if value="{{ x.hasPaso }}" hint-placeholder-val="{{ false }}">
-        <div style="font-size:13.5px;font-weight:600;color:{{ x.pasoFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.paso }}</div>
-      </sc-if>
-    </div>
-    <div style="display:flex;align-items:center;color:#4E6B58;font-size:22px">&#8250;</div>
-  </button>
-</sc-for>
-<sc-if value="{{ sinInc }}" hint-placeholder-val="{{ false }}">
-<div style="font-size:14.5px;color:#9FB8A6">Ninguna incubadora activa.</div>
-</sc-if>
+    <!-- The whole lab on one screen: every insectario and every bandeja, how it is
+         doing and what it needs next. -->
+    <sc-if value="{{ isLab }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="display:flex;gap:8px">
+  <sc-for list="{{ labFiltros }}" as="c" hint-placeholder-count="3">
+    <button onClick="{{ c.onClick }}" style="flex:1 1 auto;min-width:0;min-height:46px;padding:0 8px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:14.5px;font-weight:700;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
+  </sc-for>
 </div>
-<div style="display:flex;flex-direction:column;gap:10px">
-<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ cajaLabel }}</div>
-<sc-for list="{{ cajaRows }}" as="x" hint-placeholder-count="3">
-  <button onClick="{{ x.onOpen }}" style="display:flex;align-items:stretch;gap:12px;width:100%;text-align:left;background:#141C16;border:1px solid {{ x.bd }};border-radius:12px;padding:12px;min-height:70px;cursor:pointer;color:#EAF7EC">
-    <div style="width:6px;flex:none;border-radius:3px;background:{{ x.color }}"></div>
-    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;justify-content:center">
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="flex:1;min-width:0;font-family:'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:16px;font-weight:600;letter-spacing:-0.02em">{{ x.titulo }}</span>
-        <sc-if value="{{ x.hasEtiqueta }}" hint-placeholder-val="{{ true }}">
-          <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;flex:none;padding:3px 7px;border-radius:5px;background:{{ x.color }};color:#061308">{{ x.etiqueta }}</span>
-        </sc-if>
-      </div>
-      <div style="font-size:14px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.linea }}</div>
-      <sc-if value="{{ x.hasPaso }}" hint-placeholder-val="{{ false }}">
-        <div style="font-size:13.5px;font-weight:600;color:{{ x.pasoFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.paso }}</div>
-      </sc-if>
-    </div>
-    <div style="display:flex;align-items:center;color:#4E6B58;font-size:22px">&#8250;</div>
-  </button>
-</sc-for>
-<sc-if value="{{ sinCajas }}" hint-placeholder-val="{{ false }}">
-<div style="font-size:14.5px;color:#9FB8A6">Ninguna caja de engorde activa.</div>
-</sc-if>
-</div>
-<button onClick="{{ onVerTerminadas }}" style="min-height:44px;padding:0 4px;border:none;background:none;font-size:15px;font-weight:600;color:#22C55E;cursor:pointer;align-self:flex-start">{{ verTerminadasLabel }}</button>
-</div>
+<button onClick="{{ onLabActivos }}" role="switch" aria-checked="{{ labSoloActivos }}" style="display:flex;align-items:center;gap:12px;width:100%;min-height:46px;padding:0 2px;border:none;background:none;text-align:left;cursor:pointer;color:#EAF7EC">
+  <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+    <span style="font-size:15px;font-weight:600">Ocultar inactivos</span>
+    <sc-if value="{{ labHayOcultos }}" hint-placeholder-val="{{ false }}">
+      <span style="font-size:13px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ labOcultos }}</span>
     </sc-if>
-
-    <sc-if value="{{ isJaulas }}" hint-placeholder-val="{{ false }}">
-<div style="display:flex;flex-direction:column;gap:18px">
-<div style="background:#111A14;border:1px solid #1D2A21;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#9FB8A6">{{ poolLinea }}</div>
+  </span>
+  <span style="width:48px;height:28px;flex:none;border-radius:14px;padding:3px;display:flex;justify-content:{{ labSwitchLado }};background:{{ labSwitchBg }}">
+    <span style="width:22px;height:22px;border-radius:11px;background:{{ labSwitchMarca }}"></span>
+  </span>
+</button>
+</div>
+<sc-if value="{{ labVerInsectarios }}" hint-placeholder-val="{{ true }}">
 <div style="display:flex;flex-direction:column;gap:10px">
-<sc-for list="{{ jaulaRows }}" as="x" hint-placeholder-count="3">
+<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ labInsectariosLabel }}</div>
+<sc-if value="{{ labHayPool }}" hint-placeholder-val="{{ false }}">
+<div style="background:#111A14;border:1px solid #1D2A21;border-radius:12px;padding:11px 14px;font-size:14.5px;color:#9FB8A6">{{ labPool }}</div>
+</sc-if>
+<sc-for list="{{ labInsectarios }}" as="x" hint-placeholder-count="3">
   <button onClick="{{ x.onOpen }}" style="display:flex;align-items:stretch;gap:12px;width:100%;text-align:left;background:#141C16;border:1px solid {{ x.bd }};border-radius:12px;padding:12px;min-height:70px;cursor:pointer;color:#EAF7EC">
     <div style="width:6px;flex:none;border-radius:3px;background:{{ x.color }}"></div>
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;justify-content:center">
@@ -251,11 +232,41 @@ a:hover{color:#4ADE80}
     <div style="display:flex;align-items:center;color:#4E6B58;font-size:22px">&#8250;</div>
   </button>
 </sc-for>
-<sc-if value="{{ sinJaulas }}" hint-placeholder-val="{{ false }}">
-<div style="font-size:14.5px;color:#9FB8A6">Todavía no hay jaulas registradas.</div>
+<sc-if value="{{ labSinInsectarios }}" hint-placeholder-val="{{ false }}">
+<div style="font-size:14.5px;color:#9FB8A6">{{ labSinInsectariosTxt }}</div>
+</sc-if>
+<button onClick="{{ onNuevaJaula }}" style="width:100%;min-height:56px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Registrar insectario</button>
+</div>
+</sc-if>
+<sc-if value="{{ labVerBandejas }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ labBandejasLabel }}</div>
+<sc-for list="{{ labBandejas }}" as="x" hint-placeholder-count="3">
+  <button onClick="{{ x.onOpen }}" style="display:flex;align-items:stretch;gap:12px;width:100%;text-align:left;background:#141C16;border:1px solid {{ x.bd }};border-radius:12px;padding:12px;min-height:70px;cursor:pointer;color:#EAF7EC">
+    <div style="width:6px;flex:none;border-radius:3px;background:{{ x.color }}"></div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;justify-content:center">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="flex:1;min-width:0;font-family:'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:16px;font-weight:600;letter-spacing:-0.02em">{{ x.titulo }}</span>
+        <sc-if value="{{ x.hasEtiqueta }}" hint-placeholder-val="{{ true }}">
+          <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;flex:none;padding:3px 7px;border-radius:5px;background:{{ x.color }};color:#061308">{{ x.etiqueta }}</span>
+        </sc-if>
+      </div>
+      <div style="font-size:14px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.linea }}</div>
+      <sc-if value="{{ x.hasPaso }}" hint-placeholder-val="{{ false }}">
+        <div style="font-size:13.5px;font-weight:600;color:{{ x.pasoFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.paso }}</div>
+      </sc-if>
+    </div>
+    <div style="display:flex;align-items:center;color:#4E6B58;font-size:22px">&#8250;</div>
+  </button>
+</sc-for>
+<sc-if value="{{ labSinBandejas }}" hint-placeholder-val="{{ false }}">
+<div style="font-size:14.5px;color:#9FB8A6">{{ labSinBandejasTxt }}</div>
+</sc-if>
+<sc-if value="{{ labHayMas }}" hint-placeholder-val="{{ false }}">
+<div style="font-size:13.5px;color:#9FB8A6">Se ven las inactivas más recientes.</div>
 </sc-if>
 </div>
-<button onClick="{{ onNuevaJaula }}" style="width:100%;min-height:56px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Registrar jaula</button>
+</sc-if>
 </div>
     </sc-if>
 
@@ -375,6 +386,28 @@ a:hover{color:#4ADE80}
 <sc-if value="{{ hasSinEnsilado }}" hint-placeholder-val="{{ false }}">
 <div style="background:#1F1710;border:1px solid #5A3A18;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#FB923C">{{ sinEnsiladoTxt }}</div>
 </sc-if>
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">CONTENEDORES DE ENSILADO</div>
+<sc-for list="{{ contRows }}" as="x" hint-placeholder-count="3">
+  <button onClick="{{ x.onOpen }}" style="display:flex;align-items:stretch;gap:12px;width:100%;text-align:left;background:#141C16;border:1px solid {{ x.bd }};border-radius:12px;padding:12px;min-height:70px;cursor:pointer;color:#EAF7EC">
+    <div style="width:6px;flex:none;border-radius:3px;background:{{ x.color }}"></div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;justify-content:center">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="flex:1;min-width:0;font-family:'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:16px;font-weight:600;letter-spacing:-0.02em">{{ x.titulo }}</span>
+        <sc-if value="{{ x.hasEtiqueta }}" hint-placeholder-val="{{ true }}">
+          <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;flex:none;padding:3px 7px;border-radius:5px;background:{{ x.color }};color:#061308">{{ x.etiqueta }}</span>
+        </sc-if>
+      </div>
+      <div style="font-size:14px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.linea }}</div>
+      <sc-if value="{{ x.hasPaso }}" hint-placeholder-val="{{ false }}">
+        <div style="font-size:13.5px;font-weight:600;color:{{ x.pasoFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.paso }}</div>
+      </sc-if>
+    </div>
+    <div style="display:flex;align-items:center;color:#4E6B58;font-size:22px">&#8250;</div>
+  </button>
+</sc-for>
+<button onClick="{{ onNuevoContenedor }}" style="width:100%;min-height:56px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Agregar contenedor</button>
+</div>
 <div style="display:flex;flex-direction:column;gap:10px">
 <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">RECEPCIONES</div>
 <sc-for list="{{ recepcionRegs }}" as="g" hint-placeholder-count="3">
@@ -537,60 +570,7 @@ a:hover{color:#4ADE80}
 </div>
     </sc-if>
 
-    <sc-if value="{{ isRacks }}" hint-placeholder-val="{{ false }}">
-<div style="display:flex;flex-direction:column;gap:22px">
-<div style="display:flex;flex-direction:column;gap:10px">
-<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">RACKS</div>
-<sc-for list="{{ rackRows }}" as="x" hint-placeholder-count="3">
-  <button onClick="{{ x.onOpen }}" style="display:flex;align-items:stretch;gap:12px;width:100%;text-align:left;background:#141C16;border:1px solid {{ x.bd }};border-radius:12px;padding:12px;min-height:70px;cursor:pointer;color:#EAF7EC">
-    <div style="width:6px;flex:none;border-radius:3px;background:{{ x.color }}"></div>
-    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;justify-content:center">
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="flex:1;min-width:0;font-family:'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:16px;font-weight:600;letter-spacing:-0.02em">{{ x.titulo }}</span>
-        <sc-if value="{{ x.hasEtiqueta }}" hint-placeholder-val="{{ true }}">
-          <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;flex:none;padding:3px 7px;border-radius:5px;background:{{ x.color }};color:#061308">{{ x.etiqueta }}</span>
-        </sc-if>
-      </div>
-      <div style="font-size:14px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.linea }}</div>
-      <sc-if value="{{ x.hasPaso }}" hint-placeholder-val="{{ false }}">
-        <div style="font-size:13.5px;font-weight:600;color:{{ x.pasoFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.paso }}</div>
-      </sc-if>
-    </div>
-    <div style="display:flex;align-items:center;color:#4E6B58;font-size:22px">&#8250;</div>
-  </button>
-</sc-for>
-<button onClick="{{ onNuevoRack }}" style="width:100%;min-height:56px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Agregar rack</button>
-</div>
-<div style="display:flex;flex-direction:column;gap:10px">
-<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">CONTENEDORES DE ENSILADO</div>
-<sc-for list="{{ contRows }}" as="x" hint-placeholder-count="3">
-  <button onClick="{{ x.onOpen }}" style="display:flex;align-items:stretch;gap:12px;width:100%;text-align:left;background:#141C16;border:1px solid {{ x.bd }};border-radius:12px;padding:12px;min-height:70px;cursor:pointer;color:#EAF7EC">
-    <div style="width:6px;flex:none;border-radius:3px;background:{{ x.color }}"></div>
-    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;justify-content:center">
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="flex:1;min-width:0;font-family:'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:16px;font-weight:600;letter-spacing:-0.02em">{{ x.titulo }}</span>
-        <sc-if value="{{ x.hasEtiqueta }}" hint-placeholder-val="{{ true }}">
-          <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;flex:none;padding:3px 7px;border-radius:5px;background:{{ x.color }};color:#061308">{{ x.etiqueta }}</span>
-        </sc-if>
-      </div>
-      <div style="font-size:14px;color:#9FB8A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.linea }}</div>
-      <sc-if value="{{ x.hasPaso }}" hint-placeholder-val="{{ false }}">
-        <div style="font-size:13.5px;font-weight:600;color:{{ x.pasoFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.paso }}</div>
-      </sc-if>
-    </div>
-    <div style="display:flex;align-items:center;color:#4E6B58;font-size:22px">&#8250;</div>
-  </button>
-</sc-for>
-<button onClick="{{ onNuevoContenedor }}" style="width:100%;min-height:56px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Agregar contenedor</button>
-</div>
-<div style="display:flex;flex-direction:column;gap:10px">
-<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">JAULAS</div>
-<button onClick="{{ onIrJaulas }}" style="width:100%;min-height:56px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Ver y registrar jaulas</button>
-</div>
-</div>
-    </sc-if>
-
-    <!-- One page for every object: incubadora, caja, jaula, cochada, ensilado. -->
+    <!-- One page for every object: incubadora, caja, insectario, cochada, ensilado. -->
     <sc-if value="{{ isDetalle }}" hint-placeholder-val="{{ false }}">
 <div style="display:flex;flex-direction:column;gap:20px">
 <div style="background:#141C16;border:1px solid #1D2A21;border-radius:14px;overflow:hidden">
@@ -691,39 +671,38 @@ a:hover{color:#4ADE80}
     <sc-if value="{{ isRecolecta }}" hint-placeholder-val="{{ false }}">
 <div style="display:flex;flex-direction:column;gap:20px">
 <div style="display:flex;flex-direction:column;gap:9px">
-<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">JAULA</div>
+<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">INSECTARIO</div>
 <div style="display:flex;flex-wrap:wrap;gap:8px">
   <sc-for list="{{ recJaulaChips }}" as="c" hint-placeholder-count="4">
     <button onClick="{{ c.onClick }}" style="min-height:52px;padding:0 14px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
   </sc-for>
 </div>
 <sc-if value="{{ recSinJaulas }}" hint-placeholder-val="{{ false }}">
-<div style="background:#1F1710;border:1px solid #5A3A18;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#FB923C">No hay jaulas con moscas. Registra la jaula, o repuebla una.</div>
-</sc-if>
-</div>
-<div style="display:flex;flex-direction:column;gap:9px">
-<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">RACK</div>
-<div style="display:flex;flex-wrap:wrap;gap:8px">
-  <sc-for list="{{ rackChips }}" as="c" hint-placeholder-count="4">
-    <button onClick="{{ c.onClick }}" style="min-height:52px;padding:0 14px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-family:'IBM Plex Mono',monospace;font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
-  </sc-for>
-</div>
-<sc-if value="{{ recSinRacks }}" hint-placeholder-val="{{ false }}">
-<div style="background:#1F1710;border:1px solid #5A3A18;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#FB923C">No hay racks registrados: agrégalos en «Racks y contenedores».</div>
+<div style="background:#1F1710;border:1px solid #5A3A18;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#FB923C">No hay insectarios con moscas. Registra el insectario, o repuebla uno.</div>
 </sc-if>
 </div>
 <div style="display:flex;flex-direction:column;gap:9px">
 <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">PESO INICIAL (HUEVOS / LARVAS)</div>
 <div style="display:flex;align-items:center;gap:10px">
-  <input inputMode="decimal" value="{{ f.peso_inicial_g }}" onChange="{{ h.peso_inicial_g }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+  <input inputMode="decimal" value="{{ f.peso_inicial_g }}" onChange="{{ onPesoHuevos }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
   <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none;min-width:24px">g</div>
 </div>
 </div>
+<!-- The eggs say how many bandejas to assemble; the person has the last word. -->
 <div style="display:flex;flex-direction:column;gap:9px">
-<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ALIMENTO INICIAL</div>
+<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">BANDEJAS A ARMAR</div>
 <div style="display:flex;align-items:center;gap:10px">
-  <input inputMode="decimal" value="{{ f.alimento_inicial_kg }}" onChange="{{ h.alimento_inicial_kg }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
-  <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none;min-width:24px">kg</div>
+  <button onClick="{{ onBandejaMenos }}" aria-label="Una bandeja menos" style="width:60px;min-height:60px;flex:none;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:26px;font-weight:700;cursor:pointer">&#8722;</button>
+  <input inputMode="numeric" value="{{ f.n_bandejas }}" onChange="{{ onBandejas }}" placeholder="—" style="flex:1;min-width:0;min-height:60px;padding:0 10px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:24px;font-weight:600;text-align:center" />
+  <button onClick="{{ onBandejaMas }}" aria-label="Una bandeja más" style="width:60px;min-height:60px;flex:none;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:26px;font-weight:700;cursor:pointer">+</button>
+</div>
+<div style="font-size:14.5px;font-weight:{{ recBandejasPeso }};color:{{ recBandejasFg }}">{{ recBandejasHint }}</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:9px">
+<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ALIMENTO INICIAL POR BANDEJA</div>
+<div style="display:flex;align-items:center;gap:10px">
+  <input inputMode="decimal" value="{{ f.alimento_bandeja_g }}" onChange="{{ h.alimento_bandeja_g }}" placeholder="0" style="flex:1;min-width:0;min-height:60px;padding:0 15px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600" />
+  <div style="font-size:17px;font-weight:600;color:#9FB8A6;flex:none;min-width:24px">g</div>
 </div>
 <div style="font-size:14.5px;color:#9FB8A6">{{ recAlimentoHint }}</div>
 </div>
@@ -738,10 +717,10 @@ a:hover{color:#4ADE80}
 </sc-if>
 </div>
 <sc-if value="{{ hasRecYaHoy }}" hint-placeholder-val="{{ false }}">
-<div style="background:#1F1710;border:1px solid #5A3A18;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#FB923C">Esta jaula ya dio una recolecta hoy.</div>
+<div style="background:#1F1710;border:1px solid #5A3A18;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#FB923C">Este insectario ya dio una recolecta hoy.</div>
 </sc-if>
 <sc-if value="{{ hasRecCodigo }}" hint-placeholder-val="{{ false }}">
-<div style="background:#0E2415;border:1px solid #1E4A2F;border-radius:12px;padding:13px 15px;font-size:15px;font-weight:600;color:#4ADE80">Código: {{ recCodigo }} — escríbelo en la incubadora.</div>
+<div style="background:#0E2415;border:1px solid #1E4A2F;border-radius:12px;padding:13px 15px;font-size:15px;font-weight:600;color:#4ADE80">Código: {{ recCodigo }} — escríbelo en sus bandejas.</div>
 </sc-if>
 </div>
     </sc-if>
@@ -775,14 +754,6 @@ a:hover{color:#4ADE80}
   <span style="font-size:11px;font-weight:600;letter-spacing:.06em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.cargaLabel }}</span>
   <input inputMode="decimal" value="{{ r.carga }}" onChange="{{ r.onCarga }}" placeholder="—" style="width:100%;min-width:0;min-height:54px;padding:0 10px;border:1.5px solid #26382C;border-radius:10px;background:#0A0A0A;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:600" />
 </label>
-</div>
-<div style="display:flex;align-items:center;gap:10px"><span style="font-size:11px;font-weight:600;letter-spacing:.06em;color:#7FA189;flex:none">RACK</span>
-<div style="position:relative;flex:1;min-width:0">
-  <select value="{{ r.rack_id }}" onChange="{{ r.onRack }}" style="width:100%;min-height:54px;padding:0 30px 0 11px;border:1.5px solid #26382C;border-radius:10px;background:#0A0A0A;color:#EAF7EC;font-size:16px;font-weight:600">
-    <sc-for list="{{ rackOpts }}" as="o" hint-placeholder-count="3"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
-  </select>
-  <span style="position:absolute;right:11px;top:50%;transform:translateY(-50%);color:#7FA189;font-size:13px;pointer-events:none">&#9662;</span>
-</div>
 </div>
 </div>
 </sc-for>
@@ -923,14 +894,14 @@ a:hover{color:#4ADE80}
     <sc-if value="{{ isIngreso }}" hint-placeholder-val="{{ false }}">
 <div style="display:flex;flex-direction:column;gap:20px">
 <div style="display:flex;flex-direction:column;gap:9px">
-<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">JAULA (CERRADA Y LIMPIA)</div>
+<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">INSECTARIO (CERRADO Y LIMPIO)</div>
 <div style="display:flex;flex-wrap:wrap;gap:8px">
   <sc-for list="{{ ingJaulaChips }}" as="c" hint-placeholder-count="4">
     <button onClick="{{ c.onClick }}" style="min-height:52px;padding:0 14px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
   </sc-for>
 </div>
 <sc-if value="{{ sinJaulasLimpias }}" hint-placeholder-val="{{ false }}">
-<div style="background:#1F1710;border:1px solid #5A3A18;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#FB923C">No hay jaulas limpias: primero el cierre y la limpieza.</div>
+<div style="background:#1F1710;border:1px solid #5A3A18;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#FB923C">No hay insectarios limpios: primero el cierre y la limpieza.</div>
 </sc-if>
 </div>
 <div style="background:#111A14;border:1px solid #1D2A21;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#9FB8A6">{{ ingPoolTxt }}</div>
@@ -959,7 +930,7 @@ a:hover{color:#4ADE80}
 </sc-if>
 <div style="display:flex;flex-direction:column;gap:10px">
 <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ingBandejasLabel }}</div>
-<div style="font-size:14.5px;color:#9FB8A6">Larvas y material de acondicionamiento, pesada cada una. Entran a la jaula hoy.</div>
+<div style="font-size:14.5px;color:#9FB8A6">Larvas y material de acondicionamiento, pesada cada una. Entran al insectario hoy.</div>
 <sc-for list="{{ ingFilas }}" as="r" hint-placeholder-count="1">
 <div style="background:#141C16;border:1px solid #1D2A21;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px">
 <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -968,21 +939,13 @@ a:hover{color:#4ADE80}
 <button onClick="{{ r.onQuitar }}" style="min-height:40px;padding:0 12px;border-radius:9px;border:1px solid #26382C;background:#111A14;color:#9FB8A6;font-size:14px;font-weight:600;cursor:pointer;align-self:flex-start">Quitar</button>
 </sc-if>
 </div>
-<div style="display:flex;gap:8px;align-items:flex-end">
-<label style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">
+<label style="display:flex;flex-direction:column;gap:5px">
   <span style="font-size:11px;font-weight:600;letter-spacing:.06em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">PESO · KG</span>
   <input inputMode="decimal" value="{{ r.peso }}" onChange="{{ r.onPeso }}" placeholder="—" style="width:100%;min-width:0;min-height:54px;padding:0 10px;border:1.5px solid #26382C;border-radius:10px;background:#0A0A0A;color:#EAF7EC;font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:600" />
 </label>
-<div style="position:relative;flex:1;min-width:0">
-  <select value="{{ r.rack_id }}" onChange="{{ r.onRack }}" style="width:100%;min-height:54px;padding:0 30px 0 11px;border:1.5px solid #26382C;border-radius:10px;background:#0A0A0A;color:#EAF7EC;font-size:16px;font-weight:600">
-    <sc-for list="{{ rackOpts }}" as="o" hint-placeholder-count="3"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
-  </select>
-  <span style="position:absolute;right:11px;top:50%;transform:translateY(-50%);color:#7FA189;font-size:13px;pointer-events:none">&#9662;</span>
-</div>
-</div>
 </div>
 </sc-for>
-<button onClick="{{ onAgregarBandeja }}" style="width:100%;min-height:56px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Agregar bandeja</button>
+<button onClick="{{ onAgregarBandeja }}" style="width:100%;min-height:56px;border-radius:11px;border:1.5px solid #1E4A2F;background:#111A14;color:#22C55E;font-size:16px;font-weight:700;cursor:pointer">Agregar bandeja de pupación</button>
 </div>
 </div>
     </sc-if>
@@ -1016,7 +979,7 @@ a:hover{color:#4ADE80}
     <button onClick="{{ c.onClick }}" style="min-height:52px;padding:0 14px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
   </sc-for>
 </div>
-<div style="font-size:14.5px;color:#9FB8A6">Con moscas: da recolectas desde ya. Limpia: lista para repoblar.</div>
+<div style="font-size:14.5px;color:#9FB8A6">Con moscas: da recolectas desde ya. Limpio: listo para repoblar.</div>
 </div>
 </div>
     </sc-if>
@@ -1051,7 +1014,7 @@ a:hover{color:#4ADE80}
   </sc-for>
 </div>
 <sc-if value="{{ sinContenedores }}" hint-placeholder-val="{{ false }}">
-<div style="background:#1F1710;border:1px solid #5A3A18;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#FB923C">No hay contenedores registrados: agrégalos en «Racks y contenedores».</div>
+<div style="background:#1F1710;border:1px solid #5A3A18;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#FB923C">No hay contenedores registrados: agrégalos en la pestaña Alimento.</div>
 </sc-if>
 </div>
 <sc-if value="{{ hasEnsCodigo }}" hint-placeholder-val="{{ false }}">
@@ -1079,20 +1042,6 @@ a:hover{color:#4ADE80}
 <sc-if value="{{ sinEnsFilas }}" hint-placeholder-val="{{ false }}">
 <div style="background:#1F1710;border:1px solid #5A3A18;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#FB923C">No hay material sin ensilar: registra primero una recepción.</div>
 </sc-if>
-</div>
-</div>
-    </sc-if>
-
-    <sc-if value="{{ isMover }}" hint-placeholder-val="{{ false }}">
-<div style="display:flex;flex-direction:column;gap:20px">
-<div style="background:#111A14;border:1px solid #1D2A21;border-radius:12px;padding:13px 14px;font-size:14.5px;color:#9FB8A6">{{ moverTitulo }}</div>
-<div style="display:flex;flex-direction:column;gap:9px">
-<div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">AL RACK</div>
-<div style="display:flex;flex-wrap:wrap;gap:8px">
-  <sc-for list="{{ moverChips }}" as="c" hint-placeholder-count="4">
-    <button onClick="{{ c.onClick }}" style="min-height:52px;padding:0 14px;border-radius:10px;border:1.5px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-family:'IBM Plex Mono',monospace;font-size:15.5px;font-weight:600;white-space:nowrap;cursor:pointer">{{ c.label }}</button>
-  </sc-for>
-</div>
 </div>
 </div>
     </sc-if>
@@ -1150,9 +1099,9 @@ a:hover{color:#4ADE80}
          a note for the record, and the button. -->
     <sc-if value="{{ showHora }}" hint-placeholder-val="{{ false }}">
       <div style="display:flex;flex-direction:column;gap:9px;margin-top:20px">
-        <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">HORA (HOY)</div>
+        <div style="font-size:12px;font-weight:600;letter-spacing:.1em;color:#7FA189;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">FECHA Y HORA</div>
         <div style="display:flex;gap:8px">
-          <input type="time" value="{{ f.hora }}" onChange="{{ onHora }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:17px;font-weight:600" />
+          <input type="datetime-local" value="{{ f.hora }}" onChange="{{ onHora }}" style="flex:1;min-width:0;min-height:56px;padding:0 13px;border:1.5px solid #26382C;border-radius:11px;background:#141C16;color:#EAF7EC;font-size:17px;font-weight:600" />
           <button onClick="{{ onSetNow }}" style="flex:none;min-height:56px;padding:0 18px;border-radius:11px;border:1.5px solid #22C55E;background:#22C55E;color:#061308;font-size:16px;font-weight:700;cursor:pointer">Ahora</button>
         </div>
       </div>
@@ -1215,11 +1164,11 @@ a:hover{color:#4ADE80}
 
   </div>
 
-  <!-- Six tabs on a 360 px phone: each takes its label's width plus an even
-       share of what is left, so "Insectarios" never runs into its neighbours. -->
+  <!-- Five tabs on a 360 px phone: each takes its label's width plus an even
+       share of what is left, so "Laboratorio" never runs into its neighbours. -->
   <sc-if value="{{ showTabs }}" hint-placeholder-val="{{ true }}">
     <div style="position:sticky;bottom:0;z-index:20;display:flex;background:#141C16;border-top:1px solid #1E251E">
-      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="6">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="5">
         <button onClick="{{ t.onClick }}" style="flex:1 1 auto;min-width:0;min-height:66px;padding:0 3px;border:none;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;color:{{ t.fg }}">
           <div style="width:22px;height:4px;border-radius:2px;background:{{ t.mark }}"></div>
           <div style="font-size:12.5px;font-weight:700;white-space:nowrap">{{ t.label }}</div>
@@ -1290,21 +1239,20 @@ const MONITOR_TONO = {
 const ESTADO_COLOR = { activo: '#22C55E', inactivo: '#64748B' };
 const FASE_COLOR = { activa: '#22C55E', cerrada: '#FB923C', limpia: '#38BDF8' };
 const ENSILADO_COLOR = { madurando: '#FB923C', abierto: '#22C55E', vencido: '#64748B' };
-const UNIDAD = { kg: 'kg', g: 'g', pct: '%', temp: '°C', horno: '°C', generacion: 'F' };
-const NUM_KINDS = ['kg', 'g', 'pct', 'temp', 'horno', 'generacion'];
+const UNIDAD = { kg: 'kg', g: 'g', pct: '%', temp: '°C', horno: '°C', generacion: 'F', bandejas: '' };
+const NUM_KINDS = ['kg', 'g', 'pct', 'temp', 'horno', 'generacion', 'bandejas'];
 const TEXT_KINDS = ['codigo', 'letra', 'texto'];
 const kgTxt = n => (n === null || n === undefined || n === '' ? '' : String(Math.round(Number(n) * 1000) / 1000).replace('.', ','));
 // What a person typed in a number field, with a decimal comma or a point.
 const numero = v => { const n = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(n) ? n : null; };
 const valor = e => (e && e.target ? e.target.value : e);
 
-const FIELDS = ['operator_input', 'ask_value', 'hora', 'peso_inicial_g', 'alimento_inicial_kg',
+const FIELDS = ['operator_input', 'ask_value', 'hora', 'alimento_bandeja_g',
   'peso_total_kg', 'kg', 'generacion_larvas', 'peso_inicial_kg', 'temperatura_c', 'peso_kg', 'nota',
   'nombre', 'letra', 'lugar', 'generacion'];
 
 // The tab screens: no back arrow, and the tab bar shows.
-const TABS = [['home', 'Inicio'], ['larvas', 'Larvas'], ['jaulas', 'Insectarios'], ['horno', 'Horno'], ['alimento', 'Alimento'],
-  ['resumen', 'Resumen']];
+const TABS = [['home', 'Inicio'], ['lab', 'Laboratorio'], ['horno', 'Horno'], ['alimento', 'Alimento'], ['resumen', 'Resumen']];
 // The Resumen charts: one series each, a green step inside the dark band (the
 // brand green is too light for a data mark); the tapped column lifts to it.
 const BARRA = '#16A34A';
@@ -1313,11 +1261,11 @@ const BARRA_ELEGIDA = '#22C55E';
 const TAB_SCREENS = TABS.map(t => t[0]);
 // Forms keep what was typed when another phone's work arrives.
 const FORMS = ['recolecta', 'distribucion', 'chequeo', 'cargas', 'separacion', 'cochadaNueva', 'lectura',
-  'ingreso', 'nuevaJaula', 'recepcion', 'ensiladoNuevo', 'mover', 'registro'];
+  'ingreso', 'nuevaJaula', 'recepcion', 'ensiladoNuevo', 'registro'];
 const DETALLES = ['incubadora', 'caja', 'jaula', 'cochada', 'ensilado'];
 // Today's date, with the time adjustable (only a recolecta, as an excepción, takes another day).
 const CON_HORA = ['recolecta', 'distribucion', 'chequeo', 'cargas', 'separacion', 'cochadaNueva', 'lectura',
-  'ingreso', 'recepcion', 'ensiladoNuevo', 'mover'];
+  'ingreso', 'recepcion', 'ensiladoNuevo'];
 // One photo and one note per record; the bulk forms add theirs afterwards, record by record.
 const CON_FOTO = ['recolecta', 'distribucion', 'cochadaNueva', 'lectura', 'ingreso', 'nuevaJaula', 'recepcion',
   'ensiladoNuevo', 'registro'];
@@ -1326,9 +1274,9 @@ class Component extends DCLogic {
   state = {
     screen: 'operator', ctx: {}, ready: false, saving: false, fatal: null,
     operator: null, operators: [],
-    inicio: null, incubadoras: [], cajas: [], jaulas: null, horno: null, alimento: null,
+    inicio: null, lab: null, labFiltro: 'todo', labSoloActivos: true, horno: null, alimento: null,
     resumen: null, resSemana: null, resTabla: false,
-    revisar: [], racks: [], contenedores: [],
+    revisar: [], contenedores: [],
     det: null, frm: null, form: {}, filas: [], preview: null, recCodigo: null, reg: null, regFotoUrl: null,
     photoId: null, photoName: '',
     sync: null, conflicts: [], ask: null, toast: null
@@ -1431,9 +1379,8 @@ class Component extends DCLogic {
     const d = new Date(), p = n => String(n).padStart(2, '0');
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
-  hora() { return this.now().slice(11, 16); }
+  hora() { return this.now(); }
   today() { const F = this.fechas(); return F ? F.farmDay() : this.now().slice(0, 10); }
-  fechaDeHoy(hora) { return this.today() + 'T' + (/^\d\d:\d\d$/.test(hora || '') ? hora : this.hora()); }
 
   rel(dt) {
     if (!dt) return '';
@@ -1498,19 +1445,14 @@ class Component extends DCLogic {
     const limpio = { photoId: null, photoName: '' };
     switch (screen) {
       case 'home': return { inicio: await d(api.getInicio()) };
-      case 'larvas': {
-        const [i, c] = await Promise.all([d(api.listIncubadoras({ inactivas: !!ctx.todas })), d(api.listCajas({ inactivas: !!ctx.todas }))]);
-        return { incubadoras: i, cajas: c };
-      }
-      case 'jaulas': return { jaulas: await d(api.listJaulas()) };
+      case 'lab': return { lab: await d(api.getLaboratorio()) };
       case 'horno': return { horno: await d(api.getHorno()) };
-      case 'alimento': return { alimento: await d(api.getAlimento()) };
+      case 'alimento': {
+        const [a, c] = await Promise.all([d(api.getAlimento()), d(api.listContenedores())]);
+        return { alimento: a, contenedores: c };
+      }
       case 'resumen': return { resumen: await d(api.getResumen({ periodo: ctx.periodo || '30' })) };
       case 'revisar': return { revisar: await d(api.getRevisar()) };
-      case 'racks': {
-        const [a, b] = await Promise.all([d(api.listRacks()), d(api.listContenedores())]);
-        return { racks: a, contenedores: b };
-      }
       case 'incubadora': return { det: await d(api.getIncubadora(ctx.id)) };
       case 'caja': return { det: await d(api.getCaja(ctx.id)) };
       case 'jaula': return { det: await d(api.getJaula(ctx.id)) };
@@ -1520,8 +1462,8 @@ class Component extends DCLogic {
         const frm = await d(api.getFormRecolecta());
         const jaula = ctx.jaula_id || (frm.jaulas.length === 1 ? frm.jaulas[0].id : null);
         return Object.assign({ frm, recCodigo: null }, limpio, { form: {
-          jaula_id: jaula, rack_id: frm.racks.length === 1 ? frm.racks[0].id : null,
-          peso_inicial_g: '', alimento_inicial_kg: kgTxt(frm.alimento_kg),
+          jaula_id: jaula, peso_inicial_g: '', n_bandejas: '', bandejas_tocadas: false,
+          alimento_bandeja_g: kgTxt(frm.alimento_bandeja_g),
           hora: this.hora(), excepcion: false, fecha_exc: this.now(), nota: '' } });
       }
       case 'distribucion': {
@@ -1563,7 +1505,7 @@ class Component extends DCLogic {
         const jaula = ctx.jaula_id || (frm.jaulas_limpias.length === 1 ? frm.jaulas_limpias[0].id : null);
         return Object.assign({ frm, preview: null }, limpio, {
           form: { jaula_id: jaula, kg_larvas: '', generacion_larvas: '', hora: this.hora(), nota: '' },
-          filas: [{ peso: kgTxt(frm.kg_bandeja), rack_id: '' }] });
+          filas: [{ peso: kgTxt(frm.kg_bandeja) }] });
       }
       case 'nuevaJaula':
         return Object.assign({}, limpio, { form: { nombre: '', letra: '', lugar: '', generacion: '', fase: null, nota: '' } });
@@ -1575,8 +1517,6 @@ class Component extends DCLogic {
           form: { contenedor_id: frm.contenedores.length === 1 ? frm.contenedores[0].id : null, hora: this.hora(), nota: '' },
           filas: frm.recepciones.map(r => ({ recepcion_id: r.id, material: r.material, fecha: r.fecha, max: r.disponible, kg: '' })) });
       }
-      case 'mover':
-        return { racks: await d(api.listRacks()), form: { rack_hasta: null, hora: this.hora() } };
       case 'registro': {
         const reg = await d(api.getRegistro(ctx.tabla, ctx.id));
         const filas = reg.campos.map(c => {
@@ -1590,8 +1530,8 @@ class Component extends DCLogic {
     }
   }
 
-  filaCaja(frm, prev) {
-    return { peso: '', carga: frm.carga ? kgTxt(frm.carga.kg) : '', rack_id: prev ? prev.rack_id : (frm.incubadora.rack_id || '') };
+  filaCaja(frm) {
+    return { peso: '', carga: frm.carga ? kgTxt(frm.carga.kg) : '' };
   }
 
   /* ----------------------------------------------------------------- actions */
@@ -1603,7 +1543,7 @@ class Component extends DCLogic {
       case 'cierre':
       case 'limpieza': return this.eventoJaula(a.jaula_id, a.tipo, a.nombre);
       case 'repoblado': return this.open('ingreso', { jaula_id: a.jaula_id });
-      case 'pool': return this.goTab('jaulas');
+      case 'pool': this.setState({ labFiltro: 'insectarios' }); return this.goTab('lab');
       case 'chequeo':
         return this.open('chequeo', a.incubadora_id ? { objeto: 'incubadora', ids: [a.incubadora_id], dia: a.dia }
                                                     : { objeto: 'caja', ids: a.caja_ids, dia: a.dia });
@@ -1623,6 +1563,11 @@ class Component extends DCLogic {
   /** A one-tap write from a list or a page: say what happened, show it as it is now. */
   ejecutar = async (fn, msg, sub) => {
     const r = await fn();
+    // Something very odd: the person decides.
+    if (r && !r.ok && r.error && r.error.code === 'confirm_required') {
+      return this.ask({ title: '¿Guardar igual?', hint: r.error.message, noInput: true, confirmLabel: 'Guardar igual' },
+                      () => this.ejecutar(() => fn({ confirmado: true }), msg, sub));
+    }
     if (!r || !r.ok) { this.toast('No se guardó', r && r.error ? r.error.message : '', 'error'); return null; }
     this.toast(msg, typeof sub === 'function' ? sub(r.data) : (sub || ''));
     await this.recargar();
@@ -1630,9 +1575,9 @@ class Component extends DCLogic {
   };
 
   eventoJaula = (jaula_id, tipo, nombre) => this.ask({
-    title: (tipo === 'cierre' ? 'Cierre de la jaula ' : 'Limpieza de la jaula ') + (nombre || ''),
-    hint: tipo === 'cierre' ? 'Termina su ciclo: ya no se recolecta de ella. Después se limpia.'
-                            : 'Queda lista para repoblar con el 2 %.',
+    title: (tipo === 'cierre' ? 'Cierre del insectario ' : 'Limpieza del insectario ') + (nombre || ''),
+    hint: tipo === 'cierre' ? 'Termina su ciclo: ya no se recolecta de él. Después se limpia.'
+                            : 'Queda listo para repoblar con el 2 %.',
     noInput: true, confirmLabel: tipo === 'cierre' ? 'Registrar cierre' : 'Registrar limpieza'
   }, async () => this.ejecutar(() => this.api.registrarEventoJaula({ jaula_id, tipo }),
                                tipo === 'cierre' ? 'Cierre registrado' : 'Limpieza registrada', nombre));
@@ -1646,7 +1591,22 @@ class Component extends DCLogic {
   abrirEnsilado = ensilado_id => this.ask({
     title: 'Abrir el ensilado', hint: 'Desde ahora corre el plazo para consumirlo. Las cargas lo descuentan solas.',
     noInput: true, confirmLabel: 'Abrir'
-  }, async () => this.ejecutar(() => this.api.abrirEnsilado({ ensilado_id }), 'Ensilado abierto'));
+  }, async () => this.ejecutar(x => this.api.abrirEnsilado(Object.assign({ ensilado_id }, x)), 'Ensilado abierto'));
+
+  /** Delete a record, after saying what goes with it. Marked, so every phone drops it. */
+  borrar = async (tabla, id, titulo) => {
+    const r = await this.api.getBorrado({ tabla, id });
+    if (!r.ok) return this.toast('No se pudo borrar', r.error.message, 'error');
+    this.ask({ title: 'Borrar: ' + titulo, hint: r.data.aviso, noInput: true, confirmLabel: 'Borrar' }, async () => {
+      const x = await this.api.borrarRegistro({ tabla, id });
+      if (!x.ok) return this.toast('No se pudo borrar', x.error.message, 'error');
+      this.toast('Borrado', titulo);
+      // Its page is gone with it: back to the list it was on.
+      const lista = { incubadora: 'lab', caja: 'lab', jaula: 'lab', cochada: 'horno', ensilado: 'alimento' }[tabla];
+      if (lista) return this.goTab(lista);
+      await this.back();
+    });
+  };
 
   cerrar = (tabla, id, codigo) => this.ask({
     title: 'Cerrar ' + codigo + ' antes de tiempo',
@@ -1657,12 +1617,9 @@ class Component extends DCLogic {
     if (d && this.state.screen === 'registro') await this.back();
   });
 
-  nuevoCodigo = tipo => this.ask({
-    title: tipo === 'rack' ? 'Nuevo rack' : 'Nuevo contenedor de ensilado',
-    placeholder: tipo === 'rack' ? 'R1' : 'S2', confirmLabel: 'Registrar'
-  }, async codigo => this.ejecutar(
-    () => (tipo === 'rack' ? this.api.registrarRack({ codigo }) : this.api.registrarContenedor({ codigo })),
-    tipo === 'rack' ? 'Rack registrado' : 'Contenedor registrado', d => d.codigo));
+  nuevoContenedor = () => this.ask({
+    title: 'Nuevo contenedor de ensilado', placeholder: 'S2', confirmLabel: 'Registrar'
+  }, async codigo => this.ejecutar(() => this.api.registrarContenedor({ codigo }), 'Contenedor registrado', d => d.codigo));
 
   revisado = async () => {
     const reg = this.state.reg;
@@ -1703,7 +1660,7 @@ class Component extends DCLogic {
     const s = this.state, f = s.form || {};
     const algo = v => String(v == null ? '' : v).trim() !== '';
     switch (s.screen) {
-      case 'recolecta': return !!(f.jaula_id && f.rack_id && algo(f.peso_inicial_g) && algo(f.alimento_inicial_kg));
+      case 'recolecta': return !!(f.jaula_id && algo(f.peso_inicial_g) && algo(f.n_bandejas) && algo(f.alimento_bandeja_g));
       case 'distribucion': return algo(f.peso_total_kg) && s.filas.length > 0;
       case 'chequeo': return s.filas.some(x => algo(x.humedad) || algo(x.temp) || algo(x.peso));
       case 'cargas': return s.filas.some(x => x.incluir);
@@ -1714,7 +1671,6 @@ class Component extends DCLogic {
       case 'nuevaJaula': return !!(algo(f.nombre) && algo(f.letra) && algo(f.generacion) && f.fase);
       case 'recepcion': return !!(f.material && algo(f.kg));
       case 'ensiladoNuevo': return !!(f.contenedor_id && s.filas.some(x => numero(x.kg) > 0));
-      case 'mover': return !!f.rack_hasta;
       case 'registro': return true;
       default: return false;
     }
@@ -1725,8 +1681,8 @@ class Component extends DCLogic {
     return {
       recolecta: 'Guardar recolecta', distribucion: 'Guardar distribución', chequeo: 'Guardar chequeo',
       cargas: 'Guardar carga ' + (s.ctx.carga || ''), separacion: 'Guardar separación', cochadaNueva: 'Al horno',
-      lectura: 'Guardar salida del horno', ingreso: 'Repoblar la jaula', nuevaJaula: 'Registrar jaula',
-      recepcion: 'Guardar recepción', ensiladoNuevo: 'Guardar ensilado', mover: 'Cambiar de rack',
+      lectura: 'Guardar salida del horno', ingreso: 'Repoblar el insectario', nuevaJaula: 'Registrar insectario',
+      recepcion: 'Guardar recepción', ensiladoNuevo: 'Guardar ensilado',
       registro: 'Guardar corrección'
     }[s.screen] || 'Guardar';
   }
@@ -1736,9 +1692,9 @@ class Component extends DCLogic {
     // A step out of its plan (days early, cargas out of order) comes back asking
     // first; the person's "Guardar igual" calls this again with confirmado.
     const confirmado = !!(opts && opts.confirmado === true);
-    // An untouched time box means now, to the second: a minute-precision time
+    // An untouched date box means now, to the second: a minute-precision time
     // would put this record before one saved earlier in the same minute.
-    const fecha = f.hora_tocada ? this.fechaDeHoy(f.hora) : null;
+    const fecha = f.hora_tocada && f.hora ? f.hora : null;
     const blob_id = s.photoId || null;
     const comun = { fecha, nota: f.nota, blob_id, confirmado };
     const conKg = x => numero(x.kg) > 0;
@@ -1748,14 +1704,14 @@ class Component extends DCLogic {
     try {
       switch (s.screen) {
         case 'recolecta':
-          r = await api.registrarRecolecta({ jaula_id: f.jaula_id, rack_id: f.rack_id, peso_inicial_g: f.peso_inicial_g,
-            alimento_inicial_kg: f.alimento_inicial_kg, fecha: f.excepcion ? f.fecha_exc : fecha,
-            excepcion: !!f.excepcion, nota: f.nota, blob_id });
-          msg = 'Recolecta guardada'; sub = d => d.codigo + ' · escríbelo en la incubadora';
+          r = await api.registrarRecolecta({ jaula_id: f.jaula_id, peso_inicial_g: f.peso_inicial_g, n_bandejas: f.n_bandejas,
+            alimento_bandeja_g: f.alimento_bandeja_g, fecha: f.excepcion ? f.fecha_exc : fecha,
+            excepcion: !!f.excepcion, nota: f.nota, blob_id, confirmado });
+          msg = 'Recolecta guardada'; sub = d => d.codigo + ' · escríbelo en sus bandejas';
           break;
         case 'distribucion':
           r = await api.distribuir(Object.assign({ incubadora_id: s.ctx.incubadora_id, peso_total_kg: f.peso_total_kg,
-            cajas: s.filas.map(x => ({ peso_inicial_kg: x.peso, rack_id: x.rack_id, carga_kg: x.carga })) }, comun));
+            cajas: s.filas.map(x => ({ peso_inicial_kg: x.peso, carga_kg: x.carga })) }, comun));
           msg = 'Distribución guardada'; sub = d => d.cajas.map(c => c.codigo).join(', ');
           break;
         case 'chequeo':
@@ -1787,13 +1743,13 @@ class Component extends DCLogic {
         case 'ingreso':
           r = await api.registrarIngreso(Object.assign({ jaula_id: f.jaula_id, kg_larvas: f.kg_larvas,
             generacion_larvas: f.generacion_larvas,
-            bandejas: s.filas.map(x => ({ peso_kg: x.peso, rack_id: x.rack_id })) }, comun));
-          msg = 'Jaula repoblada'; sub = d => 'F' + d.ingreso.generacion + ' · ' + d.bandejas.map(b => b.codigo).join(', ');
+            bandejas: s.filas.map(x => ({ peso_kg: x.peso })) }, comun));
+          msg = 'Insectario repoblado'; sub = d => 'F' + d.ingreso.generacion + ' · ' + d.bandejas.map(b => b.codigo).join(', ');
           break;
         case 'nuevaJaula':
           r = await api.registrarJaula({ nombre: f.nombre, letra: f.letra, lugar: f.lugar, generacion: f.generacion,
                                          fase: f.fase, nota: f.nota, blob_id });
-          msg = 'Jaula registrada'; sub = d => d.nombre;
+          msg = 'Insectario registrado'; sub = d => d.nombre;
           break;
         case 'recepcion':
           r = await api.registrarRecepcion(Object.assign({ material: f.material, kg: f.kg }, comun));
@@ -1804,16 +1760,12 @@ class Component extends DCLogic {
             insumos: s.filas.filter(conKg).map(x => ({ recepcion_id: x.recepcion_id, kg: x.kg })) }, comun));
           msg = 'Ensilado guardado'; sub = d => d.ensilado.codigo;
           break;
-        case 'mover':
-          r = await api.registrarMovimiento({ objeto: s.ctx.objeto, objeto_id: s.ctx.id, rack_hasta: f.rack_hasta, fecha });
-          msg = 'Rack cambiado';
-          break;
         case 'registro': {
           const cambios = {};
           s.filas.forEach(x => { if (x.valor !== x.inicial) cambios[x.col] = x.valor; });
           if ((f.nota || '') !== (s.reg.nota || '')) cambios.nota = f.nota || '';
           if (!Object.keys(cambios).length && !blob_id) { r = { ok: false, error: { message: 'No hay cambios que guardar.' } }; break; }
-          r = await api.editarRegistro({ tabla: s.reg.tabla, id: s.reg.id, cambios, blob_id });
+          r = await api.editarRegistro({ tabla: s.reg.tabla, id: s.reg.id, cambios, blob_id, confirmado });
           msg = 'Corrección guardada'; sub = () => s.reg.titulo;
           break;
         }
@@ -1920,6 +1872,11 @@ class Component extends DCLogic {
       paso: c.paso, revisar: c.revisar, onOpen: () => this.open('caja', { id: c.id }) });
   }
 
+  jaulaRow(j) {
+    return this.filaObjeto({ titulo: j.nombre + ' · ' + j.letra, etiqueta: j.faseTxt, color: FASE_COLOR[j.fase],
+      linea: j.linea, paso: j.paso, onOpen: () => this.open('jaula', { id: j.id }) });
+  }
+
   cochadaRow(c) {
     return this.filaObjeto({ titulo: c.codigo, etiqueta: c.estadoTxt, color: c.estado === 'activo' ? '#FB923C' : '#38BDF8',
       linea: c.linea, paso: c.paso, revisar: c.revisar, onOpen: () => this.open('cochada', { id: c.id }) });
@@ -1965,25 +1922,18 @@ class Component extends DCLogic {
       aviso(d.cierre); aviso(d.excepcion, MUTED);
       if (d.sin_ensilado) aviso('Su alimento inicial no salió de un ensilado abierto (sin ensilado).');
       pasos = d.pasos.map(p => this.pasoBtn(p, { tipo: p.paso, incubadora_id: obj.id, dia: p.dia }));
+      (d.faltan_chequeos || []).forEach(dia => acciones.push(this.boton('Anotar chequeo del día ' + dia, () => this.accion({ tipo: 'chequeo', incubadora_id: obj.id, dia }))));
       hijos = d.cajas.map(c => this.cajaRow(c)); hijosLabel = 'CAJAS DE ENGORDE · ' + d.cajas.length;
-      const rack = (d.facts.find(x => x[0] === 'Rack') || [])[1];
-      if (d.activa) {
-        acciones = [
-          this.boton('Cambiar de rack', () => this.open('mover', { objeto: 'incubadora', id: obj.id, titulo: 'Incubadora ' + obj.codigo, rack })),
-          this.boton('Cerrar antes de tiempo', () => this.cerrar('incubadora', obj.id, obj.codigo), 'peligro')
-        ];
-      }
+      if (d.activa) acciones.push(this.boton('Cerrar antes de tiempo', () => this.cerrar('incubadora', obj.id, obj.codigo), 'peligro'));
     } else if (screen === 'caja' && d.caja) {
       obj = d.caja; color = obj.en_ayuno ? '#FB923C' : ESTADO_COLOR[obj.estado]; estado = obj.estadoTxt;
       aviso(d.cierre);
       if (d.sin_ensilado) aviso('Alguna de sus cargas no salió de un ensilado abierto (sin ensilado).');
       pasos = d.pasos.map(p => this.pasoBtn(p, { tipo: p.paso, caja_ids: [obj.id], dia: p.dia, carga: p.carga }));
-      const rack = (d.facts.find(x => x[0] === 'Rack') || [])[1];
       acciones = [this.boton('Ver la incubadora ' + obj.incubadora, () => this.open('incubadora', { id: obj.incubadora_id }))];
-      if (d.activa) {
-        acciones.push(this.boton('Cambiar de rack', () => this.open('mover', { objeto: 'caja', id: obj.id, titulo: 'Caja ' + obj.codigo, rack })));
-        acciones.push(this.boton('Cerrar antes de tiempo', () => this.cerrar('caja', obj.id, obj.codigo), 'peligro'));
-      }
+      (d.faltan_chequeos || []).forEach(dia => acciones.push(this.boton('Anotar chequeo del día ' + dia, () => this.accion({ tipo: 'chequeo', caja_ids: [obj.id], dia }))));
+      (d.faltan_cargas || []).forEach(carga => acciones.push(this.boton('Anotar carga ' + carga, () => this.accion({ tipo: 'carga', caja_ids: [obj.id], carga }))));
+      if (d.activa) acciones.push(this.boton('Cerrar antes de tiempo', () => this.cerrar('caja', obj.id, obj.codigo), 'peligro'));
     } else if (screen === 'jaula' && d.jaula) {
       obj = Object.assign({ codigo: d.jaula.nombre + ' · ' + d.jaula.letra }, d.jaula);
       color = FASE_COLOR[obj.fase]; estado = obj.faseTxt;
@@ -1993,7 +1943,7 @@ class Component extends DCLogic {
       const hay = t => d.pasos.some(p => p.paso === t);
       if (obj.fase === 'activa') {
         if (!hay('recolecta')) acciones.push(this.boton('Registrar recolecta', () => this.open('recolecta', { jaula_id: obj.id })));
-        if (!hay('cierre')) acciones.push(this.boton('Cerrar la jaula', () => this.eventoJaula(obj.id, 'cierre', nombre)));
+        if (!hay('cierre')) acciones.push(this.boton('Cerrar el insectario', () => this.eventoJaula(obj.id, 'cierre', nombre)));
       }
       if (obj.fase === 'limpia' && !hay('repoblado')) acciones.push(this.boton('Repoblar con el 2 %', () => this.open('ingreso', { jaula_id: obj.id })));
       hijos = d.recolectas.map(i => this.filaObjeto({ titulo: i.codigo, color: '#A78BFA', linea: i.linea,
@@ -2035,30 +1985,30 @@ class Component extends DCLogic {
     const layout = this.props.homeLayout || 'tiles';
     const d = s.det;
     const titles = {
-      home: 'Inicio', operator: '¿Quién registra?', larvas: 'Larvas', jaulas: 'Insectarios', horno: 'Horno',
-      alimento: 'Alimento', resumen: 'Resumen', revisar: 'Para revisar', racks: 'Racks y contenedores', sincronizacion: 'Sincronización',
+      home: 'Inicio', operator: '¿Quién registra?', lab: 'Laboratorio', horno: 'Horno',
+      alimento: 'Alimento', resumen: 'Resumen', revisar: 'Para revisar', sincronizacion: 'Sincronización',
       incubadora: d && d.incubadora ? 'Incubadora ' + d.incubadora.codigo : 'Incubadora',
       caja: d && d.caja ? 'Caja ' + d.caja.codigo : 'Caja de engorde',
-      jaula: d && d.jaula ? 'Jaula ' + d.jaula.nombre : 'Jaula',
+      jaula: d && d.jaula ? 'Insectario ' + d.jaula.nombre : 'Insectario',
       cochada: d && d.cochada ? 'Cochada ' + d.cochada.codigo : 'Cochada',
       ensilado: d && d.ensilado ? 'Ensilado ' + d.ensilado.codigo : 'Ensilado',
       recolecta: 'Nueva recolecta', distribucion: 'Tamizado y distribución', chequeo: 'Chequeo', cargas: 'Carga',
-      separacion: 'Separación', cochadaNueva: 'Nueva cochada', lectura: 'Salida del horno', ingreso: 'Repoblar jaula',
-      nuevaJaula: 'Registrar jaula', recepcion: 'Recepción de material', ensiladoNuevo: 'Nuevo ensilado',
-      mover: 'Cambiar de rack', registro: s.reg ? 'Corregir · ' + s.reg.titulo : 'Corregir'
+      separacion: 'Separación', cochadaNueva: 'Nueva cochada', lectura: 'Salida del horno', ingreso: 'Repoblar',
+      nuevaJaula: 'Nuevo insectario', recepcion: 'Recepción de material', ensiladoNuevo: 'Nuevo ensilado',
+      registro: s.reg ? 'Corregir · ' + s.reg.titulo : 'Corregir'
     };
 
     const vals = {
       screenTitle: titles[screen] || 'Inicio',
       showBack: !TAB_SCREENS.includes(screen),
       onBack: this.back, operatorShort: s.operator || 'Elegir nombre', onOpenOperator: this.openOperatorScreen,
-      isHome: screen === 'home', isOperatorScreen: screen === 'operator', isLarvas: screen === 'larvas',
-      isJaulas: screen === 'jaulas', isHorno: screen === 'horno', isAlimento: screen === 'alimento',
-      isResumen: screen === 'resumen', isRevisar: screen === 'revisar', isRacks: screen === 'racks', isDetalle: DETALLES.includes(screen),
+      isHome: screen === 'home', isOperatorScreen: screen === 'operator', isLab: screen === 'lab',
+      isHorno: screen === 'horno', isAlimento: screen === 'alimento',
+      isResumen: screen === 'resumen', isRevisar: screen === 'revisar', isDetalle: DETALLES.includes(screen),
       isRecolecta: screen === 'recolecta', isDistribucion: screen === 'distribucion', isChequeo: screen === 'chequeo',
       isCargas: screen === 'cargas', isSeparacion: screen === 'separacion', isCochadaNueva: screen === 'cochadaNueva',
       isLectura: screen === 'lectura', isIngreso: screen === 'ingreso', isNuevaJaula: screen === 'nuevaJaula',
-      isRecepcion: screen === 'recepcion', isEnsiladoNuevo: screen === 'ensiladoNuevo', isMover: screen === 'mover',
+      isRecepcion: screen === 'recepcion', isEnsiladoNuevo: screen === 'ensiladoNuevo',
       isRegistro: screen === 'registro', isSync: screen === 'sincronizacion',
       showTabs: TAB_SCREENS.includes(screen),
       f, h: this.handlers,
@@ -2083,7 +2033,6 @@ class Component extends DCLogic {
       : [ini ? ini.conteos.incubadoras + ' en incubadora · ' + ini.conteos.cajas + ' en engorde' : null,
          s.operator ? 'registrando como ' + s.operator : 'sin nombre elegido'].filter(Boolean).join(' · ');
     vals.homeVacio = !!(ini && ini.vacio);
-    vals.onEmpezar = () => this.open('racks', {});
     const items = mon ? mon.items : [];
     vals.hasMonitor = items.length > 0;
     vals.monitorAlDia = !!mon && !items.length && !(ini && ini.vacio);
@@ -2103,12 +2052,14 @@ class Component extends DCLogic {
       tile('Nueva recolecta', () => this.open('recolecta', {}), NEON, true),
       tile('Separación', () => this.open('separacion', {}), '#38BDF8'),
       tile('Nueva cochada', () => this.open('cochadaNueva', {}), '#FB923C'),
-      tile('Recepción de material', () => this.open('recepcion', {}), '#EAB308'),
-      tile('Nuevo ensilado', () => this.open('ensiladoNuevo', {}), '#EAB308')
-    ].concat(nRevisar ? [tile('Revisar · ' + nRevisar, () => this.open('revisar', {}), '#F87171')] : [])
-     .concat([tile('Racks y contenedores', () => this.open('racks', {}), '#5F7A68'),
-              // A page of its own, offline too (sw.js); it links back to the app.
-              tile('Cómo usar la app', () => { window.location.href = './guia-app.html'; }, '#5F7A68')]);
+      // The material received and the ensilados, in one place.
+      tile('Alimento', () => this.goTab('alimento'), '#EAB308')
+    ].concat(nRevisar ? [tile('Revisar · ' + nRevisar, () => this.open('revisar', {}), '#F87171')] : []);
+    // Pages of their own, offline too (sw.js); each links back to the app.
+    vals.homePaginas = [
+      { label: 'Protocolo', icono: 'img/protocolo.svg', onClick: () => { window.location.href = './protocolo.html'; } },
+      { label: 'Cómo usar la app', icono: 'img/ayuda.svg', onClick: () => { window.location.href = './guia-app.html'; } }
+    ];
 
     /* nombre */
     const typed = (f.operator_input || '').trim();
@@ -2124,23 +2075,42 @@ class Component extends DCLogic {
       bd: n === s.operator ? NEON : BORDER, onClick: () => this.pickOperator(n)
     }));
 
-    /* larvas */
-    const todas = !!s.ctx.todas;
-    vals.incLabel = (todas ? 'INCUBADORAS' : 'EN INCUBADORA') + ' · ' + s.incubadoras.length;
-    vals.incRows = s.incubadoras.map(i => this.incRow(i));
-    vals.sinInc = !s.incubadoras.length;
-    vals.cajaLabel = (todas ? 'CAJAS DE ENGORDE' : 'EN ENGORDE') + ' · ' + s.cajas.length;
-    vals.cajaRows = s.cajas.map(c => this.cajaRow(c));
-    vals.sinCajas = !s.cajas.length;
-    vals.verTerminadasLabel = todas ? 'Sólo las activas' : 'Ver también las terminadas';
-    vals.onVerTerminadas = () => this.open('larvas', { todas: !todas }, { push: false });
-
-    /* insectarios */
-    const J = s.jaulas;
-    vals.poolLinea = !J ? '…' : J.pool_kg > 0 ? '2 % esperando para repoblar: ' + kgTxt(J.pool_kg) + ' kg' : 'No hay 2 % esperando.';
-    vals.jaulaRows = J ? J.jaulas.map(j => this.filaObjeto({ titulo: j.nombre + ' · ' + j.letra, etiqueta: j.faseTxt,
-      color: FASE_COLOR[j.fase], linea: j.linea, paso: j.paso, onOpen: () => this.open('jaula', { id: j.id }) })) : [];
-    vals.sinJaulas = !!J && !J.jaulas.length;
+    /* laboratorio */
+    const L = s.lab;
+    const soloActivos = !!s.labSoloActivos;
+    const verse = xs => (soloActivos ? xs.filter(x => x.activo) : xs);
+    const insectarios = L ? verse(L.insectarios) : [];
+    const bandejas = L ? verse(L.bandejas) : [];
+    // Trays, not rows: a recolecta occupies several. The list holds only the latest
+    // inactive ones, so the total comes from the data layer.
+    const cuantas = xs => xs.reduce((t, b) => t + b.n, 0);
+    const totalB = L ? L.bandejas_total : 0;
+    const nBandejas = soloActivos ? cuantas(bandejas) : totalB;
+    vals.labFiltros = [['todo', 'Todo'], ['insectarios', 'Insectarios · ' + insectarios.length], ['bandejas', 'Bandejas · ' + nBandejas]]
+      .map(x => this.chip(x[1], s.labFiltro === x[0], () => this.setState({ labFiltro: x[0] })));
+    vals.labSoloActivos = soloActivos;
+    vals.onLabActivos = () => this.setState({ labSoloActivos: !soloActivos });
+    vals.labSwitchBg = soloActivos ? NEON : '#26382C';
+    vals.labSwitchMarca = soloActivos ? INK : MUTED;
+    vals.labSwitchLado = soloActivos ? 'flex-end' : 'flex-start';
+    const ocultosI = L ? L.insectarios.length - insectarios.length : 0;
+    const ocultosB = totalB - nBandejas;
+    vals.labHayOcultos = ocultosI + ocultosB > 0;
+    vals.labOcultos = 'Ocultos: ' + [ocultosI ? ocultosI + (ocultosI === 1 ? ' insectario' : ' insectarios') : null,
+                                     ocultosB ? ocultosB + (ocultosB === 1 ? ' bandeja' : ' bandejas') : null].filter(Boolean).join(' · ');
+    vals.labVerInsectarios = s.labFiltro !== 'bandejas';
+    vals.labVerBandejas = s.labFiltro !== 'insectarios';
+    vals.labInsectariosLabel = 'INSECTARIOS · ' + insectarios.length;
+    vals.labBandejasLabel = 'BANDEJAS · ' + nBandejas;
+    vals.labHayMas = !soloActivos && !!L && L.inactivas_sin_ver > 0;
+    vals.labHayPool = !!L && L.pool_kg > 0;
+    vals.labPool = L ? '2 % esperando para repoblar: ' + kgTxt(L.pool_kg) + ' kg' : '';
+    vals.labInsectarios = insectarios.map(j => this.jaulaRow(j));
+    vals.labBandejas = bandejas.map(b => (b.tipo === 'caja' ? this.cajaRow(b) : this.incRow(b)));
+    vals.labSinInsectarios = !!L && !insectarios.length;
+    vals.labSinInsectariosTxt = L && L.insectarios.length ? 'Ningún insectario con moscas.' : 'Todavía no hay insectarios registrados.';
+    vals.labSinBandejas = !!L && !bandejas.length;
+    vals.labSinBandejasTxt = L && L.bandejas.length ? 'Ninguna bandeja activa.' : 'Todavía no hay bandejas: nacen con cada recolecta.';
     vals.onNuevaJaula = () => this.open('nuevaJaula', {});
 
     /* horno */
@@ -2173,6 +2143,9 @@ class Component extends DCLogic {
     vals.sinEnsiladoTxt = A ? (A.sin_ensilado === 1 ? '1 alimentación' : A.sin_ensilado + ' alimentaciones') + ' sin ensilado abierto: quedan registradas, pero no descuentan de ningún ensilado.' : '';
     vals.recepcionRegs = A ? A.recepciones.map(r => this.regRow(r.registro)) : [];
     vals.sinRecepciones = !!A && !A.recepciones.length;
+    vals.contRows = s.contenedores.map(c => this.filaObjeto({ titulo: 'Contenedor ' + c.codigo, color: '#EAB308',
+      linea: c.ensilado, onOpen: () => this.open('registro', { tabla: 'contenedor', id: c.id }) }));
+    vals.onNuevoContenedor = this.nuevoContenedor;
 
     /* resumen */
     const R = s.resumen;
@@ -2185,7 +2158,10 @@ class Component extends DCLogic {
       if (ir === 'revisar') this.open('revisar', {});
       else if (ir) this.goTab(ir);
     };
-    vals.resAhora = R ? R.ahora.map(t => ({ valor: t.valor, label: t.label, sub: t.sub, hasSub: !!t.sub, onClick: () => this.goTab(t.ir) })) : [];
+    vals.resAhora = R ? R.ahora.map(t => ({ valor: t.valor, label: t.label, sub: t.sub, hasSub: !!t.sub, onClick: () => {
+      if (t.filtro) this.setState({ labFiltro: t.filtro });
+      this.goTab(t.ir);
+    } })) : [];
     // One week is read at a time, the latest unless a column was tapped; both charts follow it.
     const sem = R ? R.semanas : [];
     const sel = s.resSemana !== null && s.resSemana < sem.length ? s.resSemana : sem.length - 1;
@@ -2240,34 +2216,49 @@ class Component extends DCLogic {
     }));
     vals.sinRevisar = !s.revisar.length;
 
-    /* racks y contenedores */
-    vals.rackRows = s.racks.map(r => this.filaObjeto({ titulo: 'Rack ' + r.codigo,
-      etiqueta: r.objetos.length ? r.objetos.length + ' activas' : 'vacío', color: '#5F7A68',
-      linea: r.objetos.join(', ') || 'Sin incubadoras ni cajas activas',
-      onOpen: () => this.open('registro', { tabla: 'rack', id: r.id }) }));
-    vals.contRows = s.contenedores.map(c => this.filaObjeto({ titulo: 'Contenedor ' + c.codigo, color: '#EAB308',
-      linea: c.ensilado, onOpen: () => this.open('registro', { tabla: 'contenedor', id: c.id }) }));
-    vals.onNuevoRack = () => this.nuevoCodigo('rack');
-    vals.onNuevoContenedor = () => this.nuevoCodigo('contenedor');
-    vals.onIrJaulas = () => this.goTab('jaulas');
-
     /* ficha */
     vals.dv = this.detalleVals();
 
     /* formularios */
     const fr = s.frm;
-    vals.rackOpts = [{ value: '', label: 'Rack…' }].concat(((fr && fr.racks) || s.racks || []).map(r => ({ value: r.id, label: r.codigo })));
 
     if (screen === 'recolecta' && fr) {
       vals.recJaulaChips = fr.jaulas.map(j => this.chip(j.nombre + ' · F' + j.generacion, f.jaula_id === j.id, () => {
         this.setField('jaula_id', j.id); this.codigoRecolecta(j.id, f.excepcion, f.fecha_exc);
       }));
       vals.recSinJaulas = !fr.jaulas.length;
-      vals.rackChips = fr.racks.map(r => this.chip(r.codigo, f.rack_id === r.id, () => this.setField('rack_id', r.id)));
-      vals.recSinRacks = !fr.racks.length;
-      vals.recAlimentoHint = fr.alimento_kg == null
-        ? 'El valor usual todavía no está en los ajustes: escribe los kg. Se descuentan del ensilado abierto.'
-        : 'Lo usual: ' + kgTxt(fr.alimento_kg) + ' kg. Se descuentan del ensilado abierto.';
+      // The eggs propose the bandejas until the person chooses a number themselves.
+      const calcR = this.api && this.api.calc;
+      const peso = numero(f.peso_inicial_g);
+      const bajo = fr.ajustes.huevos_bandeja_min_g, alto = fr.ajustes.huevos_bandeja_max_g;
+      const rangoTxt = kgTxt(bajo) + '–' + kgTxt(alto) + ' g por bandeja';
+      const rango = calcR ? calcR.bandejasParaHuevos(peso, fr.ajustes) : null;
+      const n = numero(f.n_bandejas);
+      const porBandeja = calcR ? calcR.huevosPorBandeja(peso, n, fr.ajustes) : null;
+      const plural = c => c + (c === 1 ? ' bandeja' : ' bandejas');
+      vals.onPesoHuevos = e => {
+        const v = valor(e);
+        const r = !f.bandejas_tocadas && calcR ? calcR.bandejasParaHuevos(numero(v), fr.ajustes) : null;
+        this.setState(st => ({ form: Object.assign({}, st.form, { peso_inicial_g: v },
+          st.form.bandejas_tocadas ? {} : { n_bandejas: r ? String(r.sugerida) : '' }) }));
+      };
+      const fijarBandejas = v => this.setState(st => ({ form: Object.assign({}, st.form, { n_bandejas: v, bandejas_tocadas: true }) }));
+      vals.onBandejas = e => fijarBandejas(valor(e));
+      vals.onBandejaMenos = () => fijarBandejas(String(Math.max(1, Math.round(n || 1) - 1)));
+      vals.onBandejaMas = () => fijarBandejas(String(Math.round(n || 0) + 1));
+      const fuera = !!(porBandeja && porBandeja.fuera);
+      vals.recBandejasFg = fuera ? '#FB923C' : MUTED;
+      vals.recBandejasPeso = fuera ? '600' : '400';
+      vals.recBandejasHint = !rango ? 'Escribe el peso y la app calcula las bandejas: ' + rangoTxt + '.'
+        : fuera ? 'Con ' + plural(n) + ' son ' + kgTxt(porBandeja.g_bandeja) + ' g por bandeja; el protocolo pide ' + kgTxt(bajo) + '–' + kgTxt(alto) + ' g. Para ' + kgTxt(peso) + ' g, '
+                  + (rango.min === rango.max ? plural(rango.min) : 'entre ' + rango.min + ' y ' + rango.max + ' bandejas') + '.'
+        : peso < bajo ? kgTxt(peso) + ' g no llegan a ' + kgTxt(bajo) + ' g: una sola bandeja.'
+        : kgTxt(peso) + ' g: ' + (rango.min === rango.max ? plural(rango.min) : 'entre ' + rango.min + ' y ' + rango.max + ' bandejas') + ' (' + rangoTxt + ').'
+          + (porBandeja ? ' Con ' + n + ' son ' + kgTxt(porBandeja.g_bandeja) + ' g cada una.' : '');
+      const gAlimento = numero(f.alimento_bandeja_g);
+      vals.recAlimentoHint = (n >= 1 && gAlimento !== null
+        ? plural(n) + ' × ' + kgTxt(gAlimento) + ' g = ' + kgTxt(n * gAlimento / 1000) + ' kg en total. '
+        : 'Lo usual: ' + kgTxt(fr.alimento_bandeja_g) + ' g. ') + 'Se descuentan del ensilado abierto.';
       vals.recExcepcion = !!f.excepcion;
       vals.excepcionLabel = f.excepcion ? 'Excepción: recolecta de otro día' : 'Es de hoy · toca si fue otro día';
       vals.excBg = f.excepcion ? '#1F1710' : CARD;
@@ -2287,13 +2278,12 @@ class Component extends DCLogic {
       vals.distTitulo = 'Incubadora ' + inc.codigo + ' · día ' + inc.dia + (inc.activa ? '' : ' · ya no está activa');
       vals.distCajasLabel = 'CAJAS DE ENGORDE · ' + s.filas.length;
       vals.distFilas = s.filas.map((x, i) => ({
-        codigo: inc.codigo + '-' + String(i + 1).padStart(2, '0'), peso: x.peso, carga: x.carga, rack_id: x.rack_id || '',
+        codigo: inc.codigo + '-' + String(i + 1).padStart(2, '0'), peso: x.peso, carga: x.carga,
         cargaLabel: 'CARGA ' + (fr.carga ? fr.carga.n : 1) + ' · KG', puedeQuitar: s.filas.length > 1,
         onQuitar: () => this.setState(st => ({ filas: st.filas.filter((_, k) => k !== i) })),
-        onPeso: e => this.setFila(i, 'peso', valor(e)), onCarga: e => this.setFila(i, 'carga', valor(e)),
-        onRack: e => this.setFila(i, 'rack_id', valor(e))
+        onPeso: e => this.setFila(i, 'peso', valor(e)), onCarga: e => this.setFila(i, 'carga', valor(e))
       }));
-      vals.onAgregarCaja = () => this.setState(st => ({ filas: st.filas.concat([this.filaCaja(fr, st.filas[st.filas.length - 1])]) }));
+      vals.onAgregarCaja = () => this.setState(st => ({ filas: st.filas.concat([this.filaCaja(fr)]) }));
       const total = numero(f.peso_total_kg);
       const suma = Math.round(s.filas.reduce((t, x) => t + (numero(x.peso) || 0), 0) * 1000) / 1000;
       vals.distHasAviso = total !== null && suma > total;
@@ -2375,7 +2365,7 @@ class Component extends DCLogic {
         if (pv.generacion_larvas !== null) {
           const edad = pv.edad_min === null ? '' : pv.edad_min === pv.edad_max ? ', ' + pv.edad_min + ' días'
             : ', ' + pv.edad_min + '–' + pv.edad_max + ' días (prom. ' + pv.edad_promedio + ')';
-          lineas.push({ texto: 'Larvas F' + pv.generacion_larvas + edad + ' → la jaula queda F' + pv.generacion_jaula, fg: '#4ADE80' });
+          lineas.push({ texto: 'Larvas F' + pv.generacion_larvas + edad + ' → el insectario queda F' + pv.generacion_jaula, fg: '#4ADE80' });
         }
         if (pv.mezcla) lineas.push({ texto: 'Ojo: mezcla de generaciones (F' + pv.generaciones.join(', F') + '). Se usa la más común.', fg: '#FB923C' });
         if (pv.faltan_kg > 0) lineas.push({ texto: kgTxt(pv.faltan_kg) + ' kg más de lo que el 2 % tiene registrado.', fg: '#FB923C' });
@@ -2385,20 +2375,19 @@ class Component extends DCLogic {
       vals.ingBandejasLabel = 'BANDEJAS DE PUPACIÓN · ' + s.filas.length;
       const agregar = n => { this.previewIngreso(f.kg_larvas, n); };
       vals.ingFilas = s.filas.map((x, i) => ({
-        codigo: pv && pv.codigos && pv.codigos[i] ? pv.codigos[i] : 'Bandeja ' + (i + 1), peso: x.peso, rack_id: x.rack_id || '',
-        onPeso: e => this.setFila(i, 'peso', valor(e)), onRack: e => this.setFila(i, 'rack_id', valor(e)),
+        codigo: pv && pv.codigos && pv.codigos[i] ? pv.codigos[i] : 'Bandeja ' + (i + 1), peso: x.peso,
+        onPeso: e => this.setFila(i, 'peso', valor(e)),
         puedeQuitar: s.filas.length > 1,
         onQuitar: () => { this.setState(st => ({ filas: st.filas.filter((_, k) => k !== i) })); agregar(s.filas.length - 1); }
       }));
       vals.onAgregarBandeja = () => {
-        const prev = s.filas[s.filas.length - 1];
-        this.setState(st => ({ filas: st.filas.concat([{ peso: kgTxt(fr.kg_bandeja), rack_id: prev ? prev.rack_id : '' }]) }));
+        this.setState(st => ({ filas: st.filas.concat([{ peso: kgTxt(fr.kg_bandeja) }]) }));
         agregar(s.filas.length + 1);
       };
     }
 
     if (screen === 'nuevaJaula') {
-      vals.faseChips = [['activa', 'Con moscas'], ['limpia', 'Limpia']].map(x => this.chip(x[1], f.fase === x[0], () => this.setField('fase', x[0])));
+      vals.faseChips = [['activa', 'Con moscas'], ['limpia', 'Limpio']].map(x => this.chip(x[1], f.fase === x[0], () => this.setField('fase', x[0])));
       vals.letraHint = 'Sus incubadoras serán F' + (f.generacion || '?') + String(f.letra || '?').toUpperCase() + '-1, -2…';
     }
 
@@ -2419,11 +2408,6 @@ class Component extends DCLogic {
       vals.sinEnsFilas = !s.filas.length;
     }
 
-    if (screen === 'mover') {
-      vals.moverTitulo = (s.ctx.titulo || '') + (s.ctx.rack ? ' · ahora en el rack ' + s.ctx.rack : '');
-      vals.moverChips = s.racks.map(r => this.chip(r.codigo, f.rack_hasta === r.id, () => this.setField('rack_hasta', r.id)));
-    }
-
     if (screen === 'registro' && s.reg) {
       const reg = s.reg;
       vals.regHasRevisar = reg.revisar.length > 0;
@@ -2431,8 +2415,7 @@ class Component extends DCLogic {
       vals.onRevisado = this.revisado;
       vals.regFilas = s.filas.map((x, i) => {
         const o = reg.opciones;
-        const opciones = x.kind === 'rack' ? o.racks.map(r => ({ value: r.id, label: r.codigo }))
-          : x.kind === 'jaula' ? o.jaulas.map(j => ({ value: j.id, label: j.nombre }))
+        const opciones = x.kind === 'jaula' ? o.jaulas.map(j => ({ value: j.id, label: j.nombre }))
           : x.kind === 'material' ? o.materiales.map(m => ({ value: m, label: m }))
           : x.kind === 'fase' ? o.fases.map(p => ({ value: p.id, label: p.nombre })) : [];
         return {
@@ -2445,9 +2428,9 @@ class Component extends DCLogic {
       vals.regFotoUrl = s.regFotoUrl || '';
       const acciones = [];
       if (reg.tabla === 'bandeja_pupacion') {
-        acciones.push(this.boton('Cambiar de rack', () => this.open('mover', { objeto: 'bandeja_pupacion', id: reg.id, titulo: 'Bandeja de pupación' })));
         acciones.push(this.boton('Cerrar antes de tiempo', () => this.cerrar('bandeja_pupacion', reg.id, 'la bandeja'), 'peligro'));
       }
+      if (reg.borrable) acciones.push(this.boton('Borrar este registro', () => this.borrar(reg.tabla, reg.id, reg.titulo), 'peligro'));
       vals.regAcciones = acciones;
       vals.hasRegAcciones = acciones.length > 0;
     }

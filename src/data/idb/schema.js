@@ -45,7 +45,6 @@ export const LEGACY_DB_NAMES = ['tryento'];
 export const SYNCED_STORES = [
   'parametro',
   'catalogo',
-  'rack',
   'contenedor',
   'jaula',
   'recepcion',
@@ -62,8 +61,7 @@ export const SYNCED_STORES = [
   'cochada_lectura',
   'ingreso',
   'bandeja_pupacion',
-  'jaula_evento',
-  'movimiento'
+  'jaula_evento'
 ];
 
 /** Stores that are purely local machinery and never pulled from the server. */
@@ -82,7 +80,6 @@ export const STORE_DEFS = {
   catalogo:         { keyPath: 'id', indexes: [['by_tipo', 'tipo'], UPD] },
 
   // Objects registered once.
-  rack:             { keyPath: 'id', indexes: [UPD] },
   contenedor:       { keyPath: 'id', indexes: [UPD] },
   jaula:            { keyPath: 'id', indexes: [UPD] },
 
@@ -108,7 +105,6 @@ export const STORE_DEFS = {
   ingreso:          { keyPath: 'id', indexes: [['by_jaula', 'jaula_id'], UPD] },
   bandeja_pupacion: { keyPath: 'id', indexes: [['by_ingreso', 'ingreso_id'], ['by_jaula', 'jaula_id'], UPD] },
   jaula_evento:     { keyPath: 'id', indexes: [['by_jaula', 'jaula_id'], UPD] },
-  movimiento:       { keyPath: 'id', indexes: [['by_objeto', 'objeto_id'], UPD] },
 
   outbox:           { keyPath: 'id', indexes: [
                         ['by_status', 'status'],
@@ -173,6 +169,43 @@ const V1_STORES = {
   meta:             { keyPath: 'key', indexes: [] }
 };
 
+/* ── v2, frozen ───────────────────────────────────────────────────────────── */
+
+const pedir = req => new Promise((resolve, reject) => {
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+
+const DE_RACK = new Set(['rack', 'movimiento']);
+
+/**
+ * A queued item once the racks are gone (0011), or null if nothing is left of it.
+ * Work that was only about a rack has nowhere to land any more; everything else
+ * still lands, without the rack it named. The calls read their fields by name, so
+ * a distribución or an ingreso that names one needs no change.
+ */
+function sinRack(item) {
+  const p = item.payload || {};
+  if (DE_RACK.has(item.table) || DE_RACK.has(p.p_tabla)) return null;
+  const sinFilas = xs => xs.filter(c => !DE_RACK.has(c.store));
+  const next = { ...item, ...(item.undo ? { undo: { created: sinFilas(item.undo.created), changed: sinFilas(item.undo.changed) } } : {}) };
+  if (item.table === 'incubadora' && 'rack_id' in p) {
+    const { rack_id, ...resto } = p;
+    next.payload = resto;
+  }
+  if (item.rpc === 'editar' && p.p_cambios && 'rack_id' in p.p_cambios) {
+    const { rack_id, ...cambios } = p.p_cambios;
+    if (!Object.keys(cambios).length) return null;
+    next.payload = { ...p, p_cambios: cambios };
+  }
+  if (item.rpc === 'borrar_registros') {
+    const filas = (p.p_filas || []).filter(f => !DE_RACK.has(f.tabla));
+    if (!filas.length) return null;
+    next.payload = { ...p, p_filas: filas };
+  }
+  return next;
+}
+
 /**
  * Append-only list of upgrade steps. Index N implements version N+1.
  * Each step is (db, tx) => void | Promise<void>.
@@ -181,6 +214,24 @@ export const MIGRATIONS = [
   // ── v1: the protocols of October 2026 (frozen; see V1_STORES) ───────────
   (db) => {
     for (const [name, def] of Object.entries(V1_STORES)) createStore(db, name, def);
+  },
+
+  // ── v2: no more racks (0011). The queue keeps all it can; what was only about
+  // a rack leaves the queue and its conflict with it.
+  async (db, tx) => {
+    const outbox = tx.objectStore('outbox');
+    const quitados = new Set();
+    for (const item of await pedir(outbox.getAll())) {
+      const next = sinRack(item);
+      if (next) await pedir(outbox.put(next));
+      else { quitados.add(item.id); await pedir(outbox.delete(item.id)); }
+    }
+    const conflicts = tx.objectStore('conflicts');
+    for (const c of await pedir(conflicts.getAll())) {
+      if (quitados.has(c.outbox_id) || DE_RACK.has(c.table)) await pedir(conflicts.delete(c.id));
+    }
+    db.deleteObjectStore('rack');
+    db.deleteObjectStore('movimiento');
   }
 ];
 

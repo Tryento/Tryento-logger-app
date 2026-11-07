@@ -1,5 +1,5 @@
 /**
- * check-sql.mjs — parse every migration against the real Postgres grammar.
+ * check-sql.mjs — parse every SQL file against the real Postgres grammar.
  *
  * This validates SYNTAX only: libpg_query is the actual Postgres parser, so a
  * file that passes here will not fail on a typo. It does NOT validate
@@ -12,14 +12,10 @@
  * check_function_bodies is off), so an error inside one shows up on apply, not
  * here.
  */
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { setupFiles } from './migrations.mjs';
-
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DIR = path.join(ROOT, 'supabase', 'migrations');
+import { ROOT, setupFiles, operaciones } from './migrations.mjs';
 
 let pg;
 try {
@@ -32,29 +28,27 @@ try {
 }
 if (typeof pg.loadModule === 'function') await pg.loadModule();
 
-const files = (await readdir(DIR)).filter(f => f.endsWith('.sql')).sort();
 let failed = 0;
 
-for (const f of files) {
-  const sql = await readFile(path.join(DIR, f), 'utf8');
+for (const { file, body } of [...await setupFiles(), ...await operaciones()]) {
   try {
-    const ast = await pg.parse(sql);
+    const ast = await pg.parse(body);
     const stmts = ast?.stmts ?? ast?.parse_tree?.stmts ?? [];
-    console.log(`  ok    ${f}  (${stmts.length} statements)`);
+    console.log(`  ok    ${file}  (${stmts.length} statements)`);
   } catch (e) {
     failed++;
-    console.log(`  FAIL  ${f}: ${e.message}`);
+    console.log(`  FAIL  ${file}: ${e.message}`);
     if (e.cursorPosition) {
-      const line = sql.slice(0, e.cursorPosition).split('\n').length;
+      const line = body.slice(0, e.cursorPosition).split('\n').length;
       console.log(`        near line ${line}`);
     }
   }
 }
 
-/* The one-paste setup file must parse AND match the migrations it is built
- * from. Without the staleness check, editing a migration and forgetting to run
- * `npm run setup:sql` would deploy yesterday's schema — and it would look
- * like it had worked. */
+/* The one-paste setup file must parse AND match the files it is built from.
+ * Without the staleness check, editing a schema file and forgetting to run
+ * `npm run setup:sql` would deploy yesterday's schema — and it would look like
+ * it had worked. */
 const COMBINED = path.join(ROOT, 'supabase', 'SETUP_COMPLETO.sql');
 try {
   const combined = await readFile(COMBINED, 'utf8');
@@ -62,8 +56,6 @@ try {
   const stmts = ast?.stmts ?? ast?.parse_tree?.stmts ?? [];
   console.log(`  ok    SETUP_COMPLETO.sql  (${stmts.length} statements)`);
 
-  // Only what a fresh install runs: the history before the baseline and the
-  // repair scripts are deliberately left out of the file.
   for (const { file, body } of await setupFiles()) {
     if (!combined.includes(body.trim())) {
       failed++;

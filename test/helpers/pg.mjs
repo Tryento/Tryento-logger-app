@@ -1,6 +1,6 @@
 /**
  * A real Postgres for tests: PGlite (Postgres compiled to WASM), plus the
- * minimum of Supabase that the migrations touch.
+ * minimum of Supabase that the SQL touches.
  *
  * Before this existed, SQL was only ever checked for SYNTAX. That missed
  * everything that actually broke production: a PL/pgSQL body still naming a
@@ -12,16 +12,15 @@ import { PGlite } from '@electric-sql/pglite';
 import { uuid_ossp } from '@electric-sql/pglite/contrib/uuid_ossp';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { readFile } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /**
- * Just enough of Supabase for the migrations to apply: the three API roles,
- * auth.uid()/auth.jwt(), and the storage tables 0003 writes to. Deliberately
- * NOT a Supabase emulator — it exists so the SQL can run, not to test RLS.
+ * Just enough of Supabase for the SQL to apply: the three API roles,
+ * auth.uid()/auth.jwt(), and the storage tables 0010 writes to. Deliberately
+ * NOT a Supabase emulator — it exists so the SQL can run.
  */
 const SUPABASE_SHIM = `
   create role anon nologin;
@@ -57,31 +56,11 @@ export async function freshPg() {
 
 export const readSql = rel => readFile(path.join(ROOT, rel), 'utf8');
 
-/** A migration exactly as it was at a given commit — i.e. as it was APPLIED. */
-export function sqlAt(commit, rel) {
-  return execFileSync('git', ['show', `${commit}:${rel}`], {
-    cwd: ROOT, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024
-  });
-}
-
-/**
- * The live database as it actually exists: SETUP (0001-0003) from the first
- * commit, then 0004 as it was when it was applied — both BEFORE the
- * cochada -> lote rename touched those files.
- */
-export const LIVE_BUILT_FROM = 'e929a7c';
-export const LIVE_MIGRATIONS = [
-  'supabase/migrations/0001_schema.sql',
-  'supabase/migrations/0002_views.sql',
-  'supabase/migrations/0003_seed.sql',
-  'supabase/migrations/0004_atribucion_acciones.sql'
-];
-
-export async function liveReplica() {
-  const db = await freshPg();
-  for (const f of LIVE_MIGRATIONS) await db.exec(sqlAt(LIVE_BUILT_FROM, f));
-  return db;
-}
+/** Run `fn` as the public key does: the grants and policies apply. */
+export const comoAnon = (db, fn) => db.transaction(async tx => {
+  await tx.query('set local role anon');
+  return fn(tx);
+});
 
 /** Every overload of a function in schema app, as "name(argtypes)". */
 export async function overloads(db, name) {

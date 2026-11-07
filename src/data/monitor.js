@@ -47,7 +47,7 @@ export function paraHoy(vista, { ventana = 2 } = {}) {
       add({
         clave: `incubadora:${i.id}:${p.paso}`, grupo: 'larvas', paso: p.paso,
         titulo: `${pasoLabel(p)} · ${i.codigo}`,
-        detalle: `Día ${i.dia}${i.rack ? ` · rack ${i.rack.codigo}` : ''}`,
+        detalle: `Día ${i.dia} · ${i.n_bandejas === 1 ? '1 bandeja' : `${i.n_bandejas} bandejas`}`,
         estado: p.estado, dias: p.dias,
         accion: { tipo: p.paso, incubadora_id: i.id, dia: p.dia }
       });
@@ -102,8 +102,8 @@ export function paraHoy(vista, { ventana = 2 } = {}) {
   if (vista.pool.kg_pendiente > 0 && !vista.jaulas.some(j => j.fase === 'limpia')) {
     add({
       clave: 'pool:pendiente', grupo: 'insectario', paso: 'pool',
-      titulo: `2 % esperando una jaula limpia · ${kgTxt(vista.pool.kg_pendiente)} kg`,
-      detalle: 'Se repuebla una jaula cerrada y limpia',
+      titulo: `2 % esperando · ${kgTxt(vista.pool.kg_pendiente)} kg`,
+      detalle: 'Se repuebla un insectario cerrado y limpio',
       estado: 'hoy', dias: 0, accion: { tipo: 'pool' }
     });
   }

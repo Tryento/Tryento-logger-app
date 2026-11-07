@@ -42,23 +42,22 @@ export async function probar({ api, sync, borrarLocal, db, t }) {
 
   /* ── a whole cycle, offline, exactly as a phone records it ── */
   try {
-    S.rack = ok(await api.registrarRack({ codigo: 'ZZTEST-R' + sello }), 'rack').id;
     S.cont = ok(await api.registrarContenedor({ codigo: 'ZZTEST-S' + sello }), 'contenedor').id;
     for (let i = 0; i < 4 && !S.jaula; i++) {
       const r = await api.registrarJaula({ nombre: 'ZZTEST-' + sello, letra: 'Z' + String(Math.floor(Math.random() * 100)).padStart(2, '0'),
                                            lugar: 'prueba', generacion: 7, fase: 'activa' });
       if (r.ok) S.jaula = r.data.id;
     }
-    if (!S.jaula) throw new Error('jaula: no se pudo registrar');
+    if (!S.jaula) throw new Error('insectario: no se pudo registrar');
     S.rec = ok(await api.registrarRecepcion({ material: 'Otro', kg: 10 }), 'recepción').id;
     S.ens = ok(await api.crearEnsilado({ contenedor_id: S.cont, insumos: [{ recepcion_id: S.rec, kg: 10 }] }), 'ensilado').ensilado.id;
-    const inc = ok(await api.registrarRecolecta({ jaula_id: S.jaula, rack_id: S.rack, peso_inicial_g: '12,5', alimento_inicial_kg: 2 }), 'recolecta');
+    const inc = ok(await api.registrarRecolecta({ jaula_id: S.jaula, peso_inicial_g: '12,5', n_bandejas: 3, alimento_bandeja_g: 400 }), 'recolecta');
     S.inc = inc.id;
     // The whole cycle in one moment: every scheduled step is days early, so
     // each is confirmed, as a person would on the screen.
     const SI = { confirmado: true };
     ok(await api.registrarChequeos({ objeto: 'incubadora', dia: 3, ...SI, items: [{ id: S.inc, humedad_pct: 68, temperatura_c: 29, peso: 40 }] }), 'chequeo día 3');
-    const d = ok(await api.distribuir({ incubadora_id: S.inc, peso_total_kg: 1, ...SI, cajas: [{ peso_inicial_kg: 1, rack_id: S.rack }] }), 'distribución');
+    const d = ok(await api.distribuir({ incubadora_id: S.inc, peso_total_kg: 1, ...SI, cajas: [{ peso_inicial_kg: 1 }] }), 'distribución');
     S.caja = d.cajas[0].id;
     ok(await api.registrarChequeos({ objeto: 'caja', dia: 10, ...SI, items: [{ id: S.caja, humedad_pct: 60, temperatura_c: 31, peso: 2 }] }), 'chequeo día 10');
     ok(await api.registrarCargas({ carga: 2, ...SI, items: [{ caja_id: S.caja }] }), 'carga 2');
@@ -69,7 +68,7 @@ export async function probar({ api, sync, borrarLocal, db, t }) {
     await new Promise(r => setTimeout(r, 20));
     ok(await api.registrarEventoJaula({ jaula_id: S.jaula, tipo: 'limpieza' }), 'limpieza');
     await new Promise(r => setTimeout(r, 20));
-    S.ing = ok(await api.registrarIngreso({ jaula_id: S.jaula, kg_larvas: 0.2, bandejas: [{ peso_kg: 4.7, rack_id: S.rack }] }), 'ingreso').ingreso.id;
+    S.ing = ok(await api.registrarIngreso({ jaula_id: S.jaula, kg_larvas: 0.2, bandejas: [{ peso_kg: 4.7 }] }), 'ingreso').ingreso.id;
     await new Promise(r => setTimeout(r, 20));
     ok(await api.editarRegistro({ tabla: 'separacion', id: S.sep, cambios: { peso_total_kg: '12' } }), 'corrección');
     ok(await api.marcarRevisado({ tabla: 'ingreso', id: S.ing }), 'revisado');
@@ -86,20 +85,21 @@ export async function probar({ api, sync, borrarLocal, db, t }) {
   else {
     const conf = (await api.listConflicts({})).data || [];
     t.bad('todo enviado', `${est.pending} pendientes, ${est.conflicts} conflictos: ${conf.map(c => c.explanation).join(' | ')}`,
-          'Si dice que no encuentra una función: falta correr 0010_ciclo_nuevo.sql.');
+          'Si dice que no encuentra una función: falta correr lo de supabase/esquema.');
   }
 
   const fila = async (tabla, id, cols) => (await db.from(tabla).select(cols).eq('id', id)).data?.[0] || null;
-  const inc = await fila('incubadora', S.inc, 'estado, registrado_por');
+  const inc = await fila('incubadora', S.inc, 'estado, registrado_por, n_bandejas, alimento_inicial_kg');
   const sep = await fila('separacion', S.sep, 'coccion_kg, valores_editados_at');
   const jaula = await fila('jaula', S.jaula, 'fase, generacion');
   const co = await fila('cochada', S.co, 'estado');
-  if (inc?.estado === 'inactivo' && inc?.registrado_por === POR) t.ok('en el servidor: la incubadora distribuida, con su autor');
-  else t.bad('en el servidor: la incubadora', JSON.stringify(inc));
+  if (inc?.estado === 'inactivo' && inc?.registrado_por === POR && inc?.n_bandejas === 3 && Number(inc?.alimento_inicial_kg) === 1.2) {
+    t.ok('en el servidor: la incubadora distribuida, con su autor y sus 3 bandejas');
+  } else t.bad('en el servidor: la incubadora', JSON.stringify(inc));
   if (sep && Number(sep.coccion_kg) === 11.76 && sep.valores_editados_at) t.ok('en el servidor: la corrección recalculó el 98 %', '11,76 kg');
   else t.bad('en el servidor: la corrección', JSON.stringify(sep));
-  if (jaula?.fase === 'activa' && jaula?.generacion === 8) t.ok('en el servidor: la jaula repoblada, F8');
-  else t.bad('en el servidor: la jaula', JSON.stringify(jaula));
+  if (jaula?.fase === 'activa' && jaula?.generacion === 8) t.ok('en el servidor: el insectario repoblado, F8');
+  else t.bad('en el servidor: el insectario', JSON.stringify(jaula));
   if (co?.estado === 'inactivo') t.ok('en el servidor: la cochada salió del horno');
   else t.bad('en el servidor: la cochada', JSON.stringify(co));
 
@@ -107,11 +107,10 @@ export async function probar({ api, sync, borrarLocal, db, t }) {
   await borrarLocal();
   await api.ready();
   await sync();
-  const larvas = (await api.listCajas({ inactivas: true })).data || [];
-  const jaulas = (await api.listJaulas()).data?.jaulas || [];
-  if (larvas.some(c => c.id === S.caja) && jaulas.some(j => j.id === S.jaula && j.generacion === 8 && j.fase === 'activa')) {
-    t.ok('otro teléfono lo ve igual', 'desde cero, con la jaula en F8');
-  } else t.bad('otro teléfono lo ve igual', `cajas ${larvas.length}, jaulas ${jaulas.map(j => j.nombre + ':' + j.fase).join(',')}`);
+  const lab = (await api.getLaboratorio()).data || { insectarios: [], bandejas: [] };
+  if (lab.bandejas.some(b => b.id === S.caja) && lab.insectarios.some(j => j.id === S.jaula && j.generacion === 8 && j.fase === 'activa')) {
+    t.ok('otro teléfono lo ve igual', 'desde cero, con el insectario en F8');
+  } else t.bad('otro teléfono lo ve igual', `bandejas ${lab.bandejas.length}, insectarios ${lab.insectarios.map(j => j.nombre + ':' + j.fase).join(',')}`);
   return S;
 }
 

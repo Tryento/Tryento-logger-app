@@ -2,7 +2,7 @@
  * registros.js — what can be corrected in each record, and how a typed value
  * becomes a stored one.
  *
- * MIRRORS app.editar in 0010_ciclo_nuevo.sql: the same tables and the same
+ * MIRRORS app.editar in supabase/esquema/0011: the same tables and the same
  * fields. A field listed here and not there is refused by the server; a test
  * keeps the two lists equal. Codes are never editable: they are what is
  * written on the container.
@@ -14,26 +14,25 @@ import { num, str } from './envelope.js';
 import { utcIso } from './time.js';
 
 export const EDITABLE = {
-  rack:             { titulo: 'Rack', campos: [['codigo', 'codigo', 'Código']] },
   contenedor:       { titulo: 'Contenedor', campos: [['codigo', 'codigo', 'Código']] },
-  jaula:            { titulo: 'Jaula', campos: [
+  jaula:            { titulo: 'Insectario', campos: [
                         ['nombre', 'codigo', 'Nombre'], ['letra', 'letra', 'Letra del código'],
-                        ['lugar', 'texto', 'Lugar'], ['generacion_inicial', 'generacion', 'Generación al registrarla'],
-                        ['fase_inicial', 'fase', 'Estado al registrarla']] },
+                        ['lugar', 'texto', 'Lugar'], ['generacion_inicial', 'generacion', 'Generación al registrarlo'],
+                        ['fase_inicial', 'fase', 'Estado al registrarlo']] },
   recepcion:        { titulo: 'Recepción', campos: [
                         ['fecha', 'fecha', 'Fecha'], ['material', 'material', 'Material'], ['kg', 'kg', 'Peso']] },
   ensilado:         { titulo: 'Ensilado', campos: [
                         ['ensilado_at', 'fecha', 'Fecha del ensilado'], ['abierto_at', 'fecha', 'Apertura']] },
   ensilado_insumo:  { titulo: 'Material del ensilado', campos: [['kg', 'kg', 'Peso']] },
   incubadora:       { titulo: 'Recolecta', campos: [
-                        ['jaula_id', 'jaula', 'Jaula'], ['generacion', 'generacion', 'Generación'],
-                        ['recolecta_at', 'fecha', 'Fecha de la recolecta'], ['rack_id', 'rack', 'Rack inicial'],
+                        ['jaula_id', 'jaula', 'Insectario'], ['generacion', 'generacion', 'Generación'],
+                        ['recolecta_at', 'fecha', 'Fecha de la recolecta'],
                         ['peso_inicial_g', 'g', 'Peso inicial (huevos/larvas)'],
-                        ['alimento_inicial_kg', 'kg', 'Alimento inicial']] },
+                        ['n_bandejas', 'bandejas', 'Bandejas'],
+                        ['alimento_inicial_kg', 'kg', 'Alimento inicial, en total']] },
   distribucion:     { titulo: 'Distribución', campos: [
                         ['fecha', 'fecha', 'Fecha'], ['peso_total_kg', 'kg', 'Larvas tamizadas']] },
-  caja:             { titulo: 'Caja de engorde', campos: [
-                        ['rack_id', 'rack', 'Rack inicial'], ['peso_inicial_kg', 'kg', 'Peso inicial']] },
+  caja:             { titulo: 'Caja de engorde', campos: [['peso_inicial_kg', 'kg', 'Peso inicial']] },
   chequeo:          { titulo: 'Chequeo', campos: [
                         ['fecha', 'fecha', 'Fecha'], ['humedad_pct', 'pct', 'Humedad del sustrato'],
                         ['temperatura_c', 'temp', 'Temperatura del sustrato'],
@@ -47,10 +46,9 @@ export const EDITABLE = {
                         ['fecha', 'fecha', 'Fecha'], ['temperatura_c', 'horno', 'Temperatura'], ['peso_kg', 'kg', 'Peso final']] },
   ingreso:          { titulo: 'Ingreso al insectario', campos: [
                         ['fecha', 'fecha', 'Fecha'], ['kg_larvas', 'kg', 'Larvas del 2 %'],
-                        ['generacion', 'generacion', 'Generación de la jaula']] },
-  bandeja_pupacion: { titulo: 'Bandeja de pupación', campos: [['rack_id', 'rack', 'Rack'], ['peso_kg', 'kg', 'Peso']] },
-  jaula_evento:     { titulo: 'Cierre o limpieza', campos: [['fecha', 'fecha', 'Fecha']] },
-  movimiento:       { titulo: 'Cambio de rack', campos: [['fecha', 'fecha', 'Fecha'], ['rack_hasta', 'rack', 'Al rack']] }
+                        ['generacion', 'generacion', 'Generación del insectario']] },
+  bandeja_pupacion: { titulo: 'Bandeja de pupación', campos: [['peso_kg', 'kg', 'Peso']] },
+  jaula_evento:     { titulo: 'Cierre o limpieza', campos: [['fecha', 'fecha', 'Fecha']] }
 };
 
 /** Always editable, on every record: they are not values ("revisar" ignores them). */
@@ -72,7 +70,7 @@ export function camposDe(tabla, row) {
 }
 
 /** Typed value → stored value, or { error }. `ctx` knows the lists to check
- *  against (racks, jaulas, materials). */
+ *  against (insectarios, materials). */
 export function leerCampo(kind, v, ctx = {}) {
   const n = num(v);
   switch (kind) {
@@ -90,8 +88,11 @@ export function leerCampo(kind, v, ctx = {}) {
     case 'generacion':
       if (n === null || !Number.isInteger(n) || n < 0) return { error: 'Un número entero (la F).' };
       return { value: n };
+    case 'bandejas':
+      if (n === null || !Number.isInteger(n) || n < 1) return { error: 'Un número entero, desde 1.' };
+      return { value: n };
     case 'fase':
-      if (!['activa', 'limpia'].includes(v)) return { error: 'Con moscas o limpia.' };
+      if (!['activa', 'limpia'].includes(v)) return { error: 'Con moscas o limpio.' };
       return { value: v };
     case 'kg':
     case 'g':
@@ -111,11 +112,8 @@ export function leerCampo(kind, v, ctx = {}) {
       const iso = utcIso(v);
       return iso ? { value: iso } : { error: 'Fecha no válida.' };
     }
-    case 'rack':
-      if (!(ctx.racks || []).some(r => r.id === v)) return { error: 'Elige un rack.' };
-      return { value: v };
     case 'jaula':
-      if (!(ctx.jaulas || []).some(j => j.id === v)) return { error: 'Elige una jaula.' };
+      if (!(ctx.jaulas || []).some(j => j.id === v)) return { error: 'Elige un insectario.' };
       return { value: v };
     case 'material':
       if (!(ctx.materiales || []).includes(v)) return { error: 'Elige un material de la lista.' };

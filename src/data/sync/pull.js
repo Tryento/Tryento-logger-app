@@ -18,7 +18,7 @@
 import { getClient, toError, canSync } from '../supabase.js';
 import { SYNCED_STORES } from '../idb/schema.js';
 import { PULL_OVERLAP_MS, PULL_PAGE_SIZE } from '../config.js';
-import { metaGet, metaSet } from '../idb/tx.js';
+import { metaGet, metaSet, withTx, reqToPromise } from '../idb/tx.js';
 import { applyServerRows } from '../store.js';
 
 const cursorKey = table => `pull_cursor:${table}`;
@@ -180,6 +180,67 @@ export async function pullOnce(db, { tables = SYNCED_STORES } = {}) {
     }
   }
   return summary;
+}
+
+/* ── the full delete ──────────────────────────────────────────────────────── */
+
+const VACIADO_VISTO = 'vaciado_visto';
+/** What the full delete keeps (supabase/operaciones/borrar_todos_los_datos.sql). */
+const SE_QUEDAN = new Set(['parametro', 'catalogo']);
+
+/**
+ * Forget everything from before a full delete on the server: rows, the queue,
+ * conflicts and photos. What was registered after it stays, and if it hung on
+ * something erased, it surfaces in Conflictos when it reaches the server.
+ * @returns how many things were dropped
+ */
+async function vaciarLocal(db, cuando) {
+  const hasta = Date.parse(cuando);
+  const deAntes = r => Date.parse(r.created_at) <= hasta;
+  const datos = SYNCED_STORES.filter(t => !SE_QUEDAN.has(t));
+  let n = 0;
+  await withTx(db, [...datos, 'outbox', 'conflicts', 'blobs', 'meta'], 'readwrite', async s => {
+    for (const t of datos) {
+      for (const r of await reqToPromise(s[t].getAll())) {
+        if (deAntes(r)) { await reqToPromise(s[t].delete(r.id)); n++; }
+      }
+    }
+    const quitados = new Set();
+    for (const it of await reqToPromise(s.outbox.getAll())) {
+      // A new name queued before it still joins the list: the names stay.
+      if (deAntes(it) && it.table !== 'catalogo') { quitados.add(it.id); await reqToPromise(s.outbox.delete(it.id)); }
+    }
+    for (const c of await reqToPromise(s.conflicts.getAll())) {
+      if (quitados.has(c.outbox_id)) await reqToPromise(s.conflicts.delete(c.id));
+    }
+    for (const b of await reqToPromise(s.blobs.getAll())) {
+      if (deAntes(b)) await reqToPromise(s.blobs.delete(b.id));
+    }
+    // From the start again: an erased row is no reason to miss a later one.
+    for (const t of datos) await reqToPromise(s.meta.put({ key: cursorKey(t), value: EPOCH }));
+    await reqToPromise(s.meta.put({ key: VACIADO_VISTO, value: cuando }));
+  });
+  return n;
+}
+
+/**
+ * Has the server been emptied since this phone last looked?
+ *
+ * An erased row never reaches a phone by pulling, so the full delete leaves its
+ * moment in `parametro`. It runs BEFORE the push: otherwise a phone that was
+ * offline would send what it had queued, and bring back what was just erased.
+ * @returns how many local things were dropped (0 if there is nothing new)
+ */
+export async function revisarVaciado(db) {
+  const client = getClient();
+  if (!client || !canSync()) return 0;
+  // Never in the way of the push: the pull that follows reports any trouble reading it.
+  await pullTable(db, client, 'parametro').catch(() => {});
+  const fila =(await withTx(db, 'parametro', 'readonly', s => reqToPromise(s.parametro.index('by_clave').getAll('datos_vaciados_at'))))[0];
+  const cuando = fila?.valor;
+  if (!cuando || !Number.isFinite(Date.parse(cuando))) return 0;
+  if (cuando === await metaGet(db, VACIADO_VISTO, null)) return 0;
+  return vaciarLocal(db, cuando);
 }
 
 /**

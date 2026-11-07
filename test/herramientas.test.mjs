@@ -1,6 +1,6 @@
 /**
  * The tools that check production, run here against a local Postgres built
- * from SETUP_COMPLETO.sql — so after running 0010 their verdict can be
+ * from SETUP_COMPLETO.sql — so after running the SQL their verdict can be
  * trusted, rather than debugged against the live database.
  */
 import { test } from 'node:test';
@@ -17,7 +17,7 @@ const nuevo = async () => {
   return pg;
 };
 
-test('check-sql-applied: everything ok once 0010 ran, and it changes nothing', async () => {
+test('check-sql-applied: everything ok once the schema ran, and it changes nothing', async () => {
   const pg = await nuevo();
   const res = await comprobar(pgClient(pg));
   assert.deepEqual(res.filter(r => !r.ok).map(r => r.label), []);
@@ -27,7 +27,22 @@ test('check-sql-applied: everything ok once 0010 ran, and it changes nothing', a
   }
 });
 
-test('check-sql-applied: before 0010 it says what is missing', async () => {
+test('check-sql-applied: on production as it is today it says 0011 is missing, and only that', async () => {
+  const pg = await freshPg();
+  await pg.exec(await readSql('supabase/esquema/0010_ciclo_nuevo.sql'));
+  const res = await comprobar(pgClient(pg));
+  assert.deepEqual(res.filter(r => r.mig === '0010' && !r.ok).map(r => r.label), []);
+  assert.ok(res.filter(r => r.mig === '0011').every(r => !r.ok), JSON.stringify(res.filter(r => r.mig === '0011')));
+  assert.equal(res.filter(r => r.mig === '0011').length, 6);
+});
+
+test('check-sql-applied: in protected mode everything is still there', async () => {
+  const pg = await nuevo();
+  await pg.exec(await readSql('supabase/operaciones/proteger_datos.sql'));
+  assert.deepEqual((await comprobar(pgClient(pg))).filter(r => !r.ok).map(r => r.label), []);
+});
+
+test('check-sql-applied: before any of it, it says what is missing', async () => {
   const pg = await freshPg();
   const res = await comprobar(pgClient(pg));
   assert.ok(res.every(r => !r.ok || r.label.includes('ya no existen')));

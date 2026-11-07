@@ -2,8 +2,8 @@
 
 Living documentation for the Tryento black soldier fly lab. The build
 (`tools/build.mjs` copies an explicit allow-list into `dist/`) publishes only
-`guia-app.html`, opened from the app's home screen, and `protocolo.html`, which
-it links to. Both work offline, so they can load nothing from other sites.
+`guia-app.html` and `protocolo.html`, both opened from the app's home screen. Both
+work offline, so they can load nothing from other sites.
 
 | Document | What it is | Update it when |
 |---|---|---|

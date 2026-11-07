@@ -4,8 +4,8 @@
  *   npm run check:sql-applied
  *
  * The app calls RPCs by name, so pushing app code before its SQL breaks those
- * actions in production. This answers "has 0010 (and 0011) been run?" from the
- * database itself instead of from memory.
+ * actions in production. This answers "has 0010 and 0011 been run?" from the
+ * database itself instead of from memory, and says which mode the data is in.
  *
  * Every probe is READ-ONLY or a guaranteed no-op: the multi-row calls are made
  * empty (they refuse before writing anything, 22023), and the stamps, edits
@@ -21,9 +21,16 @@ import { loadConfig } from './qa.mjs';
 /** An id that cannot exist, so every stamp and edit updates nothing. */
 const NOBODY = '00000000-0000-4000-8000-000000000000';
 
-const TABLAS = ['catalogo', 'parametro', 'rack', 'contenedor', 'jaula', 'recepcion', 'ensilado',
+const TABLAS = ['catalogo', 'parametro', 'contenedor', 'jaula', 'recepcion', 'ensilado',
   'ensilado_insumo', 'incubadora', 'distribucion', 'caja', 'chequeo', 'alimentacion', 'separacion',
-  'cochada', 'cochada_origen', 'cochada_lectura', 'ingreso', 'bandeja_pupacion', 'jaula_evento', 'movimiento'];
+  'cochada', 'cochada_origen', 'cochada_lectura', 'ingreso', 'bandeja_pupacion', 'jaula_evento'];
+
+const AJUSTES_0010 = ['dia_chequeo_incubadora', 'cargas', 'pct_coccion', 'kg_bandeja_pupacion',
+                      'dias_maduracion', 'horas_consumo'];
+const AJUSTES_0011 = ['huevos_bandeja_min_g', 'huevos_bandeja_max_g', 'alimento_bandeja_g', 'reglas_estrictas'];
+
+/** The database said no because of permissions, not because of anything else. */
+const negado = error => Boolean(error) && (error.code === '42501' || /permission denied/i.test(error.message));
 
 /** Every probe against `db`: [{ mig, label, ok }]. */
 export async function comprobar(db) {
@@ -43,6 +50,10 @@ export async function comprobar(db) {
     return !(error && (error.code === 'PGRST202' || error.code === 'PGRST203' ||
                        /could not (find|choose)|is not unique/i.test(error.message)));
   };
+  const ajustes = async claves => {
+    const { data, error } = await db.from('parametro').select('clave');
+    return !error && claves.every(k => data.some(r => r.clave === k));
+  };
 
   const checks = [
     ...TABLAS.map(t => ['0010', 'tabla ' + t, () => table(t)]),
@@ -59,14 +70,10 @@ export async function comprobar(db) {
     ['0010', 'cerrar_objeto(p_tabla, p_id, p_motivo, p_at, p_por)', () =>
         rpc('cerrar_objeto', { p_tabla: 'incubadora', p_id: NOBODY, p_motivo: 'prueba', p_at: null, p_por: null })],
     ['0010', 'editar(p_tabla, p_id, p_cambios, p_por, p_at)', () =>
-        rpc('editar', { p_tabla: 'rack', p_id: NOBODY, p_cambios: { nota: 'prueba' }, p_por: null, p_at: null })],
+        rpc('editar', { p_tabla: 'contenedor', p_id: NOBODY, p_cambios: { nota: 'prueba' }, p_por: null, p_at: null })],
     ['0010', 'marcar_revisado(p_tabla, p_id, p_at, p_por)', () =>
         rpc('marcar_revisado', { p_tabla: 'incubadora', p_id: NOBODY, p_at: null, p_por: null })],
-    ['0010', 'los ajustes del protocolo', async () => {
-        const { data, error } = await db.from('parametro').select('clave');
-        return !error && ['dia_chequeo_incubadora', 'cargas', 'pct_coccion', 'kg_bandeja_pupacion', 'dias_maduracion',
-                          'horas_consumo', 'alimento_inicial_incubadora_kg'].every(k => data.some(r => r.clave === k));
-      }],
+    ['0010', 'los ajustes del protocolo', () => ajustes(AJUSTES_0010)],
     ['0010', 'la lista de materiales', async () => {
         const { data, error } = await db.from('catalogo').select('valor').eq('tipo', 'material_alimento');
         return !error && data.length >= 4;
@@ -75,11 +82,21 @@ export async function comprobar(db) {
         const { data, error } = await db.from('catalogo').select('valor').eq('tipo', 'operario');
         return !error && data.length >= 1;
       }],
-    // Aimed at an id that does not exist: before 0011 it deletes nothing; after
-    // it, the database refuses it outright (42501).
+    ['0011', 'los racks y los cambios de rack ya no existen', async () =>
+        !(await table('rack')) && !(await table('movimiento'))],
+    ['0011', 'incubadora.n_bandejas, sin rack_id', async () =>
+        (await column('incubadora', 'n_bandejas')) && !(await column('incubadora', 'rack_id'))],
+    ['0011', 'los ajustes de las bandejas y del modo', () => ajustes(AJUSTES_0011)],
+    ['0011', 'borrar_registros(p_filas, p_at, p_por)', () => rpc('borrar_registros', { p_filas: [], p_at: null, p_por: null })],
+    // Aimed at an id that does not exist: before 0011 they touch nothing; after
+    // it, the database refuses them outright (42501).
     ['0011', 'con la llave pública nadie borra', async () => {
-        const { error } = await db.from('rack').delete().eq('id', NOBODY);
-        return Boolean(error) && (error.code === '42501' || /permission denied/i.test(error.message));
+        const { error } = await db.from('contenedor').delete().eq('id', NOBODY);
+        return negado(error);
+      }],
+    ['0011', 'con la llave pública nadie cambia los ajustes', async () => {
+        const { error } = await db.from('parametro').update({ descripcion: 'prueba' }).eq('id', NOBODY);
+        return negado(error);
       }]
   ];
 
@@ -102,11 +119,10 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     console.log(`  ${ok ? 'ok  ' : 'FALTA'}  [${mig}] ${label}`);
   }
 
-  // Not a failure, but the recolecta form has nothing to propose until it is set.
-  const { data: usual } = await db.from('parametro').select('valor').eq('clave', 'alimento_inicial_incubadora_kg');
-  if (usual && usual.length && (usual[0].valor === null || usual[0].valor === undefined)) {
-    console.log('\n  aviso  alimento_inicial_incubadora_kg sigue sin valor: la recolecta no propone los kg.' +
-                '\n         Se pone en Supabase → Table editor → app.parametro (por ejemplo 2).');
+  const { data: modo } = await db.from('parametro').select('valor').eq('clave', 'reglas_estrictas');
+  if (modo?.length) {
+    console.log(`\n  modo   ${modo[0].valor === true ? 'PROTEGIDO: nadie borra; se corrige con quién y cuándo'
+                                                  : 'ABIERTO: el personal registra, corrige y borra'}`);
   }
 
   console.log(bad ? `\n${bad} sin aplicar.` : '\nTodo lo que la app necesita está aplicado.');

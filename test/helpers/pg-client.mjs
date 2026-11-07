@@ -1,17 +1,21 @@
 /**
- * A supabase-js-shaped client over PGlite — just the two calls push.js makes.
+ * A supabase-js-shaped client over PGlite — the calls the app and the tools make.
  *
  * It exists so a push test fails the way production would: an RPC name that
  * the SQL no longer defines comes back as PGRST202, a renamed argument is a
- * "function does not exist", and a foreign key is a real 23503. A hand-written
- * stub that answers "ok" to whatever it is given proves nothing.
+ * "function does not exist", a foreign key is a real 23503, and a privilege the
+ * public key does not have is a real 42501. A hand-written stub that answers
+ * "ok" to whatever it is given proves nothing.
  *
  * Mirrors PostgREST where it matters here:
+ *   - everything runs AS THE anon ROLE, like a call with the public key, so the
+ *     grants, the policies and the invoker's rights in triggers all apply;
  *   - rpc(name, args)  calls the function with NAMED arguments, so a stale
  *     argument name (p_cochada) fails exactly as it would over HTTP;
  *   - from(t).upsert(row, { onConflict, ignoreDuplicates }) inserts only the
  *     columns present, `on conflict (...) do nothing`.
  */
+import { comoAnon } from './pg.mjs';
 
 const ident = s => {
   if (!/^[a-z_][a-z0-9_]*$/.test(s)) throw new Error(`identificador no válido: ${s}`);
@@ -42,22 +46,25 @@ export function pgClient(db, { schema = 'app' } = {}) {
     from(table) {
       return {
         /**
-         * select('*') with eq / gt / in / order / limit, awaited like
-         * supabase-js. Rows come back as `to_jsonb`, i.e. with timestamps in
-         * the same text form PostgREST sends (microseconds and an offset) —
-         * that exact form is what the pull pages on.
+         * select('*' | 'a, b') with eq / gt / in / order / limit, awaited like
+         * supabase-js. A column that does not exist is a real error. Rows come
+         * back as `to_jsonb`, i.e. with timestamps in the same text form
+         * PostgREST sends (microseconds and an offset) — that exact form is what
+         * the pull pages on.
          */
-        select() {
+        select(cols = '*') {
           const where = [], params = [], order = [];
           let limit = null;
+          const campos = cols.trim() === '*' ? 'to_jsonb(t)'
+            : `jsonb_build_object(${cols.split(',').map(c => `'${ident(c.trim())}', t.${ident(c.trim())}`).join(', ')})`;
           const run = async () => {
             calls.push({ kind: 'select', table, where: [...where] });
             try {
-              const sql = `select to_jsonb(t) as j from ${ident(schema)}.${ident(table)} t`
+              const sql = `select ${campos} as j from ${ident(schema)}.${ident(table)} t`
                 + (where.length ? ` where ${where.join(' and ')}` : '')
                 + (order.length ? ` order by ${order.join(', ')}` : '')
                 + (limit !== null ? ` limit ${Number(limit)}` : '');
-              const res = await db.query(sql, params);
+              const res = await comoAnon(db, tx => tx.query(sql, params));
               return { data: res.rows.map(r => r.j), error: null };
             } catch (e) {
               return { data: null, error: pgErr(e) };
@@ -78,13 +85,15 @@ export function pgClient(db, { schema = 'app' } = {}) {
         async insert(row) {
           calls.push({ kind: 'insert', table, row });
           try {
-            for (const r of Array.isArray(row) ? row : [row]) {
-              const cols = Object.keys(r).map(ident);
-              await db.query(
-                `insert into ${ident(schema)}.${ident(table)} (${cols.join(', ')})
-                 select ${cols.join(', ')} from jsonb_populate_record(null::${ident(schema)}.${ident(table)}, $1::jsonb)`,
-                [JSON.stringify(r)]);
-            }
+            await comoAnon(db, async tx => {
+              for (const r of Array.isArray(row) ? row : [row]) {
+                const cols = Object.keys(r).map(ident);
+                await tx.query(
+                  `insert into ${ident(schema)}.${ident(table)} (${cols.join(', ')})
+                   select ${cols.join(', ')} from jsonb_populate_record(null::${ident(schema)}.${ident(table)}, $1::jsonb)`,
+                  [JSON.stringify(r)]);
+              }
+            });
             return { data: null, error: null };
           } catch (e) {
             return { data: null, error: pgErr(e) };
@@ -98,10 +107,10 @@ export function pgClient(db, { schema = 'app' } = {}) {
             calls.push({ kind: 'update', table, values });
             try {
               const sets = Object.keys(values).map(c => `${ident(c)} = r.${ident(c)}`).join(', ');
-              await db.query(
+              await comoAnon(db, tx => tx.query(
                 `update ${ident(schema)}.${ident(table)} t set ${sets}
                    from jsonb_populate_record(null::${ident(schema)}.${ident(table)}, $1::jsonb) r
-                  where ${where.join(' and ') || 'false'}`, params);
+                  where ${where.join(' and ') || 'false'}`, params));
               return { data: null, error: null };
             } catch (e) {
               return { data: null, error: pgErr(e) };
@@ -116,20 +125,15 @@ export function pgClient(db, { schema = 'app' } = {}) {
           return b;
         },
 
-        /**
-         * delete().eq(…) / .in(…), run AS THE anon ROLE, like a PostgREST call
-         * with the public key: the grants and policies apply, so a refused
-         * DELETE is a real 42501 (0011), not the owner quietly deleting.
-         */
+        /** delete().eq(…) / .in(…): a refused DELETE is a real 42501 (0011), not
+         *  the owner quietly deleting. */
         delete() {
           const where = [], params = [];
           const run = async () => {
             calls.push({ kind: 'delete', table, where: [...where] });
             try {
-              await db.transaction(async tx => {
-                await tx.query('set local role anon');
-                await tx.query(`delete from ${ident(schema)}.${ident(table)} t where ${where.join(' and ') || 'false'}`, params);
-              });
+              await comoAnon(db, tx =>
+                tx.query(`delete from ${ident(schema)}.${ident(table)} t where ${where.join(' and ') || 'false'}`, params));
               return { data: null, error: null };
             } catch (e) {
               return { data: null, error: pgErr(e) };
@@ -147,16 +151,18 @@ export function pgClient(db, { schema = 'app' } = {}) {
         async upsert(row, { onConflict = 'id' } = {}) {
           calls.push({ kind: 'upsert', table, row });
           try {
-            for (const r of Array.isArray(row) ? row : [row]) {
-              const cols = Object.keys(r).map(ident);
-              const target = onConflict.split(',').map(s => ident(s.trim())).join(', ');
-              await db.query(
-                `insert into ${ident(schema)}.${ident(table)} (${cols.join(', ')})
-                 select ${cols.join(', ')}
-                   from jsonb_populate_record(null::${ident(schema)}.${ident(table)}, $1::jsonb)
-                 on conflict (${target}) do nothing`,
-                [JSON.stringify(r)]);
-            }
+            await comoAnon(db, async tx => {
+              for (const r of Array.isArray(row) ? row : [row]) {
+                const cols = Object.keys(r).map(ident);
+                const target = onConflict.split(',').map(s => ident(s.trim())).join(', ');
+                await tx.query(
+                  `insert into ${ident(schema)}.${ident(table)} (${cols.join(', ')})
+                   select ${cols.join(', ')}
+                     from jsonb_populate_record(null::${ident(schema)}.${ident(table)}, $1::jsonb)
+                   on conflict (${target}) do nothing`,
+                  [JSON.stringify(r)]);
+              }
+            });
             return { data: null, error: null };
           } catch (e) {
             return { data: null, error: pgErr(e) };
@@ -189,9 +195,9 @@ export function pgClient(db, { schema = 'app' } = {}) {
       const typeOf = k => sig.types[sig.names.indexOf(k)];
       const named = keys.map((k, i) => `${ident(k)} => $${i + 1}::text::${typeOf(k)}`);
       try {
-        const res = await db.query(
+        const res = await comoAnon(db, tx => tx.query(
           `select ${ident(schema)}.${ident(name)}(${named.join(', ')}) as r`,
-          keys.map(k => asText(args[k], typeOf(k))));
+          keys.map(k => asText(args[k], typeOf(k)))));
         return { data: res.rows[0]?.r ?? null, error: null };
       } catch (e) {
         return { data: null, error: pgErr(e) };

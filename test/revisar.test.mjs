@@ -92,7 +92,7 @@ test('an ingreso whose larvae no longer match the generation it gave the cage', 
                 created_at: T('2026-10-18T15:00:00Z') };
   const d = { incubadoras, cajas, jaulas, separaciones: [sep], ingresos: [ing] };
   assert.deepEqual(flags(revisiones(d, cfg, pool2(d, cfg)), 'ingreso:g'),
-                   ['Sus larvas son F7: la jaula sería F8, no F9.']);
+                   ['Sus larvas son F7: el insectario sería F8, no F9.']);
 });
 
 test('a corrected incubadora flags its chequeos; the cage generation must match', () => {
@@ -103,7 +103,7 @@ test('a corrected incubadora flags its chequeos; the cage generation must match'
 
   // The cage was registered as F6 after all: its first-cycle incubadora says F7.
   const r2 = revisiones({ jaulas: [{ ...jaulas[0], generacion_inicial: 6 }], incubadoras }, cfg);
-  assert.deepEqual(flags(r2, 'incubadora:i'), ['Su jaula era F6 en esa recolecta; esta incubadora dice F7.']);
+  assert.deepEqual(flags(r2, 'incubadora:i'), ['Su insectario era F6 en esa recolecta; esta incubadora dice F7.']);
   assert.equal(generacionDeJaula('j', T('2026-10-01T13:00:00Z'), {
     jaulas, ingresos: [{ jaula_id: 'j', fecha: T('2026-09-20T13:00:00Z'), generacion: 9 }] }), 9);
 });

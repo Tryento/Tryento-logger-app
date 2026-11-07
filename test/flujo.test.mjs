@@ -7,6 +7,11 @@
  * lab: register the cages, ensile food, collect, check, distribute, feed,
  * separate, bake, close and clean a cage, repopulate it, correct a weight —
  * and two phones recording the same separación.
+ *
+ * In PROTECTED mode (supabase/operaciones/proteger_datos.sql), with every call to
+ * the server made as the public key: if the day can be worked like this, it can
+ * be worked in open mode too. reglas-abiertas.test.mjs covers what open mode lets
+ * through.
  */
 import { useBackend } from './helpers/backend-env.mjs';   // first: config is read on import
 import { test } from 'node:test';
@@ -30,6 +35,7 @@ const { farmDay, addDays, ddmm } = await import('../src/data/time.js');
 
 const pg = await freshPg();
 await pg.exec(await readSql('supabase/SETUP_COMPLETO.sql'));
+await pg.exec(await readSql('supabase/operaciones/proteger_datos.sql'));
 useBackend(pgClient(pg));
 
 await freshDb();
@@ -68,22 +74,22 @@ test('a new phone: the first sync brings the lists and the settings', async () =
   assert.deepEqual(okData(await r.listCatalogo('material_alimento')),
     ['Bagazo de cerveza (BSG)', 'Desecho de panadería', 'Desecho de fruta', 'Otro']);
   assert.deepEqual(okData(await r.listOperators()), ['Maria', 'Ricardo']);
-  assert.equal(okData(await r.getProtocolo()).pct_coccion, 98);
+  const cfg = okData(await r.getProtocolo());
+  assert.equal(cfg.pct_coccion, 98);
+  assert.equal(cfg.reglas_estrictas, true, 'the mode reaches the phone with the settings');
 });
 
-test('register racks, a container and the cages, once', async () => {
-  S.r1 = okData(await w.registrarRack({ codigo: 'r1' })).id;
-  S.r2 = okData(await w.registrarRack({ codigo: 'R2' })).id;
-  falla(await w.registrarRack({ codigo: 'R1' }), /Ya existe el rack R1/);
+test('register a container and the cages, once', async () => {
   S.s2 = okData(await w.registrarContenedor({ codigo: 'S2' })).id;
 
   S.ica = okData(await w.registrarJaula({ nombre: 'ica', letra: 'a', lugar: 'Galpón 1', generacion: 7, fase: 'activa' })).id;
   S.icb = okData(await w.registrarJaula({ nombre: 'ICB', letra: 'B', lugar: 'Galpón 1', generacion: 6, fase: 'limpia' })).id;
-  falla(await w.registrarJaula({ nombre: 'ICC', letra: 'A', generacion: 1, fase: 'activa' }), /ya es de la jaula ICA/);
-  falla(await w.registrarJaula({ nombre: 'ICC', letra: 'C', generacion: 1 }), /moscas o está limpia/);
+  falla(await w.registrarJaula({ nombre: 'ICC', letra: 'A', generacion: 1, fase: 'activa' }), /ya es del insectario ICA/);
+  falla(await w.registrarJaula({ nombre: 'ICC', letra: 'C', generacion: 1 }), /moscas o está limpio/);
 
-  const jaulas = okData(await r.listJaulas()).jaulas;
-  assert.deepEqual(jaulas.map(j => [j.nombre, j.fase, j.generacion]), [['ICA', 'activa', 7], ['ICB', 'limpia', 6]]);
+  const jaulas = okData(await r.getLaboratorio()).insectarios;
+  assert.deepEqual(jaulas.map(j => [j.nombre, j.fase, j.generacion, j.activo]),
+                   [['ICA', 'activa', 7, true], ['ICB', 'limpia', 6, false]]);
 });
 
 test('food: a recepción, an ensilado from it, opened on its día 21', async () => {
@@ -122,26 +128,34 @@ test('food: a recepción, an ensilado from it, opened on its día 21', async () 
   assert.equal(alim.ensilados[0].estadoTxt, 'Abierto');
 });
 
-test('recolecta: the incubadora F7A-1, its food from the open ensilado', async () => {
-  falla(await w.registrarRecolecta({ jaula_id: S.icb, rack_id: S.r1, peso_inicial_g: 10, alimento_inicial_kg: 2 }),
-        /ICB no tiene moscas \(está limpia\)/);
-  falla(await w.registrarRecolecta({ jaula_id: S.ica, peso_inicial_g: 10, alimento_inicial_kg: 2 }), /rack/);
+test('recolecta: one code, its bandejas, their food from the open ensilado', async () => {
+  const form = okData(await r.getFormRecolecta());
+  assert.deepEqual([form.alimento_bandeja_g, form.ajustes], [400, { huevos_bandeja_min_g: 2, huevos_bandeja_max_g: 5 }]);
+  const recolecta = extra => ({ jaula_id: S.ica, peso_inicial_g: 10, n_bandejas: 3, alimento_bandeja_g: 400, ...extra });
+  falla(await w.registrarRecolecta(recolecta({ jaula_id: S.icb })), /ICB no tiene moscas \(está limpio\)/);
+  falla(await w.registrarRecolecta(recolecta({ n_bandejas: '' })), /Bandejas: Un número entero/);
+  falla(await w.registrarRecolecta(recolecta({ n_bandejas: 0 })), /Bandejas/);
+  falla(await w.registrarRecolecta(recolecta({ n_bandejas: '2,5' })), /Bandejas/);
+  falla(await w.registrarRecolecta(recolecta({ alimento_bandeja_g: '' })), /gramos de alimento/);
+  // Out of the 2–5 g per bandeja: protected mode asks.
+  pide(await w.registrarRecolecta(recolecta({ peso_inicial_g: 12, n_bandejas: 1 })), /Con 1 bandeja son 12 g por bandeja; el protocolo pide 2–5 g/);
+  pide(await w.registrarRecolecta(recolecta({ peso_inicial_g: 12, n_bandejas: 8 })), /Con 8 bandejas son 1,5 g por bandeja/);
 
-  const inc = okData(await w.registrarRecolecta({ jaula_id: S.ica, rack_id: S.r1, peso_inicial_g: '12,5',
-                                                  alimento_inicial_kg: 2 }));
+  const inc = okData(await w.registrarRecolecta(recolecta({ peso_inicial_g: '12,5', n_bandejas: '3', alimento_bandeja_g: '400' })));
   S.inc1 = inc.id;
-  assert.deepEqual([inc.codigo, inc.generacion, inc.dia0, inc.registrado_por], ['F7A-1', 7, HOY, 'Maria']);
+  assert.deepEqual([inc.codigo, inc.generacion, inc.dia0, inc.registrado_por, inc.n_bandejas, inc.alimento_inicial_kg],
+                   ['F7A-1', 7, HOY, 'Maria', 3, 1.2]);
 
   const det = okData(await r.getIncubadora(S.inc1));
-  assert.match(det.registros.find(x => x.tabla === 'incubadora').detalle, new RegExp(`2 kg de S2-${DDMM}`));
+  assert.match(det.registros.find(x => x.tabla === 'incubadora').detalle, new RegExp(`12,5 g · 3 bandejas · 1,2 kg de alimento \\(1,2 kg de S2-${DDMM}\\)`));
   assert.equal(det.sin_ensilado, false);
+  assert.deepEqual(det.facts.find(f => f[0] === 'Alimento inicial'), ['Alimento inicial', '1,2 kg · 400 g por bandeja']);
+  assert.deepEqual(det.facts.find(f => f[0] === 'Bandejas'), ['Bandejas', '3']);
 
   // A past day only with the excepción switch.
   const ayer = `${addDays(HOY, -1)}T09:00`;
-  falla(await w.registrarRecolecta({ jaula_id: S.ica, rack_id: S.r1, peso_inicial_g: 9, alimento_inicial_kg: 2, fecha: ayer }),
-        /fecha de hoy/);
-  const tarde = okData(await w.registrarRecolecta({ jaula_id: S.ica, rack_id: S.r1, peso_inicial_g: 9,
-                                                    alimento_inicial_kg: 2, fecha: ayer, excepcion: true }));
+  falla(await w.registrarRecolecta(recolecta({ peso_inicial_g: 9, fecha: ayer })), /fecha de hoy/);
+  const tarde = okData(await w.registrarRecolecta(recolecta({ peso_inicial_g: 9, fecha: ayer, excepcion: true })));
   S.inc2 = tarde.id;
   assert.deepEqual([tarde.codigo, tarde.dia0, tarde.excepcion], ['F7A-2', addDays(HOY, -1), true]);
 });
@@ -159,18 +173,16 @@ test('chequeo día 3, then tamizado, pesado y distribución into cajas with carg
   falla(await w.registrarChequeos({ objeto: 'incubadora', dia: 3,
     items: [{ id: S.inc1, humedad_pct: 68, temperatura_c: 29, peso: 41 }] }), /ya tiene el chequeo del día 3/);
 
-  falla(await w.distribuir({ incubadora_id: S.inc1, peso_total_kg: 1.8, cajas: [{ peso_inicial_kg: 0.9 }] }), /rack/);
   // Days early, and cajas heavier than what was sieved: one question for both.
   pide(await w.distribuir({ incubadora_id: S.inc1, peso_total_kg: 1.5, cajas: [
-    { peso_inicial_kg: 0.9, rack_id: S.r1 }, { peso_inicial_kg: '0,9', rack_id: S.r1 }] }),
+    { peso_inicial_kg: 0.9 }, { peso_inicial_kg: '0,9' }] }),
     /día 7 y la incubadora F7A-1 va en el día 0.*Las cajas suman 1,8 kg y se tamizaron 1,5 kg/);
   const d = okData(await w.distribuir({ incubadora_id: S.inc1, peso_total_kg: 1.8, ...SI, cajas: [
-    { peso_inicial_kg: 0.9, rack_id: S.r1 }, { peso_inicial_kg: '0,9', rack_id: S.r1, carga_kg: 1.4 }] }));
+    { peso_inicial_kg: 0.9 }, { peso_inicial_kg: '0,9', carga_kg: 1.4 }] }));
   S.c1 = d.cajas[0].id; S.c2 = d.cajas[1].id;
   assert.deepEqual(d.cajas.map(c => c.codigo), ['F7A-1-01', 'F7A-1-02']);
   assert.deepEqual(d.cargas.map(c => [c.carga, c.kg, c.kg_plan]), [[1, 1.5, 1.5], [1, 1.4, 1.5]]);
-  falla(await w.distribuir({ incubadora_id: S.inc1, peso_total_kg: 1, cajas: [{ peso_inicial_kg: 1, rack_id: S.r1 }] }),
-        /ya fue distribuida/);
+  falla(await w.distribuir({ incubadora_id: S.inc1, peso_total_kg: 1, cajas: [{ peso_inicial_kg: 1 }] }), /ya fue distribuida/);
   assert.equal(okData(await r.getIncubadora(S.inc1)).incubadora.estadoTxt, 'Distribuida');
 });
 
@@ -239,12 +251,10 @@ test('a mid temperature forgotten until after the final one can still be added',
 });
 
 test('the insectario: cierre, limpieza, repopulate with the 2 %; the cage becomes F8', async () => {
-  falla(await w.registrarIngreso({ jaula_id: S.ica, kg_larvas: 0.5, bandejas: [{ peso_kg: 4.7, rack_id: S.r1 }] }),
-        /ya está poblada/);
-  falla(await w.registrarEventoJaula({ jaula_id: S.ica, tipo: 'limpieza' }), /se cierra antes de limpiarla/);
+  falla(await w.registrarIngreso({ jaula_id: S.ica, kg_larvas: 0.5, bandejas: [{ peso_kg: 4.7 }] }), /ya está poblado/);
+  falla(await w.registrarEventoJaula({ jaula_id: S.ica, tipo: 'limpieza' }), /se cierra antes de limpiarlo/);
   okData(await w.registrarEventoJaula({ jaula_id: S.ica, tipo: 'cierre' }));
-  falla(await w.registrarIngreso({ jaula_id: S.ica, kg_larvas: 0.5, bandejas: [{ peso_kg: 4.7, rack_id: S.r1 }] }),
-        /falta la limpieza/);
+  falla(await w.registrarIngreso({ jaula_id: S.ica, kg_larvas: 0.5, bandejas: [{ peso_kg: 4.7 }] }), /falta la limpieza/);
   await pausa();
   okData(await w.registrarEventoJaula({ jaula_id: S.ica, tipo: 'limpieza' }));
   await pausa();
@@ -254,33 +264,29 @@ test('the insectario: cierre, limpieza, repopulate with the 2 %; the cage become
   assert.deepEqual(vista.codigos, [`F7-B${DDMM}-1`, `F7-B${DDMM}-2`]);
 
   const ing = okData(await w.registrarIngreso({ jaula_id: S.ica, kg_larvas: '0,5',
-    bandejas: [{ peso_kg: '4,7', rack_id: S.r1 }, { peso_kg: 3.9, rack_id: S.r2 }] }));
+    bandejas: [{ peso_kg: '4,7' }, { peso_kg: 3.9 }] }));
   S.ingA = ing.ingreso.id;
   assert.equal(ing.ingreso.generacion, 8);
   assert.deepEqual(ing.bandejas.map(b => [b.codigo, b.estado]), [[`F7-B${DDMM}-1`, 'inactivo'], [`F7-B${DDMM}-2`, 'inactivo']]);
 
   // ICB was registered clean: straight in. Only 0.1 kg of the 2 % is left.
-  const b = okData(await w.registrarIngreso({ jaula_id: S.icb, kg_larvas: 0.2, bandejas: [{ peso_kg: 4.7, rack_id: S.r1 }] }));
+  const b = okData(await w.registrarIngreso({ jaula_id: S.icb, kg_larvas: 0.2, bandejas: [{ peso_kg: 4.7 }] }));
   S.ingB = b.ingreso.id;
   assert.deepEqual([b.larvas.kg, b.larvas.faltan_kg, b.ingreso.generacion], [0.1, 0.1, 8]);
   assert.deepEqual(b.bandejas.map(x => x.codigo), [`F7-B${DDMM}-3`]);
 
-  const jaulas = okData(await r.listJaulas());
-  assert.deepEqual(jaulas.jaulas.map(j => [j.nombre, j.fase, j.generacion, j.dia_ciclo]),
+  const lab = okData(await r.getLaboratorio());
+  assert.deepEqual(lab.insectarios.map(j => [j.nombre, j.fase, j.generacion, j.dia_ciclo]).sort(),
                    [['ICA', 'activa', 8, 0], ['ICB', 'activa', 8, 0]]);
-  assert.equal(jaulas.pool_kg, 0);
+  assert.equal(lab.pool_kg, 0);
 
   // A recolecta now carries the new generation.
-  const inc = okData(await w.registrarRecolecta({ jaula_id: S.ica, rack_id: S.r2, peso_inicial_g: 11, alimento_inicial_kg: 2 }));
+  const inc = okData(await w.registrarRecolecta({ jaula_id: S.ica, peso_inicial_g: 11, n_bandejas: 3, alimento_bandeja_g: 400 }));
   S.inc3 = inc.id;
   assert.equal(inc.codigo, 'F8A-1');
 });
 
-test('moves, an early close, a correction and its "revisar", a note, a photo', async () => {
-  okData(await w.registrarMovimiento({ objeto: 'incubadora', objeto_id: S.inc3, rack_hasta: S.r1 }));
-  falla(await w.registrarMovimiento({ objeto: 'incubadora', objeto_id: S.inc3, rack_hasta: S.r1 }), /Ya está en el rack R1/);
-  assert.match(okData(await r.getIncubadora(S.inc3)).facts.find(f => f[0] === 'Rack')[1], /R1/);
-
+test('an early close, a correction and its "revisar", a note, a photo', async () => {
   falla(await w.cerrarObjeto({ tabla: 'incubadora', id: S.inc3, motivo: '  ' }), /motivo/);
   okData(await w.cerrarObjeto({ tabla: 'incubadora', id: S.inc3, motivo: 'Derrame' }));
   const cerrada = okData(await r.getIncubadora(S.inc3));
@@ -293,6 +299,7 @@ test('moves, an early close, a correction and its "revisar", a note, a photo', a
   okData(await w.editarRegistro({ tabla: 'separacion', id: S.sep1, cambios: { peso_total_kg: '12' } }));
   falla(await w.editarRegistro({ tabla: 'separacion', id: S.sep1, cambios: { peso_total_kg: '12' } }), /No hay cambios/);
   falla(await w.editarRegistro({ tabla: 'incubadora', id: S.inc1, cambios: { codigo: 'X' } }), /no se puede corregir/);
+  falla(await w.editarRegistro({ tabla: 'incubadora', id: S.inc1, cambios: { n_bandejas: 0 } }), /Bandejas: Un número entero/);
   const revisar = okData(await r.getRevisar());
   assert.deepEqual(revisar.map(x => x.tabla).sort(), ['cochada_origen', 'ingreso', 'ingreso']);
   assert.ok(revisar.find(x => x.id === S.ingA).motivos[0].includes('separación anterior'));
@@ -341,7 +348,6 @@ test('everything reaches the server in order, and nothing is refused', async () 
   assert.equal((await one(`select count(*)::int n from app.bandeja_pupacion`)).n, 3);
   assert.equal((await one(`select count(*)::int n from app.chequeo`)).n, 4);
   assert.equal((await one(`select count(*)::int n from app.alimentacion`)).n, 5);
-  assert.equal((await one(`select count(*)::int n from app.movimiento`)).n, 1);
   assert.ok((await one(`select abierto_at from app.ensilado`)).abierto_at);
   assert.deepEqual((await pg.query(`select registrado_por, count(*)::int n from app.chequeo group by 1`)).rows,
                    [{ registrado_por: 'Maria', n: 4 }], 'who did it travels with every record');
@@ -351,7 +357,7 @@ test('pulled back, the phone and the server tell the same story', async () => {
   const { pulled } = await sync();
   assert.deepEqual(pulled.errors, []);
   invalidarSnapshot();
-  const local = okData(await r.listIncubadoras({ inactivas: true }));
+  const local = okData(await r.getLaboratorio()).bandejas.filter(b => b.tipo === 'incubadora');
   assert.deepEqual(local.map(i => [i.codigo, i.estado]).sort(),
                    [['F7A-1', 'inactivo'], ['F7A-2', 'activo'], ['F8A-1', 'inactivo']]);
   const inicio = okData(await r.getInicio());
@@ -360,9 +366,50 @@ test('pulled back, the phone and the server tell the same story', async () => {
   function kgHorno() { return Math.round((11.76 - 9.8 + 19.6 - 10 - 5) * 1000) / 1000; }
 });
 
+test('the lab on one list: what is active first, each thing with its state and how many bandejas', async () => {
+  const { insectarios, bandejas, bandejas_total, inactivas_sin_ver } = okData(await r.getLaboratorio());
+  assert.ok(insectarios.every(j => j.activo === (j.fase === 'activa')));
+  const activas = bandejas.filter(b => b.activo);
+  assert.deepEqual(bandejas.slice(0, activas.length), activas, 'lo activo primero');
+  assert.deepEqual(activas.map(b => b.codigo), ['F7A-2']);
+  // A recolecta occupies its bandejas; a caja is one.
+  assert.deepEqual(bandejas.map(b => [b.codigo, b.tipo, b.n]).sort(),
+                   [['F7A-1', 'incubadora', 3], ['F7A-1-01', 'caja', 1], ['F7A-1-02', 'caja', 1],
+                    ['F7A-2', 'incubadora', 3], ['F8A-1', 'incubadora', 3]]);
+  assert.deepEqual([bandejas_total, inactivas_sin_ver], [11, 0]);
+  const f72 = bandejas.find(b => b.codigo === 'F7A-2');
+  assert.match(f72.linea, /^Día 1 · 3 bandejas · ICA · registrada tarde$/);
+  assert.equal(f72.estadoTxt, 'En incubadora');
+  assert.deepEqual(bandejas.find(b => b.codigo === 'F8A-1').paso, null, 'lo inactivo no pide nada');
+});
+
+test('protected mode: no deleting from the phone, and a correction still says who', async () => {
+  const reg = okData(await r.getRegistro('separacion', S.sep1));
+  assert.equal(reg.borrable, false);
+  falla(await w.borrarRegistro({ tabla: 'separacion', id: S.sep1 }), /protegidos: no se puede borrar/);
+  assert.equal((await one(`select deleted_at from app.separacion where id = $1`, [S.sep1])).deleted_at, null);
+
+  // A delete queued offline before the mode changed: refused, and it says why.
+  const { commitWrite } = await import('../src/data/store.js');
+  await commitWrite(db, { outbox: { op: 'rpc', rpc: 'borrar_registros', rowId: S.sep1,
+                                    payload: { p_filas: [{ tabla: 'separacion', id: S.sep1 }], p_at: null, p_por: 'Maria' } } });
+  assert.equal((await pushAll(db)).conflicts, 1);
+  const [c] = await listConflicts(db);
+  assert.match(c.explanation, /protegidos/);
+  okData(await resolveConflict(db, c.id, 'discard'));
+
+  // A date the phone would refuse, arriving from a phone that was still in open mode.
+  const manana = new Date(Date.now() + 3 * 86400000).toISOString();
+  await commitWrite(db, { outbox: { op: 'rpc', rpc: 'editar', rowId: S.rec,
+                                    payload: { p_tabla: 'recepcion', p_id: S.rec, p_cambios: { fecha: manana }, p_por: 'Maria', p_at: null } } });
+  assert.equal((await pushAll(db)).conflicts, 1);
+  const [f] = await listConflicts(db);
+  assert.match(f.explanation, /todavía no ha llegado/);
+  okData(await resolveConflict(db, f.id, 'discard'));
+});
+
 test('two phones separate the same caja: the server keeps one, "Descartar" takes the other back', async () => {
-  const d = okData(await w.distribuir({ incubadora_id: S.inc2, peso_total_kg: 1, ...SI,
-                                        cajas: [{ peso_inicial_kg: 1, rack_id: S.r1 }] }));
+  const d = okData(await w.distribuir({ incubadora_id: S.inc2, peso_total_kg: 1, ...SI, cajas: [{ peso_inicial_kg: 1 }] }));
   const caja = d.cajas[0].id;
   await sync();
 

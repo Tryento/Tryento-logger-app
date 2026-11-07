@@ -16,7 +16,6 @@ const HOY = '2026-10-20', AHORA = Date.parse('2026-10-20T15:00:00Z');
 
 function lab() {
   return {
-    rack: [{ id: 'r1', codigo: 'R1' }],
     jaula: [
       { id: 'jA', nombre: 'ICA', letra: 'A', lugar: 'Galpón', generacion_inicial: 7, fase_inicial: 'activa' },
       { id: 'jB', nombre: 'ICB', letra: 'B', lugar: 'Galpón', generacion_inicial: 6, fase_inicial: 'limpia' }
@@ -24,13 +23,13 @@ function lab() {
     incubadora: [
       // Día 14 today: distributed on día 7 into two cajas.
       { id: 'i1', codigo: 'F7A-1', jaula_id: 'jA', generacion: 7, recolecta_at: T('2026-10-06T13:00:00Z'),
-        rack_id: 'r1', peso_inicial_g: 12, alimento_inicial_kg: 2, created_at: T('2026-10-06T13:00:00Z') },
+        n_bandejas: 3, peso_inicial_g: 12, alimento_inicial_kg: 2, created_at: T('2026-10-06T13:00:00Z') },
       // Día 3 today.
       { id: 'i2', codigo: 'F7A-2', jaula_id: 'jA', generacion: 7, recolecta_at: T('2026-10-17T13:00:00Z'),
-        rack_id: 'r1', peso_inicial_g: 12, alimento_inicial_kg: 2, created_at: T('2026-10-17T13:00:00Z') }
+        n_bandejas: 3, peso_inicial_g: 12, alimento_inicial_kg: 2, created_at: T('2026-10-17T13:00:00Z') }
     ],
     distribucion: [{ id: 'd1', incubadora_id: 'i1', fecha: T('2026-10-13T13:00:00Z'), peso_total_kg: 2.7 }],
-    caja: [1, 2, 3].map(n => ({ id: `c${n}`, codigo: `F7A-1-0${n}`, incubadora_id: 'i1', numero: n, rack_id: 'r1',
+    caja: [1, 2, 3].map(n => ({ id: `c${n}`, codigo: `F7A-1-0${n}`, incubadora_id: 'i1', numero: n,
                                 peso_inicial_kg: 0.9, created_at: T('2026-10-13T13:00:00Z') })),
     alimentacion: [1, 2, 3].map(n => ({ id: `a${n}`, caja_id: `c${n}`, carga: 1, fecha: T('2026-10-13T13:00:00Z'), kg: 1.5 })),
     // Caja 1 had its día-10 chequeo and carga 2; cajas 2 and 3 did not.
@@ -57,7 +56,7 @@ test('late first, then today, then the next two days, each opening its form', ()
     'atrasado|Carga 3 · 2 kg · F7A-1|3 cajas: 01, 02, 03',
     'hoy|Abrir el ensilado · S2-2909|50 kg · día 21 de maduración',
     'hoy|Chequeo día 14 (inicia el ayuno) · F7A-1|3 cajas: 01, 02, 03',
-    'hoy|Chequeo día 3 · F7A-2|Día 3 · rack R1',
+    'hoy|Chequeo día 3 · F7A-2|Día 3 · 3 bandejas',
     'proximo|Recolecta · ICA|F7 · Galpón',
     'proximo|Separación · F7A-1|3 cajas: 01, 02, 03'
   ]);
